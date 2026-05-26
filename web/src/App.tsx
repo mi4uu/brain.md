@@ -683,7 +683,6 @@ export function App() {
         </IconBtn>
         {gitStatus?.enabled ? (
           <>
-            <GitStatusChip status={gitStatus} />
             <IconBtn label="History" onClick={() => setShowHistory(true)}>
               <HistoryIcon />
             </IconBtn>
@@ -699,6 +698,11 @@ export function App() {
         <IconBtn label="Settings" onClick={() => setShowSettings(true)}>
           <SettingsIcon />
         </IconBtn>
+        {gitStatus?.enabled ? (
+          <div className="topbar-center">
+            <GitStatusChip status={gitStatus} />
+          </div>
+        ) : null}
       </header>
 
       <aside className={clsx("sidebar", drawerOpen && "open")}>

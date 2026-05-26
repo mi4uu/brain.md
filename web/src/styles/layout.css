@@ -22,6 +22,17 @@
   top: 0;
   z-index: 10;
 }
+.topbar-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  z-index: 1;
+}
+@media (max-width: 720px) {
+  .topbar-center { display: none; }
+}
 
 .topbar .brand {
   display: inline-flex;
