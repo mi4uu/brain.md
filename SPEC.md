@@ -249,7 +249,7 @@ T90|x|useSidebarSection hook: localStorage-backed open/closed per section id; re
 T91|x|Tags sidebar section: list `[{tag,count}]` from /api/tags sorted by count desc, click → `#/tag/<name>`|I.api,V33,V43
 T92|x|section headers match terax-ai pattern: compact row, ChevronDown rotate, hover bg, uppercase label like existing OUTLINE / BACKLINKS|V39,V43
 T93|x|XDG path resolver: `getDefaultVaultDir()` + `getDefaultSettingsDir()` in server/src/config/paths.ts using XDG vars w/ HOME fallback, no OS branching|V44
-T94|.|CLI parser in server/src/cli.ts: --help/-h, --vault-dir/-v, --port/-p, --version. unknown flag → exit 2|V45,I.cli
+T94|x|CLI parser in server/src/cli.ts: --help/-h, --vault-dir/-v, --port/-p, --version. unknown flag → exit 2|V45,I.cli
 T95|.|server entry wires precedence (cli > env > XDG default) for VAULT_DIR + PORT. mkdir -p vault on first run|V44,V45,I.cli
 T96|.|update README.md: XDG default paths + CLI usage block|V44,V45
 
