@@ -251,7 +251,7 @@ T92|x|section headers match terax-ai pattern: compact row, ChevronDown rotate, h
 T93|x|XDG path resolver: `getDefaultVaultDir()` + `getDefaultSettingsDir()` in server/src/config/paths.ts using XDG vars w/ HOME fallback, no OS branching|V44
 T94|x|CLI parser in server/src/cli.ts: --help/-h, --vault-dir/-v, --port/-p, --version. unknown flag → exit 2|V45,I.cli
 T95|x|server entry wires precedence (cli > env > XDG default) for VAULT_DIR + PORT. mkdir -p vault on first run|V44,V45,I.cli
-T96|.|update README.md: XDG default paths + CLI usage block|V44,V45
+T96|x|update README.md: XDG default paths + CLI usage block|V44,V45
 
 ## §B BUGS
 id|date|cause|fix
