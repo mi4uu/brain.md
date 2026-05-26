@@ -9,6 +9,12 @@ import {
   TrashIcon,
 } from "./Icons";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
+import {
+  ContextMenu as RadixContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "./ui/context-menu";
 import { FolderIconRender, IconBare } from "./FolderIconCatalog";
 import type { TreeData } from "../api/types";
 
@@ -129,7 +135,14 @@ export function FileTree(props: TreeProps) {
 
   return (
     <div className="tree" role="tree">
-      <TreeChildren node={root} depth={0} {...props} defaultExpanded openCtx={openCtx} />
+      <TreeChildren
+        node={root}
+        depth={0}
+        {...props}
+        defaultExpanded
+        openCtx={openCtx}
+        getCtxItems={ctxItems}
+      />
       {ctx ? (
         <ContextMenu
           x={ctx.x}
@@ -147,6 +160,41 @@ interface ChildrenProps extends TreeProps {
   depth: number;
   defaultExpanded?: boolean;
   openCtx: (e: React.MouseEvent, node: Node) => void;
+  getCtxItems: (node: Node) => MenuItem[];
+}
+
+function RowContextMenu({
+  items,
+  children,
+}: {
+  items: MenuItem[];
+  children: React.ReactNode;
+}) {
+  return (
+    <RadixContextMenu>
+      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+      <ContextMenuContent>
+        {items.map((it, i) => (
+          <ContextMenuItem
+            key={i}
+            destructive={it.destructive}
+            disabled={it.disabled}
+            onSelect={(e) => {
+              e.preventDefault();
+              it.onClick();
+            }}
+          >
+            {it.icon ? (
+              <span className="inline-flex h-3.5 w-3.5 items-center justify-center text-fg-3">
+                {it.icon}
+              </span>
+            ) : null}
+            <span>{it.label}</span>
+          </ContextMenuItem>
+        ))}
+      </ContextMenuContent>
+    </RadixContextMenu>
+  );
 }
 
 function TreeChildren({ node, depth, defaultExpanded, ...rest }: ChildrenProps) {
@@ -174,52 +222,62 @@ function FolderRow({
   depth,
   defaultExpanded,
   openCtx,
+  getCtxItems,
   ...rest
 }: ChildrenProps) {
   const [expanded, setExpanded] = useState(defaultExpanded ?? false);
   return (
     <div>
-      <div
-        className={clsx("tree-row", expanded && "expanded")}
-        role="treeitem"
-        aria-expanded={expanded}
-        onClick={() => setExpanded((v) => !v)}
-        onContextMenu={(e) => openCtx(e, node)}
-        title={node.path}
-      >
-        <span className="chev">
-          <ChevRightIcon />
-        </span>
-        <span className="icon">
-          <FolderIconRender
-            iconKey={rest.folderIcons[node.path] ?? null}
-            open={expanded}
-          />
-        </span>
-        <span className="label">{node.name}</span>
-        <div className="tree-actions" onClick={(e) => e.stopPropagation()}>
-          <button
-            title="More"
-            aria-label="Folder actions"
-            onClick={(e) => openCtx(e, node)}
-          >
-            <DotsIcon />
-          </button>
-          <button
-            title="New note"
-            onClick={() => rest.onCreateNote(node.path)}
-          >
-            <PlusIcon />
-          </button>
-          <button
-            title="Delete"
-            onClick={() => rest.onDelete(node.path, true)}
-          >
-            <TrashIcon />
-          </button>
+      <RowContextMenu items={getCtxItems(node)}>
+        <div
+          className={clsx("tree-row", expanded && "expanded")}
+          role="treeitem"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((v) => !v)}
+          title={node.path}
+        >
+          <span className="chev">
+            <ChevRightIcon />
+          </span>
+          <span className="icon">
+            <FolderIconRender
+              iconKey={rest.folderIcons[node.path] ?? null}
+              open={expanded}
+            />
+          </span>
+          <span className="label">{node.name}</span>
+          <div className="tree-actions" onClick={(e) => e.stopPropagation()}>
+            <button
+              title="More"
+              aria-label="Folder actions"
+              onClick={(e) => openCtx(e, node)}
+            >
+              <DotsIcon />
+            </button>
+            <button
+              title="New note"
+              onClick={() => rest.onCreateNote(node.path)}
+            >
+              <PlusIcon />
+            </button>
+            <button
+              title="Delete"
+              onClick={() => rest.onDelete(node.path, true)}
+            >
+              <TrashIcon />
+            </button>
+          </div>
         </div>
-      </div>
-      {expanded ? <TreeChildren node={node} depth={depth + 1} openCtx={openCtx} {...rest} /> : null}
+      </RowContextMenu>
+      {expanded ? (
+        <TreeChildren
+          node={node}
+          depth={depth + 1}
+          openCtx={openCtx}
+          getCtxItems={getCtxItems}
+          {...rest}
+        />
+      ) : null}
     </div>
   );
 }
@@ -231,49 +289,55 @@ function NoteRow({
   onRename,
   onDelete,
   openCtx,
+  getCtxItems,
   basenameCounts,
-}: { node: Node; openCtx: (e: React.MouseEvent, n: Node) => void } & Pick<
+}: {
+  node: Node;
+  openCtx: (e: React.MouseEvent, n: Node) => void;
+  getCtxItems: (n: Node) => MenuItem[];
+} & Pick<
   TreeProps,
   "activePath" | "onOpen" | "onRename" | "onDelete" | "basenameCounts"
 >) {
   const label = node.name.endsWith(".md") ? node.name.slice(0, -3) : node.name;
   const active = node.path === activePath;
   return (
-    <div
-      className={clsx("tree-row", active && "active")}
-      role="treeitem"
-      draggable
-      onDragStart={(e) => {
-        const ambiguous = (basenameCounts[label.toLowerCase()] ?? 0) > 1;
-        const linkTarget = ambiguous
-          ? node.path.replace(/\.md$/i, "")
-          : label;
-        const payload = JSON.stringify({ path: node.path, basename: label, linkTarget });
-        e.dataTransfer.setData("application/x-brain-note", payload);
-        e.dataTransfer.setData("text/plain", `[[${linkTarget}]]`);
-        e.dataTransfer.effectAllowed = "copyLink";
-      }}
-      onClick={() => onOpen(node.path)}
-      onContextMenu={(e) => openCtx(e, node)}
-      title={node.path}
-    >
-      <span className="chev" />
-      <span className="icon">
-        <FileIcon />
-      </span>
-      <span className="label">{label}</span>
-      <div className="tree-actions" onClick={(e) => e.stopPropagation()}>
-        <button title="More" aria-label="Note actions" onClick={(e) => openCtx(e, node)}>
-          <DotsIcon />
-        </button>
-        <button title="Rename" onClick={() => onRename(node.path, false)}>
-          <PencilIcon />
-        </button>
-        <button title="Delete" onClick={() => onDelete(node.path, false)}>
-          <TrashIcon />
-        </button>
+    <RowContextMenu items={getCtxItems(node)}>
+      <div
+        className={clsx("tree-row", active && "active")}
+        role="treeitem"
+        draggable
+        onDragStart={(e) => {
+          const ambiguous = (basenameCounts[label.toLowerCase()] ?? 0) > 1;
+          const linkTarget = ambiguous
+            ? node.path.replace(/\.md$/i, "")
+            : label;
+          const payload = JSON.stringify({ path: node.path, basename: label, linkTarget });
+          e.dataTransfer.setData("application/x-brain-note", payload);
+          e.dataTransfer.setData("text/plain", `[[${linkTarget}]]`);
+          e.dataTransfer.effectAllowed = "copyLink";
+        }}
+        onClick={() => onOpen(node.path)}
+        title={node.path}
+      >
+        <span className="chev" />
+        <span className="icon">
+          <FileIcon />
+        </span>
+        <span className="label">{label}</span>
+        <div className="tree-actions" onClick={(e) => e.stopPropagation()}>
+          <button title="More" aria-label="Note actions" onClick={(e) => openCtx(e, node)}>
+            <DotsIcon />
+          </button>
+          <button title="Rename" onClick={() => onRename(node.path, false)}>
+            <PencilIcon />
+          </button>
+          <button title="Delete" onClick={() => onDelete(node.path, false)}>
+            <TrashIcon />
+          </button>
+        </div>
       </div>
-    </div>
+    </RowContextMenu>
   );
 }
 
