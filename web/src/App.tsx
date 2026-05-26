@@ -42,6 +42,8 @@ import { useTheme } from "./hooks/useTheme";
 import { useMediaQuery } from "./hooks/useMediaQuery";
 import { settingsApi, type AppSettings } from "./api/settings";
 import { useDebouncedSave } from "./hooks/useDebouncedSave";
+import { TooltipProvider } from "./components/ui/tooltip";
+import { Toaster } from "./components/ui/toaster";
 import "./styles/tw.css";
 import "./styles/tokens.css";
 import "./styles/global.css";
@@ -605,6 +607,7 @@ export function App() {
   }, [tagFilter]);
 
   return (
+    <TooltipProvider>
     <div className="shell">
       <header className="topbar">
         <button
@@ -886,6 +889,8 @@ export function App() {
 
       {toast ? <div className="toast">{toast}</div> : null}
     </div>
+    <Toaster />
+    </TooltipProvider>
   );
 }
 

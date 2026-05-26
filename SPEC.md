@@ -214,7 +214,7 @@ T69|x|GitRepo serialise writes via async mutex (prevent autocommit ↔ manual ra
 T70|x|IconBare (picker grid) vs FolderIconRender (tree badge) split|V34
 T71|x|push initial code to `git@github.com:mi4uu/brain.md.git`|-
 T72|x|add radix deps + tailwind v3 + class-variance-authority + clsx + tailwind-merge; `cn()` util in web/src/lib/utils.ts|V38,V39
-T73|.|scaffold `web/src/components/ui/` primitives per terax-ai pattern: context-menu, dropdown-menu, dialog, popover, tooltip, tabs, toolbar, select, switch, toast, scroll-area, separator, accordion|V38,V39
+T73|x|scaffold `web/src/components/ui/` primitives per terax-ai pattern: context-menu, dropdown-menu, dialog, popover, tooltip, tabs, toolbar, select, switch, toast, scroll-area, separator, accordion|V38,V39
 T74|.|tree row right-click → Radix ContextMenu (Open/Rename/Delete; folder: New note/folder, Set icon)|V35,V38,V40
 T75|.|tree row 3-dot button → Radix DropdownMenu (same items)|V35,V38
 T76|.|toolbar tooltips → Radix Tooltip (delayDuration=0)|V20,V38,V40
