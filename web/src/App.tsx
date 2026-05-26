@@ -635,7 +635,18 @@ export function App() {
         >
           <MenuIcon />
         </button>
-        <span className="title">{path ? path.replace(/\.md$/, "") : "brain.md"}</span>
+        <a
+          href="#/"
+          aria-label="brain.md home"
+          className="brand"
+          onClick={(e) => {
+            e.preventDefault();
+            setPath(null);
+          }}
+        >
+          <img src="/logo.svg" alt="" width={22} height={22} />
+        </a>
+        <span className="title">{path ? path.replace(/\.md$/, "") : ""}</span>
         <span className="saved">
           {path
             ? saveStatus === "saved"

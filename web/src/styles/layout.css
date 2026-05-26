@@ -23,6 +23,25 @@
   z-index: 10;
 }
 
+.topbar .brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-1);
+  flex-shrink: 0;
+  transition: background var(--dur-fast) var(--ease);
+}
+.topbar .brand:hover {
+  background: var(--bg-hover);
+}
+.topbar .brand img {
+  display: block;
+  width: 22px;
+  height: 22px;
+}
+
 .topbar .title {
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -32,6 +51,8 @@
   text-overflow: ellipsis;
   margin-right: auto;
   padding: 0 var(--space-2);
+  min-width: 0;
+  flex: 1;
 }
 
 .topbar .crumb {
