@@ -44,6 +44,7 @@ import { settingsApi, type AppSettings } from "./api/settings";
 import { useDebouncedSave } from "./hooks/useDebouncedSave";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { Toaster } from "./components/ui/toaster";
+import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs";
 import "./styles/tw.css";
 import "./styles/tokens.css";
 import "./styles/global.css";
@@ -816,13 +817,21 @@ export function App() {
       </main>
 
       {isMobile ? (
-        <nav className="mobile-tabs">
-          <button className={clsx("seg", mobileView === "edit" && "active")} onClick={() => setMobileView("edit")}>
-            <PenIcon /> Edit
-          </button>
-          <button className={clsx("seg", mobileView === "preview" && "active")} onClick={() => setMobileView("preview")}>
-            <EyeIcon /> Preview
-          </button>
+        <nav className="mobile-tabs" aria-label="Editor view">
+          <Tabs
+            value={mobileView}
+            onValueChange={(v) => setMobileView(v as "edit" | "preview")}
+            className="w-full"
+          >
+            <TabsList className="w-full">
+              <TabsTrigger value="edit" className="flex-1 gap-1.5">
+                <PenIcon /> Edit
+              </TabsTrigger>
+              <TabsTrigger value="preview" className="flex-1 gap-1.5">
+                <EyeIcon /> Preview
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </nav>
       ) : null}
 
