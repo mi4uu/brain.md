@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import clsx from "clsx";
 import {
   ChevRightIcon,
@@ -8,13 +8,20 @@ import {
   PlusIcon,
   TrashIcon,
 } from "./Icons";
-import { type MenuItem } from "./ContextMenu";
 import {
   ContextMenu as RadixContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuTrigger,
 } from "./ui/context-menu";
+
+interface MenuItem {
+  label: string;
+  icon?: ReactNode;
+  onClick: () => void;
+  destructive?: boolean;
+  disabled?: boolean;
+}
 import {
   DropdownMenu,
   DropdownMenuContent,

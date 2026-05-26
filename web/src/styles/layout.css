@@ -209,19 +209,7 @@
   padding: 0 8px;
   align-items: stretch;
 }
-.mobile-tabs .seg {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-sm);
-  color: var(--text-3);
-  border: none;
-  background: transparent;
-}
-.mobile-tabs .seg.active {
-  color: var(--accent);
-}
+/* mobile-tabs inner controls are now Radix Tabs (see ui/tabs.tsx) */
 
 @media (max-width: 840px) {
   .shell {
