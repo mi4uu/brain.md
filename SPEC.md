@@ -11,47 +11,72 @@ web Obsidian clone. edit `.md` vault from browser & phone. core-plugin parity, n
 - no graph view
 - no Obsidian plugin runtime. only what default Obsidian ships w/o community plugins
 - UI ! responsive ≥ 320px (mobile) & desktop
-- theme: light & dark. follow `prefers-color-scheme` + manual toggle
-- Markdown dialect = Obsidian flavor (CommonMark + GFM + wikilinks + embeds + callouts + math + mermaid + footnotes + tasks + frontmatter + tags)
+- theme: light & dark. follow `prefers-color-scheme` + manual toggle. theme pref = device-local (localStorage)
+- Markdown dialect = Obsidian flavor (CommonMark + GFM + wikilinks + embeds + callouts + math + mermaid + footnotes + tasks + frontmatter + tags + `==hl==` + `%%comments%%`)
 - no external DB. index = in-mem + on-disk cache (`.brain/index.json`)
 - single-user vault per server instance (auth ⊥ in v1)
+- frontend stack: React 18 + CodeMirror 6 + unified/remark/rehype + highlight.js + KaTeX + mermaid (lazy)
+- syntax highlighting: highlight.js, theme via CSS variables
+- vault-local config = `<VAULT>/.brain/*.json` (settings, index, folder-meta, trash). env = bootstrap default only
 
 ## §I INTERFACES
 
 ### web UI
-- `/` → app shell (file tree | editor | preview)
-- mobile: drawer file tree, swipe to open
-- desktop: 3-pane resizable
+- `/` → app shell. grid: topbar / sidebar / main(2-col panes share toolbar row)
+- sidebar = vault tree + outline + backlinks. header w/ search + new note + new folder
+- toolbar = single row above both panes (editor + preview). format actions emit CM6 tx.
+- mobile: drawer file tree, swipe to open, edit/preview tab switch
 
 ### HTTP API (Elysia, JSON)
+#### note + folder
 - `GET  /api/tree` → `{folders:[…], notes:[…]}` full vault tree
 - `GET  /api/note/*path` → `{path, content, mtime}` raw md
-- `PUT  /api/note/*path` body `{content}` → `{mtime}` upsert
-- `DELETE /api/note/*path` → `{ok}`
-- `POST /api/rename` body `{from, to}` → `{ok, patchedFiles, totalReplacements}` (rename note + update inbound wikilinks; flat route — Elysia wildcard can't suffix-match `/rename`)
+- `PUT  /api/note/*path` body `{content}` → `{path, mtime}` upsert
+- `DELETE /api/note/*path` → `{ok, trashed}`
 - `POST /api/folder/*path` → `{ok}` mkdir
-- `DELETE /api/folder/*path` → `{ok}`
-- `POST /api/media/*notePath` multipart `file` → `{url:"/api/media-raw/<dir>/.media/<name>"}`
+- `DELETE /api/folder/*path` → `{ok, trashed}`
+- `POST /api/rename` body `{from, to}` → `{ok, patchedFiles, totalReplacements}` (rename + update inbound wikilinks; flat route — Elysia wildcard can't suffix-match `/rename`)
+
+#### media
+- `POST /api/media/*notePath` multipart `file` → `{url, path, name}`
 - `GET  /api/media-raw/*path` → binary stream
-- `GET  /api/search?q=…` → `[{path, snippet, score}]`
-- `GET  /api/backlinks/*path` → `[{from, lineNo, context}]`
-- `GET  /api/resolve?name=…` → `{path}|null` (wikilink target by basename)
 
-### Git API
-- `GET  /api/git/status` → `{enabled, head, branch, dirty:bool, lastCommit?:{sha,subject,ts}}`
+#### query
+- `GET  /api/search?q=…` → `[{path, title, score, snippet, matches}]` top 50
+- `GET  /api/backlinks/*path` → `[{from, lineNo, context, embed}]`
+- `GET  /api/resolve?name=…` → `{path, matches, source: "path"|"basename"|"alias"|null, ambiguous}` — hierarchy: full path → basename → alias
+- `GET  /api/aliases` → `Record<aliasLowercase, paths[]>` (frontmatter aliases)
+- `GET  /api/tags` → `[{tag, count}]`
+- `GET  /api/tags/notes?tag=X` → `paths[]` (notes containing tag — index.byTag, ! path-substring)
+- `GET  /api/tasks` → `[{path, lineNo, done, text}]` aggregate tasks vault-wide
+
+#### trash
+- `GET  /api/trash` → `[{path, mtime, isDir}]`
+- `POST /api/trash/restore` body `{trashPath}` → `{ok, path}`
+
+#### git
+- `GET  /api/git/status` → `{enabled, head, branch, dirty, lastCommit, autocommit:{enabled, debounceMs}}`
 - `GET  /api/git/log?path=…&limit=N` → `[{sha, subject, ts, author}]` (vault-wide if no path)
-- `GET  /api/git/show?sha=…&path=…` → `{content}` (file at sha)
-- `GET  /api/git/diff?sha=…&path=…` → `{patch}` (unified diff vs current)
-- `POST /api/git/commit` body `{message?}` → `{sha}` (commit pending changes)
-- `POST /api/git/restore` body `{path, sha}` → `{ok}` (restore file from sha → write to working tree, autocommit follows)
-- `POST /api/git/checkpoint` body `{message}` → `{sha, tag}` (commit + tag `cp-<ts>`)
-- env `GIT_AUTOCOMMIT` = `1`/`0` (default `1`)
-- env `GIT_AUTOCOMMIT_DEBOUNCE_MS` (default `15000`)
+- `GET  /api/git/show?sha=…&path=…` → `{content}`
+- `GET  /api/git/diff?sha=…&path=…` → `{patch}` unified diff vs HEAD
+- `POST /api/git/commit` body `{message?}` → `{sha|null}`
+- `POST /api/git/restore` body `{path, sha}` → `{ok, sha}` (auto-commits "restore X → sha")
+- `POST /api/git/checkpoint` body `{message?}` → `{sha, tag:"cp-<ts>"}`
+- `POST /api/git/autocommit` body `{enabled?, debounceMs?}` → applies + persists to `.brain/settings.json`
+- `POST /api/git/flush` → `{sha|null}` force-fire pending autocommit
 
-### CLI
+#### settings + folder-meta
+- `GET  /api/settings` → `{version:1, bookmarks, dailyDir, git:{autocommit, debounceMs}}`
+- `PATCH /api/settings` body `{bookmarks?, dailyDir?, git?:{autocommit?, debounceMs?}}` → full settings
+- `GET  /api/folder-meta` → `{version:1, icons, colors}`
+- `POST /api/folder-meta` body `{path, icon?, color?}` → `{ok, meta}`
+
+### CLI / env
 - `bun start` → serve `:3000`
-- env `VAULT_DIR` = abs path (default `./vault`)
-- env `PORT` = `3000`
+- `VAULT_DIR` = abs path (default `./vault`)
+- `PORT` (default `3000`)
+- `GIT_AUTOCOMMIT` = `1`/`0` (bootstrap default if no settings.json)
+- `GIT_AUTOCOMMIT_DEBOUNCE_MS` (bootstrap default)
 
 ### filesystem layout
 ```
@@ -61,34 +86,52 @@ web Obsidian clone. edit `.md` vault from browser & phone. core-plugin parity, n
     .media/
       img.png
   .brain/
-    index.json
+    index.json          # cached index (mtime-based, rebuilt incrementally)
+    settings.json       # per-vault config: bookmarks, dailyDir, git autocommit
+    folder-meta.json    # per-folder icons + colors
+    trash/<ts>/...      # recoverable deletes
+  .git/                  # autocommit history (if GIT_AUTOCOMMIT)
 ```
 
 ## §V INVARIANTS
 
 V1: note path ! end `.md`. server rejects ≠.
 V2: vault writes ! confined to `VAULT_DIR`. ∀ path → resolve & check prefix. traversal ⊥.
-V3: media uploaded for note `<dir>/note.md` → save `<dir>/.media/<file>`. mkdir `.media` if absent.
-V4: wikilink `[[Name]]` → resolved by **basename match** across vault. dup basenames → ambiguous, render w/ warn.
-V5: rename note → ∀ inbound `[[OldName]]` rewritten to `[[NewName]]` atomically (scan + patch all `.md`).
+V3: media uploaded for note `<dir>/note.md` → save `<dir>/.media/<file>`. mkdir `.media` if absent. filename ! contain `/` `\` or start `.`.
+V4: wikilink resolve hierarchy: full path `[[Folder/Note]]` → basename `[[Note]]` (case-insensitive) → alias from frontmatter. dup basenames → ambiguous, first wins in render, full path inserted by drag-drop.
+V5: rename note → ∀ inbound `[[OldName]]` / `![[OldName]]` / aliased rewritten to `[[NewName]]` atomically (scan + patch all `.md`). section anchors preserved (`#Section`, `^block`).
 V6: ∀ API mutation ! atomic. write tmp → rename. partial writes ⊥.
-V7: markdown render = Obsidian flavor. ! parse: wikilinks, embeds (`![[…]]`), callouts (`> [!type]`), math (`$..$`, `$$..$$`), mermaid (````mermaid` fence), footnotes, tasks (`- [ ]`/`- [x]`), tags (`#tag`), tables, frontmatter (YAML head `---…---`).
-V8: theme toggle persisted in `localStorage`. initial = system pref.
-V9: editor saves on debounce 500ms & on blur. unsaved state visible.
+V7: markdown render = Obsidian flavor. ! parse: wikilinks, embeds, callouts, math, mermaid, footnotes, tasks, tags, tables, frontmatter, `==hl==`, `%%cm%%`, image dimensions `![[…|WxH]]`, heading anchors `[[Note#H]]`, raw HTML passthrough, syntax-highlighted code blocks via highlight.js (detect + ignore-missing).
+V8: theme toggle persisted in `localStorage` (device-local). initial = system pref. ⊥ persist to vault.
+V9: editor saves on debounce 500ms & on blur. unsaved state visible. manual commit/checkpoint ! flush save first.
 V10: mobile layout ≥ 320px width, no horizontal scroll, touch targets ≥ 44px.
-V11: index rebuild on startup. incremental on write. `mtime`-based.
-V12: media drag-drop into editor → upload → insert `![[file]]` at caret.
-V13: file ops never lose data. delete → trash to `.brain/trash/<ts>/` (recoverable).
-V14: search = full-text over note bodies + path. case-insensitive. returns top 50.
+V11: index rebuild on startup. incremental on write. `mtime`-based. entries hold `aliases` + merged `tags` (inline + frontmatter).
+V12: media drag-drop into editor → upload → insert `![[file]]` at caret position (`posAtCoords`).
+V13: file ops never lose data. delete → `.brain/trash/<ts>/<path>` (recoverable via `/api/trash/restore`).
+V14: search = full-text over title + body + path + tags. case-insensitive. returns top 50.
 V15: frontmatter parsed YAML. malformed → show error, do not crash render.
-V16: vault dir = git repo (auto `git init` on startup if `GIT_AUTOCOMMIT=1` & `.git` absent). `.brain/`, `node_modules`, `.DS_Store` git-ignored.
-V17: autocommit ! coalesce: debounce `GIT_AUTOCOMMIT_DEBOUNCE_MS` after last vault mutation. ≥1 staged change → commit. ⊥ commits else.
-V18: git ops ! confined to `VAULT_DIR`. ∀ paths passed to git resolved & checked. shell args ! never interpolated — use argv array.
+V16: vault dir = git repo (auto `git init` on startup if autocommit enabled & `.git` absent). `.brain/`, `node_modules`, `.DS_Store`, `*.tmp-*` git-ignored.
+V17: autocommit ! coalesce: debounce after last vault mutation. ≥1 staged change → commit. ⊥ commits else. flush() ! clearTimeout to prevent post-flush phantom fires.
+V18: git ops ! confined to `VAULT_DIR`. ∀ paths passed to git resolved & checked. shell args ! never interpolated — use argv array. GitRepo serialises writes through async mutex to prevent index lock races.
 V19: editor toolbar ∀ actions ! map to deterministic CM6 transactions. no DOM mutation. preserve undo.
-V20: toolbar tooltips ! show immediately on hover/focus (no browser delay). toolbar layout ! wrap to multi-row when overflow; ⊥ horizontal scroll on desktop.
-V21: editor ↔ preview scroll sync. cursor line in editor → active block in preview (`.active-block`). scroll either pane → other follows. sync ! loop-safe (debounced, reciprocal-fire suppressed).
-V22: note row in file tree ! draggable. drop on editor → insert `[[<basename>]]` at caret (no upload). MIME `application/x-brain-note` + text fallback.
-V23: `@<query>` typed in editor → autocomplete w/ note basenames. accepting suggestion replaces `@<query>` w/ `[[<chosen>]]`. coexists w/ `[[` trigger.
+V20: toolbar tooltips ! show immediately on hover/focus (no browser delay). desktop layout wraps to multi-row when overflow; ⊥ horizontal scroll (mobile fallback = scroll).
+V21: editor ↔ preview scroll sync. cursor line in editor → active block in preview (`.active-block`). anchor-aware: active block lands at same viewport Y as cursor when possible. SVG connector path drawn in pane gap, both endpoints visible. loop-safe (debounced, reciprocal-fire suppressed).
+V22: note row in file tree ! draggable. drop on editor → insert `[[basename]]` if basename unique vault-wide, else `[[Folder/Subfolder/Name]]`. MIME `application/x-brain-note` + text fallback.
+V23: `@<query>` typed in editor → autocomplete w/ note basenames. accepting suggestion replaces `@<query>` w/ `[[<chosen>]]`. coexists w/ `[[` trigger. `startCompletion` force-fired since `@` is not a word char.
+V24: embed `![[Note]]` → fetch & inline target body in preview. default-collapsed (max-height ~3em + fade). chevron toggles. recursion guard via visited-set.
+V25: click inside `.embed-body` ⊥ move parent editor cursor. clicks on the embed header (outside body) still emit a line-jump for the embed location.
+V26: click on preview block w/ `[data-source-line]` (not link/tag/checkbox/embed-body) → editor cursor jumps to that source line. text selection (collapsed=false) suppresses jump.
+V27: image / video / audio `src` in standard markdown / raw HTML — if relative (not http/https/data:/abs/anchor) → rewritten to `<note-dir>/.media/<basename>` via `buildMediaUrl`.
+V28: rendered headings h1..h6 get slug `id` attr (dedup w/ `-N`). wikilink `[[Note#Heading]]` href = `#/note/<path>#<slug>`. hash listener parses trailing `#<slug>` and scrolls editor + preview to matching heading line.
+V29: frontmatter `aliases: [..]` ! resolve sources (in addition to basename). frontmatter `tags: [..]` (or `tag:`) ! merge w/ inline `#tag` into index.tags.
+V30: drag from tree → linkTarget = basename if unique vault-wide, else full vault-relative path (no `.md`). Editor drop uses `linkTarget`.
+V31: `==text==` (paired, single-line, no `=` inside) ! render `<mark>` in preview. `%%text%%` (inline or multi-line) ! stripped from preview. neither affects raw editor source.
+V32: settings persist to `<VAULT>/.brain/settings.json` (atomic write). env vars = bootstrap default only — on load, settings.json overrides env. `bookmarks`, `dailyDir`, `git.autocommit`, `git.debounceMs` persisted per-vault. theme = device-local localStorage.
+V33: tag filter view fed by `/api/tags/notes?tag=X` (index.byTag). ! filter by note path substring. tag click in preview navigates to `#/tag/<name>` which loads filtered list.
+V34: folder icons selectable from catalog (~30 SVG) or custom emoji `emoji:<char>`. rendered as **badge** over base folder icon (bottom-right corner). picker persists to `.brain/folder-meta.json`.
+V35: file tree row supports right-click context menu (note: Open/Rename/Delete; folder: New note / New folder / Set icon / Rename / Delete) + 3-dot button revealing same menu on hover.
+V36: active line indicator: editor `.cm-activeLine` + preview `.active-block` share styling (`--bg-hover` + 1px `--accent` bottom box-shadow). SVG path connects both endpoints when both visible.
+V37: outline panel = headings tree of current note. click → jump editor + preview to that heading's line.
 
 ## §T TASKS
 
@@ -113,17 +156,17 @@ T17|x|renderer: math KaTeX inline & block|V7
 T18|x|renderer: mermaid fenced blocks|V7
 T19|x|renderer: tags `#tag` clickable → filtered view|V7
 T20|x|frontmatter YAML parse + show as property panel|V7,V15
-T21|x|backlinks panel (per-note) below editor|I.api
+T21|x|backlinks panel (per-note) below editor (later moved to sidebar)|I.api
 T22|x|search UI: command bar, results list, keyboard nav|I.web,V14
 T23|x|quick switcher (Ctrl/Cmd+O): fuzzy file open|I.web
 T24|x|command palette (Ctrl/Cmd+P): actions|I.web
-T25|x|outline panel: headings tree, jump to|I.web
-T26|x|bookmarks (star notes), persisted in `.brain/bookmarks.json` (web localStorage)|-
+T25|x|outline panel: headings tree, jump to|I.web,V37
+T26|x|bookmarks (star notes), persisted in `.brain/settings.json`|V32
 T27|x|theme: CSS vars light & dark, system pref + toggle, persist localStorage|V8
 T28|x|mobile UX: touch targets ≥44px, swipe drawer, sticky toolbar, no h-scroll|V10
 T29|x|media: upload button in toolbar + drag-drop zone over editor|V12
 T30|x|delete → trash dir, restore action|V13
-T31|x|tag index + `#tag` filtered note list view|V7
+T31|x|tag index + `#tag` filtered note list view|V7,V33
 T32|x|tasks across vault aggregated view (default core plugin parity)|V7
 T33|x|daily notes: open/create `YYYY-MM-DD.md` in configured folder|-
 T34|x|settings panel: vault path display, daily notes folder, editor opts|-
@@ -132,16 +175,46 @@ T36|x|e2e smoke: create note, link, embed image, render, mobile viewport|V7,V10
 T37|x|editor toolbar: B/I/S/H1-3, lists, tasks, quote, code, link, wikilink, image, table, math, callout|V19,I.web
 T38|x|git wrapper module: init, status, add, commit, log, show, diff, restore, tag|V16,V17,V18
 T39|x|autocommit pipeline: debounced after vault mutations, staged-only|V17
-T40|x|git API routes: status/log/show/diff/commit/restore/checkpoint|I.git
-T41|x|history panel UI per-note: list commits, click → diff & restore|I.web
+T40|x|git API routes: status/log/show/diff/commit/restore/checkpoint/flush/autocommit|I.git
+T41|x|history panel UI per-note: list commits, click → diff & restore, scope toggle (note/vault)|I.web
 T42|x|diff viewer (line-level red/green) in modal|I.web
-T43|x|manual commit + checkpoint buttons in topbar|I.web
-T44|x|settings toggle: enable/disable autocommit, debounce ms|I.web,V17
+T43|x|manual commit + checkpoint buttons in topbar (flush save first)|I.web,V9
+T44|x|settings toggle: enable/disable autocommit, debounce ms|I.web,V17,V32
 T45|x|toolbar UX: instant tooltips + wrap layout (no h-scroll)|V20
 T46|x|editor ↔ preview scroll & active-line sync|V21
 T47|x|drag note from tree → drop in editor → insert wikilink|V22
 T48|x|`@` trigger autocomplete for wikilinks|V23
-T49|x|folder icon picker: catalog of icons + emoji, persist to `.brain/folder-meta.json`|I.web
+T49|x|folder icon picker: catalog of icons + emoji, persist to `.brain/folder-meta.json`|V34
+T50|x|tag filter view backed by `/api/tags/notes` (index.byTag), not path substring|V33
+T51|x|cursor-anchor scroll: active preview block lands at same Y as editor cursor|V21
+T52|x|SVG sync connector overlay (bezier between cursor & active block, endpoints)|V21,V36
+T53|x|embed transclusion: lazy fetch + render target body in preview, recursion guard|V24
+T54|x|embed collapsible: default collapsed, chevron toggle, body max-height + fade|V24
+T55|x|click in `.embed-body` ⊥ jump parent editor cursor|V25
+T56|x|click preview block (data-source-line) → editor cursor jump (skip if selection)|V26
+T57|x|tree context menu (right-click + 3-dot): Open/Rename/Delete + folder New/Set icon|V35
+T58|x|folder icon as **badge** over base folder icon (right-bottom)|V34
+T59|x|remark plugins: ==highlight== → `<mark>`, %%comment%% → stripped|V31
+T60|x|embed dimensions `![[img\|W]]` & `\|WxH`: width/height applied to img/video|V7
+T61|x|rehype-headingIds: slug `id` on h1..h6 + dedup. wikilink href `#slug`. hash listener jumps to heading|V28
+T62|x|frontmatter aliases + tags integration: index entries hold aliases, resolve uses them; tags merged|V29
+T63|x|rehype-relativeMedia: rewrite relative `src` → `<note-dir>/.media/<basename>`|V27
+T64|x|drag-drop full path on ambiguous basename (basenameCounts)|V30
+T65|x|syntax highlighting in code blocks (rehype-highlight, theme via CSS vars)|V7
+T66|x|single shared toolbar above both panes, equal-height pane heads|I.web,V10
+T67|x|sidebar header w/ Search + New note + New folder icons|I.web
+T68|x|settings.json centralised (bookmarks/dailyDir/git autocommit) w/ atomic persist|V32
+T69|x|GitRepo serialise writes via async mutex (prevent autocommit ↔ manual race)|V18
+T70|x|IconBare (picker grid) vs FolderIconRender (tree badge) split|V34
+T71|x|push initial code to `git@github.com:mi4uu/brain.md.git`|-
 
 ## §B BUGS
 id|date|cause|fix
+B1|2026-05-24|Elysia wildcard `/api/note/*/rename` greedy — can't suffix-match|§I split → flat `POST /api/rename` body `{from,to}`
+B2|2026-05-24|`git log -50 --follow -- path` filter returns nothing if path absent in HEAD — UI showed only "initial"|HistoryPanel scope toggle "this note / all vault"; manual commit flushes editor save first; restore commits explicitly
+B3|2026-05-26|autocommit timer fires concurrently w/ manual commit → git index lock contention → 500|GitRepo writeChain mutex; Autocommit.flush clearTimeout. §V17 + §V18
+B4|2026-05-26|scroll sync used `el.offsetTop` (offsetParent=body) — preview scrolled to absolute page Y, not container scrollTop|getBoundingClientRect math: `container.scrollTop + (elRect.top − cRect.top)`
+B5|2026-05-26|tag click filtered notes by path substring — "no notes with this tag" even when tag present in body|new `/api/tags/notes?tag=X` using `index.byTag`. §V33
+B6|2026-05-26|embed `![[Note]]` rendered only header (title), no body|rehype lazy-fetch + inline render of target. recursion guard. §V24
+B7|2026-05-26|`@` autocomplete didn't fire — CM6 only auto-triggers on word chars; validFor excluded `@` so popup closed instantly|update listener inspects last typed char; force `startCompletion`. `validFor` regex includes `@`. §V23
+B8|2026-05-26|click inside transcluded embed body jumped parent editor cursor to a wrong line (embed body's data-source-line ≠ parent line)|click handler aborts if ancestor is `.embed-body`. §V25
