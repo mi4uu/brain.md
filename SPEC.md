@@ -220,7 +220,7 @@ T75|x|tree row 3-dot button → Radix DropdownMenu (same items)|V35,V38
 T76|x|toolbar tooltips → Radix Tooltip (delayDuration=0)|V20,V38,V40
 T77|x|command palette (Cmd/Ctrl+P) → Radix Dialog + cmdk|T24,V38,V40
 T78|x|quick switcher (Cmd/Ctrl+O) → Radix Dialog + cmdk|T23,V38
-T79|.|settings panel → Radix Dialog + Tabs (vault / editor / git / appearance)|T34,T44,V38
+T79|x|settings panel → Radix Dialog + Tabs (vault / editor / git / appearance)|T34,T44,V38
 T80|.|history panel + diff viewer → Radix Dialog + ScrollArea|T41,T42,V38
 T81|.|folder icon picker → Radix Popover + ScrollArea (catalog grid + emoji input)|T49,V34,V38
 T82|.|switches (autocommit, theme override) → Radix Switch|T27,T44,V38
