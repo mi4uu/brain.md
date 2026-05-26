@@ -45,6 +45,7 @@ import { useDebouncedSave } from "./hooks/useDebouncedSave";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { Toaster } from "./components/ui/toaster";
 import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
 import { toast as showToast } from "./components/ui/use-toast";
 import "./styles/tw.css";
 import "./styles/tokens.css";
@@ -629,62 +630,61 @@ export function App() {
                   : "error"
             : ""}
         </span>
-        <button className="btn icon" title="Search (⌘P)" onClick={() => setCmd("search")}>
+        <IconBtn label="Search (⌘P)" onClick={() => setCmd("search")}>
           <SearchIcon />
-        </button>
-        <button className="btn icon" title="Quick switch (⌘O)" onClick={() => setCmd("switcher")}>
+        </IconBtn>
+        <IconBtn label="Quick switch (⌘O)" onClick={() => setCmd("switcher")}>
           <SearchIcon />
-        </button>
-        <button
-          className="btn icon"
-          title={path && bookmarks.includes(path) ? "Remove bookmark" : "Bookmark"}
+        </IconBtn>
+        <IconBtn
+          label={path && bookmarks.includes(path) ? "Remove bookmark" : "Bookmark"}
           onClick={toggleBookmark}
           disabled={!path}
         >
           <StarIcon filled={path ? bookmarks.includes(path) : false} />
-        </button>
-        <button className="btn icon" title="Daily note" onClick={openDaily}>
+        </IconBtn>
+        <IconBtn label="Daily note" onClick={openDaily}>
           <CalendarIcon />
-        </button>
-        <button className="btn icon" title="Tasks" onClick={() => setShowTasks(true)}>
+        </IconBtn>
+        <IconBtn label="Tasks" onClick={() => setShowTasks(true)}>
           <CheckSquareIcon />
-        </button>
-        <button className="btn icon" title="Trash" onClick={() => setShowTrash(true)}>
+        </IconBtn>
+        <IconBtn label="Trash" onClick={() => setShowTrash(true)}>
           <TrashIcon />
-        </button>
+        </IconBtn>
         {gitStatus?.enabled ? (
           <>
             <GitStatusChip status={gitStatus} />
-            <button className="btn icon" title="History" onClick={() => setShowHistory(true)}>
+            <IconBtn label="History" onClick={() => setShowHistory(true)}>
               <HistoryIcon />
-            </button>
-            <button className="btn icon" title="Commit now" onClick={doCommit}>
+            </IconBtn>
+            <IconBtn label="Commit now" onClick={doCommit}>
               <GitCommitIcon />
-            </button>
-            <button className="btn icon" title="Checkpoint" onClick={doCheckpoint}>
+            </IconBtn>
+            <IconBtn label="Checkpoint" onClick={doCheckpoint}>
               <FlagIcon />
-            </button>
+            </IconBtn>
           </>
         ) : null}
         <ThemeButton theme={theme} setTheme={setTheme} />
-        <button className="btn icon" title="Settings" onClick={() => setShowSettings(true)}>
+        <IconBtn label="Settings" onClick={() => setShowSettings(true)}>
           <SettingsIcon />
-        </button>
+        </IconBtn>
       </header>
 
       <aside className={clsx("sidebar", drawerOpen && "open")}>
         <header>
           <strong style={{ fontSize: "var(--text-sm)", color: "var(--text-2)" }}>Vault</strong>
           <span style={{ flex: 1 }} />
-          <button className="btn icon" title="Search (⌘P)" onClick={() => setCmd("search")}>
+          <IconBtn label="Search (⌘P)" onClick={() => setCmd("search")}>
             <SearchIcon />
-          </button>
-          <button className="btn icon" title="New note" onClick={() => createNote("")}>
+          </IconBtn>
+          <IconBtn label="New note" onClick={() => createNote("")}>
             <FilePlusIcon />
-          </button>
-          <button className="btn icon" title="New folder" onClick={() => createFolder("")}>
+          </IconBtn>
+          <IconBtn label="New folder" onClick={() => createFolder("")}>
             <FolderPlusIcon />
-          </button>
+          </IconBtn>
         </header>
         {bookmarks.length > 0 ? (
           <div style={{ padding: "8px 8px 0" }}>
@@ -901,6 +901,35 @@ export function App() {
   );
 }
 
+function IconBtn({
+  label,
+  onClick,
+  disabled,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="btn icon"
+          aria-label={label}
+          onClick={onClick}
+          disabled={disabled}
+        >
+          {children}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 function GitStatusChip({ status }: { status: GitStatus }) {
   if (!status.enabled) return null;
   const cls = status.dirty ? "dirty" : "clean";
@@ -926,17 +955,25 @@ function GitStatusChip({ status }: { status: GitStatus }) {
 }
 
 function ThemeButton({ theme, setTheme }: { theme: ReturnType<typeof useTheme>["theme"]; setTheme: (t: ReturnType<typeof useTheme>["theme"]) => void }) {
+  const label = `Theme: ${theme} (click to cycle)`;
   return (
-    <button
-      className="btn icon"
-      title={`Theme: ${theme}`}
-      onClick={() => {
-        const next = theme === "light" ? "dark" : theme === "dark" ? "system" : "light";
-        setTheme(next);
-      }}
-    >
-      {theme === "dark" ? <MoonIcon /> : theme === "light" ? <SunIcon /> : <SunIcon />}
-    </button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="btn icon"
+          aria-label={label}
+          onClick={() => {
+            const next =
+              theme === "light" ? "dark" : theme === "dark" ? "system" : "light";
+            setTheme(next);
+          }}
+        >
+          {theme === "dark" ? <MoonIcon /> : <SunIcon />}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
   );
 }
 

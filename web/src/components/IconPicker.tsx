@@ -46,6 +46,7 @@ export function IconPicker({
                 key={it.key}
                 type="button"
                 title={it.label}
+                aria-label={`Set icon: ${it.label}`}
                 onClick={() => onSave(it.key)}
                 className={`flex aspect-square items-center justify-center rounded-1 transition-colors duration-fast ${
                   currentIcon === it.key
