@@ -1,0 +1,152 @@
+:root {
+  /* spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* radius */
+  --radius-1: 4px;
+  --radius-2: 6px;
+  --radius-3: 10px;
+
+  /* type */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto,
+    Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  --font-serif: "Iowan Old Style", "Source Serif Pro", Georgia, serif;
+
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 15px;
+  --text-md: 17px;
+  --text-lg: 20px;
+  --text-xl: 26px;
+  --text-2xl: 32px;
+
+  --line-tight: 1.3;
+  --line-base: 1.55;
+  --line-relaxed: 1.7;
+
+  /* timing */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* z layers */
+  --z-drawer: 30;
+  --z-modal: 50;
+  --z-toast: 80;
+
+  /* tap target */
+  --tap: 44px;
+}
+
+/* light (default) */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-app: #fafaf9;
+  --bg-surface: #ffffff;
+  --bg-surface-2: #f4f4f2;
+  --bg-elev: #ffffff;
+  --bg-hover: rgba(0, 0, 0, 0.04);
+  --bg-active: rgba(0, 0, 0, 0.08);
+  --bg-selected: rgba(110, 86, 207, 0.12);
+  --border: rgba(0, 0, 0, 0.09);
+  --border-strong: rgba(0, 0, 0, 0.15);
+  --text-1: #1a1a1a;
+  --text-2: #404040;
+  --text-3: #6b6b6b;
+  --text-4: #9a9a9a;
+  --accent: #6e56cf;
+  --accent-strong: #5b46b8;
+  --accent-soft: rgba(110, 86, 207, 0.12);
+  --link: #4f46e5;
+  --link-broken: #d97706;
+  --code-bg: #f3f3f1;
+  --selection: rgba(110, 86, 207, 0.25);
+  --tag-bg: #eef0ff;
+  --tag-fg: #4338ca;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 6px rgba(0, 0, 0, 0.05);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --callout-note: #3b82f6;
+  --callout-warn: #f59e0b;
+  --callout-danger: #ef4444;
+  --callout-tip: #10b981;
+  --callout-info: #06b6d4;
+  --callout-quote: #6b7280;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-app: #16161a;
+  --bg-surface: #1c1c20;
+  --bg-surface-2: #232328;
+  --bg-elev: #26262c;
+  --bg-hover: rgba(255, 255, 255, 0.05);
+  --bg-active: rgba(255, 255, 255, 0.09);
+  --bg-selected: rgba(155, 135, 245, 0.16);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --text-1: #ecedee;
+  --text-2: #c1c2c5;
+  --text-3: #909296;
+  --text-4: #5c5f66;
+  --accent: #9b87f5;
+  --accent-strong: #b6a4ff;
+  --accent-soft: rgba(155, 135, 245, 0.16);
+  --link: #a78bfa;
+  --link-broken: #f59e0b;
+  --code-bg: #232328;
+  --selection: rgba(155, 135, 245, 0.32);
+  --tag-bg: rgba(155, 135, 245, 0.16);
+  --tag-fg: #c4b5fd;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.32);
+  --shadow-2: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --callout-note: #60a5fa;
+  --callout-warn: #fbbf24;
+  --callout-danger: #f87171;
+  --callout-tip: #34d399;
+  --callout-info: #22d3ee;
+  --callout-quote: #94a3b8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --bg-app: #16161a;
+    --bg-surface: #1c1c20;
+    --bg-surface-2: #232328;
+    --bg-elev: #26262c;
+    --bg-hover: rgba(255, 255, 255, 0.05);
+    --bg-active: rgba(255, 255, 255, 0.09);
+    --bg-selected: rgba(155, 135, 245, 0.16);
+    --border: rgba(255, 255, 255, 0.08);
+    --border-strong: rgba(255, 255, 255, 0.16);
+    --text-1: #ecedee;
+    --text-2: #c1c2c5;
+    --text-3: #909296;
+    --text-4: #5c5f66;
+    --accent: #9b87f5;
+    --accent-strong: #b6a4ff;
+    --accent-soft: rgba(155, 135, 245, 0.16);
+    --link: #a78bfa;
+    --link-broken: #f59e0b;
+    --code-bg: #232328;
+    --selection: rgba(155, 135, 245, 0.32);
+    --tag-bg: rgba(155, 135, 245, 0.16);
+    --tag-fg: #c4b5fd;
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.32);
+    --shadow-2: 0 12px 32px rgba(0, 0, 0, 0.5);
+    --callout-note: #60a5fa;
+    --callout-warn: #fbbf24;
+    --callout-danger: #f87171;
+    --callout-tip: #34d399;
+    --callout-info: #22d3ee;
+    --callout-quote: #94a3b8;
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "brain.md",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": ["server", "web"],
+  "scripts": {
+    "dev": "bun --filter '*' dev",
+    "dev:server": "bun --cwd server run dev",
+    "dev:web": "bun --cwd web run dev",
+    "build": "bun --cwd web run build",
+    "start": "bun --cwd server run start",
+    "test": "bun --cwd server test",
+    "typecheck": "bun --cwd server run typecheck && bun --cwd web run typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

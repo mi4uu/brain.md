@@ -1,0 +1,115 @@
+.editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  min-height: 44px;
+}
+
+.editor-toolbar .tb-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.editor-toolbar .tb-sep {
+  width: 1px;
+  height: 22px;
+  background: var(--border);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.editor-toolbar .tb-btn {
+  position: relative;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: var(--radius-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  flex-shrink: 0;
+}
+.editor-toolbar .tb-btn:hover,
+.editor-toolbar .tb-btn:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text-1);
+  outline: none;
+}
+.editor-toolbar .tb-btn:active {
+  background: var(--bg-active);
+}
+
+/* instant tooltip (no browser delay) */
+.editor-toolbar .tb-btn[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%) translateY(-2px);
+  padding: 4px 8px;
+  border-radius: var(--radius-1);
+  background: var(--text-1);
+  color: var(--bg-app);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  z-index: var(--z-toast);
+  box-shadow: var(--shadow-2);
+  transition: opacity 0s linear, transform 0s linear;
+}
+.editor-toolbar .tb-btn[data-tip]::before {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-bottom-color: var(--text-1);
+  pointer-events: none;
+  opacity: 0;
+  z-index: var(--z-toast);
+}
+.editor-toolbar .tb-btn:hover[data-tip]::after,
+.editor-toolbar .tb-btn:focus-visible[data-tip]::after,
+.editor-toolbar .tb-btn:hover[data-tip]::before,
+.editor-toolbar .tb-btn:focus-visible[data-tip]::before {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* mobile: collapse to single horizontal scrolling row to save vertical space */
+@media (hover: none), (max-width: 540px) {
+  .editor-toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    scrollbar-width: none;
+  }
+  .editor-toolbar::-webkit-scrollbar {
+    display: none;
+  }
+  .editor-toolbar .tb-btn {
+    min-width: 40px;
+    height: 40px;
+  }
+  .editor-toolbar .tb-btn[data-tip]::after,
+  .editor-toolbar .tb-btn[data-tip]::before {
+    display: none;
+  }
+}

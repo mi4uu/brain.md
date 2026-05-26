@@ -1,0 +1,145 @@
+:root {
+  --hl-comment: var(--text-3);
+  --hl-keyword: #c084fc;
+  --hl-string: #86efac;
+  --hl-number: #fbbf24;
+  --hl-fn: #60a5fa;
+  --hl-type: #5eead4;
+  --hl-attr: #f472b6;
+  --hl-tag: #ef4444;
+  --hl-meta: var(--text-3);
+  --hl-symbol: #c4b5fd;
+  --hl-builtin: #38bdf8;
+  --hl-deleted: #f87171;
+  --hl-inserted: #4ade80;
+}
+
+:root[data-theme="light"] {
+  --hl-comment: #6b7280;
+  --hl-keyword: #7c3aed;
+  --hl-string: #16a34a;
+  --hl-number: #d97706;
+  --hl-fn: #2563eb;
+  --hl-type: #0d9488;
+  --hl-attr: #db2777;
+  --hl-tag: #dc2626;
+  --hl-meta: #6b7280;
+  --hl-symbol: #6d28d9;
+  --hl-builtin: #0284c7;
+  --hl-deleted: #b91c1c;
+  --hl-inserted: #15803d;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --hl-comment: #6b7280;
+    --hl-keyword: #7c3aed;
+    --hl-string: #16a34a;
+    --hl-number: #d97706;
+    --hl-fn: #2563eb;
+    --hl-type: #0d9488;
+    --hl-attr: #db2777;
+    --hl-tag: #dc2626;
+    --hl-meta: #6b7280;
+    --hl-symbol: #6d28d9;
+    --hl-builtin: #0284c7;
+    --hl-deleted: #b91c1c;
+    --hl-inserted: #15803d;
+  }
+}
+
+.preview .doc .hljs {
+  display: block;
+  background: transparent;
+  color: var(--text-1);
+}
+
+.preview .doc .hljs-comment,
+.preview .doc .hljs-quote {
+  color: var(--hl-comment);
+  font-style: italic;
+}
+
+.preview .doc .hljs-keyword,
+.preview .doc .hljs-selector-tag,
+.preview .doc .hljs-literal,
+.preview .doc .hljs-section,
+.preview .doc .hljs-link {
+  color: var(--hl-keyword);
+}
+
+.preview .doc .hljs-string,
+.preview .doc .hljs-regexp,
+.preview .doc .hljs-doctag {
+  color: var(--hl-string);
+}
+
+.preview .doc .hljs-number,
+.preview .doc .hljs-meta .hljs-number {
+  color: var(--hl-number);
+}
+
+.preview .doc .hljs-title,
+.preview .doc .hljs-title.function_,
+.preview .doc .hljs-title.class_,
+.preview .doc .hljs-title.class_.inherited__ {
+  color: var(--hl-fn);
+}
+
+.preview .doc .hljs-type,
+.preview .doc .hljs-class .hljs-title {
+  color: var(--hl-type);
+}
+
+.preview .doc .hljs-attr,
+.preview .doc .hljs-attribute,
+.preview .doc .hljs-variable,
+.preview .doc .hljs-template-variable,
+.preview .doc .hljs-property,
+.preview .doc .hljs-params {
+  color: var(--hl-attr);
+}
+
+.preview .doc .hljs-tag,
+.preview .doc .hljs-name,
+.preview .doc .hljs-selector-id,
+.preview .doc .hljs-selector-class {
+  color: var(--hl-tag);
+}
+
+.preview .doc .hljs-meta,
+.preview .doc .hljs-meta-keyword {
+  color: var(--hl-meta);
+}
+
+.preview .doc .hljs-symbol,
+.preview .doc .hljs-bullet {
+  color: var(--hl-symbol);
+}
+
+.preview .doc .hljs-built_in,
+.preview .doc .hljs-builtin-name {
+  color: var(--hl-builtin);
+}
+
+.preview .doc .hljs-addition {
+  color: var(--hl-inserted);
+  background: rgba(74, 222, 128, 0.08);
+}
+
+.preview .doc .hljs-deletion {
+  color: var(--hl-deleted);
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.preview .doc .hljs-emphasis {
+  font-style: italic;
+}
+
+.preview .doc .hljs-strong {
+  font-weight: 600;
+}
+
+.preview .doc pre code.hljs {
+  padding: 0;
+}

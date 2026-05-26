@@ -1,0 +1,180 @@
+.tree {
+  font-size: var(--text-sm);
+  user-select: none;
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: var(--radius-1);
+  color: var(--text-2);
+  min-height: 32px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-row:hover {
+  background: var(--bg-hover);
+  color: var(--text-1);
+}
+.tree-row.active {
+  background: var(--bg-selected);
+  color: var(--accent-strong);
+  font-weight: 500;
+}
+
+.tree-row .chev {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  transition: transform var(--dur-fast) var(--ease);
+  flex-shrink: 0;
+}
+.tree-row.expanded .chev {
+  transform: rotate(90deg);
+}
+.tree-row .icon {
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+.tree-row .label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-children {
+  padding-left: 14px;
+  border-left: 1px solid var(--border);
+  margin-left: 8px;
+}
+
+.tree-empty {
+  color: var(--text-3);
+  font-size: var(--text-sm);
+  padding: var(--space-3);
+  text-align: center;
+}
+
+.tree-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.tree-row:hover .tree-actions {
+  opacity: 1;
+}
+.tree-actions button {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+}
+.tree-actions button:hover {
+  background: var(--bg-active);
+  color: var(--text-1);
+}
+
+@media (hover: none) {
+  .tree-actions {
+    opacity: 1;
+  }
+  .tree-row {
+    min-height: var(--tap);
+  }
+}
+
+.ctx-menu {
+  position: fixed;
+  z-index: var(--z-modal);
+  min-width: 180px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-2);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-1);
+  text-align: left;
+  font-size: var(--text-sm);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+.ctx-item:hover,
+.ctx-item:focus-visible {
+  background: var(--bg-hover);
+  outline: none;
+}
+.ctx-item.destructive {
+  color: var(--callout-danger);
+}
+.ctx-item.destructive:hover {
+  background: rgba(239, 68, 68, 0.12);
+}
+.ctx-item[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ctx-icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+}
+
+.icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+  gap: 6px;
+  max-height: 42vh;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--bg-surface);
+}
+.icon-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  background: transparent;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.icon-cell:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+.icon-cell.active {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
