@@ -217,7 +217,7 @@ T72|x|add radix deps + tailwind v3 + class-variance-authority + clsx + tailwind-
 T73|x|scaffold `web/src/components/ui/` primitives per terax-ai pattern: context-menu, dropdown-menu, dialog, popover, tooltip, tabs, toolbar, select, switch, toast, scroll-area, separator, accordion|V38,V39
 T74|x|tree row right-click → Radix ContextMenu (Open/Rename/Delete; folder: New note/folder, Set icon)|V35,V38,V40
 T75|x|tree row 3-dot button → Radix DropdownMenu (same items)|V35,V38
-T76|.|toolbar tooltips → Radix Tooltip (delayDuration=0)|V20,V38,V40
+T76|x|toolbar tooltips → Radix Tooltip (delayDuration=0)|V20,V38,V40
 T77|.|command palette (Cmd/Ctrl+P) → Radix Dialog + cmdk|T24,V38,V40
 T78|.|quick switcher (Cmd/Ctrl+O) → Radix Dialog + cmdk|T23,V38
 T79|.|settings panel → Radix Dialog + Tabs (vault / editor / git / appearance)|T34,T44,V38

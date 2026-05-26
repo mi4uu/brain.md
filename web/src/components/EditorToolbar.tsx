@@ -20,6 +20,7 @@ import {
   callout,
   horizontalRule,
 } from "../editor/actions";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 interface Props {
   getView: () => EditorView | null;
@@ -28,21 +29,25 @@ interface Props {
 
 function btn(label: string, title: string, onClick: () => void, opts?: { variant?: "icon" | "text"; mono?: boolean }) {
   return (
-    <button
-      type="button"
-      className="tb-btn"
-      data-tip={title}
-      aria-label={title}
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={(e) => {
-        e.preventDefault();
-        onClick();
-      }}
-      data-variant={opts?.variant ?? "text"}
-      style={opts?.mono ? { fontFamily: "var(--font-mono)" } : undefined}
-    >
-      {label}
-    </button>
+    <Tooltip key={title}>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="tb-btn"
+          aria-label={title}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={(e) => {
+            e.preventDefault();
+            onClick();
+          }}
+          data-variant={opts?.variant ?? "text"}
+          style={opts?.mono ? { fontFamily: "var(--font-mono)" } : undefined}
+        >
+          {label}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{title}</TooltipContent>
+    </Tooltip>
   );
 }
 
