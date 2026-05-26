@@ -8,7 +8,11 @@ export function normalizeRel(rel: string): string {
   if (rel.includes("\0")) {
     throw new VaultError("null byte in path", "INVALID_PATH");
   }
-  let r = rel.replace(/\\/g, "/").trim();
+  // V42: vault is POSIX-only. Do NOT rewrite "\" → "/" — that would
+  // silently corrupt filenames containing a literal backslash. assertSafeBasename
+  // is the gate that prevents `\` (and other forbidden chars) entering basenames
+  // at create/rename time.
+  let r = rel.trim();
   while (r.startsWith("/")) r = r.slice(1);
   if (r === "" || r === ".") return "";
   const norm = posix.normalize(r);
@@ -16,6 +20,42 @@ export function normalizeRel(rel: string): string {
     throw new VaultError("path traversal", "TRAVERSAL");
   }
   return norm;
+}
+
+// V42: forbidden in note + folder basenames (per-segment).
+// `/` is a path separator (would split the path).
+// `\` would historically have been rewritten to `/` by normalizeRel.
+// `%` round-trips ambiguously through URL encoding.
+// NUL/CR/LF break filesystem + HTTP layers.
+// Leading `.` is reserved for vault control dirs (.brain, .media, .git).
+const FORBIDDEN_CHARS = /[/\\%\x00\r\n]/;
+export function assertSafeBasename(name: string): void {
+  if (typeof name !== "string" || name.length === 0) {
+    throw new VaultError("name must be non-empty string", "INVALID_NAME");
+  }
+  if (FORBIDDEN_CHARS.test(name)) {
+    throw new VaultError(
+      `name contains forbidden character (one of / \\ % NUL CR LF): ${JSON.stringify(name)}`,
+      "INVALID_NAME",
+    );
+  }
+  if (name.startsWith(".")) {
+    throw new VaultError(
+      `name must not start with "." (reserved for control dirs): ${name}`,
+      "INVALID_NAME",
+    );
+  }
+  if (name.length > 200) {
+    throw new VaultError("name too long (max 200 chars)", "INVALID_NAME");
+  }
+}
+
+export function assertSafePath(rel: string): void {
+  const norm = normalizeRel(rel);
+  if (norm === "") return;
+  for (const seg of norm.split("/")) {
+    assertSafeBasename(seg);
+  }
 }
 
 export function safeJoin(vaultDir: string, rel: string): string {

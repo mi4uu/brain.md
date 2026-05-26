@@ -47,6 +47,7 @@ import { Toaster } from "./components/ui/toaster";
 import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
 import { toast as showToast } from "./components/ui/use-toast";
+import { validateBasename } from "./lib/validate";
 import "./styles/tw.css";
 import "./styles/tokens.css";
 import "./styles/global.css";
@@ -412,7 +413,11 @@ export function App() {
       const name = prompt("New note name (no .md)", "Untitled");
       if (!name) return;
       const trimmed = name.trim();
-      if (!trimmed) return;
+      const err = validateBasename(trimmed);
+      if (err) {
+        setToast(`Invalid name: ${err}`);
+        return;
+      }
       const rel = (parentDir ? `${parentDir}/` : "") + `${trimmed}.md`;
       try {
         await api.writeNote(rel, `# ${trimmed}\n\n`);
@@ -429,7 +434,13 @@ export function App() {
     async (parentDir: string) => {
       const name = prompt("New folder name");
       if (!name) return;
-      const rel = (parentDir ? `${parentDir}/` : "") + name.trim();
+      const trimmed = name.trim();
+      const err = validateBasename(trimmed);
+      if (err) {
+        setToast(`Invalid name: ${err}`);
+        return;
+      }
+      const rel = (parentDir ? `${parentDir}/` : "") + trimmed;
       try {
         await api.mkdir(rel);
         await refreshTree();
@@ -446,8 +457,14 @@ export function App() {
       const curBase = isFolder ? cur : cur.replace(/\.md$/, "");
       const next = prompt(`Rename ${isFolder ? "folder" : "note"}`, curBase);
       if (!next || next === curBase) return;
+      const trimmed = next.trim();
+      const err = validateBasename(trimmed);
+      if (err) {
+        setToast(`Invalid name: ${err}`);
+        return;
+      }
       const dir = p.includes("/") ? p.slice(0, p.lastIndexOf("/") + 1) : "";
-      const target = isFolder ? `${dir}${next}` : `${dir}${next}.md`;
+      const target = isFolder ? `${dir}${trimmed}` : `${dir}${trimmed}.md`;
       try {
         if (isFolder) {
           setToast("Folder rename not yet supported");

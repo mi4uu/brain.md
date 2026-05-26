@@ -11,6 +11,8 @@ import {
 import { dirname, join, posix, resolve } from "node:path";
 import {
   assertMarkdown,
+  assertSafePath,
+  assertSafeBasename,
   basename,
   normalizeRel,
   parentDir,
@@ -89,6 +91,7 @@ export class Vault {
 
   async writeNote(rel: string, content: string): Promise<NoteData> {
     assertMarkdown(rel);
+    assertSafePath(rel);
     const abs = this.abs(rel);
     await mkdir(dirname(abs), { recursive: true });
     await atomicWrite(abs, content);
@@ -108,6 +111,8 @@ export class Vault {
   async renameNote(from: string, to: string): Promise<void> {
     assertMarkdown(from);
     assertMarkdown(to);
+    // `from` may be a pathological pre-V42 file; only enforce on the target.
+    assertSafePath(to);
     const fromAbs = this.abs(from);
     const toAbs = this.abs(to);
     const toStat = await safeStat(toAbs);
@@ -122,6 +127,7 @@ export class Vault {
   async mkdirFolder(rel: string): Promise<void> {
     const norm = normalizeRel(rel);
     if (norm === "") return;
+    assertSafePath(norm);
     await mkdir(this.abs(norm), { recursive: true });
     this.notify("folder-create", norm);
   }

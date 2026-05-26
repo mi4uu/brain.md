@@ -4,6 +4,7 @@ export function vaultErrorToStatus(e: VaultError): number {
   switch (e.code) {
     case "TRAVERSAL":
     case "INVALID_PATH":
+    case "INVALID_NAME":
     case "NOT_MARKDOWN":
       return 400;
     case "NOT_FOUND":
