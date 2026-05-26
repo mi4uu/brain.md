@@ -42,6 +42,7 @@ import { useTheme } from "./hooks/useTheme";
 import { useMediaQuery } from "./hooks/useMediaQuery";
 import { settingsApi, type AppSettings } from "./api/settings";
 import { useDebouncedSave } from "./hooks/useDebouncedSave";
+import "./styles/tw.css";
 import "./styles/tokens.css";
 import "./styles/global.css";
 import "./styles/layout.css";
