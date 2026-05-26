@@ -234,7 +234,7 @@ T86|x|a11y pass: ARIA labels on all icon-only buttons, Icons get aria-hidden+foc
 T87|x|visual pass: compact density on menu items/tabs (py-1.5 → py-1) for desktop-app feel. hairline borders + shadows already token-driven. dark+light parity unchanged. deeper polish (sidebar/topbar tightening, refined accent intensity) deferred until browser-driven review|V39
 T88|x|remove legacy widget code: hand-rolled context menu positioning, custom tooltip, custom modal backdrops, custom focus trap|V38
 T89|.|sidebar: 5-section Radix Accordion wrapper (Bookmarks, Vault, Tags, Outline, Backlinks); type="multiple", default Vault open|I.web,V38,V43
-T90|.|useSidebarSection hook: localStorage-backed open/closed per section id; read on mount, write on toggle|V43,V8
+T90|x|useSidebarSection hook: localStorage-backed open/closed per section id; read on mount, write on toggle|V43,V8
 T91|.|Tags sidebar section: list `[{tag,count}]` from /api/tags sorted by count desc, click → `#/tag/<name>`|I.api,V33,V43
 T92|.|section headers match terax-ai pattern: compact row, ChevronDown rotate, hover bg, uppercase label like existing OUTLINE / BACKLINKS|V39,V43
 
