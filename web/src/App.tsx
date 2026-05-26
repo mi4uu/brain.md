@@ -635,6 +635,18 @@ export function App() {
         >
           <MenuIcon />
         </button>
+        <a
+          href="#/"
+          aria-label="brain.md home"
+          className="brand"
+          onClick={(e) => {
+            e.preventDefault();
+            setPath(null);
+          }}
+        >
+          <img src="/brainmdlogo.png" alt="" width={22} height={22} />
+          <span className="brand-name">brain.md</span>
+        </a>
         <span className="title">{path ? path.replace(/\.md$/, "") : ""}</span>
         <span className="saved">
           {path
@@ -687,18 +699,6 @@ export function App() {
         <IconBtn label="Settings" onClick={() => setShowSettings(true)}>
           <SettingsIcon />
         </IconBtn>
-        <a
-          href="#/"
-          aria-label="brain.md home"
-          className="brand"
-          onClick={(e) => {
-            e.preventDefault();
-            setPath(null);
-          }}
-        >
-          <img src="/brainmdlogo.png" alt="" width={22} height={22} />
-          <span className="brand-name">brain.md</span>
-        </a>
       </header>
 
       <aside className={clsx("sidebar", drawerOpen && "open")}>
