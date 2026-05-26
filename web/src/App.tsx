@@ -360,6 +360,8 @@ export function App() {
         if (p) openNote(p, { headingSlug: slug });
       } else if (h.startsWith("#/tag/")) {
         setTagFilter(decodeURIComponent(h.slice("#/tag/".length)));
+        setPath(null);
+        setContent("");
       }
     }
     window.addEventListener("hashchange", onHash);
@@ -869,7 +871,9 @@ export function App() {
           </div>
         ) : null}
         <section className="pane editor-pane">
-          {path ? (
+          {tagFilter ? (
+            <TagFilterView tag={tagFilter} notes={tagFilteredNotes ?? []} onOpen={openNote} onClear={() => setTagFilter(null)} />
+          ) : path ? (
             <>
               <Editor
                 value={content}
@@ -890,8 +894,6 @@ export function App() {
                 onChange={onFileInputChange}
               />
             </>
-          ) : tagFilter ? (
-            <TagFilterView tag={tagFilter} notes={tagFilteredNotes ?? []} onOpen={openNote} onClear={() => setTagFilter(null)} />
           ) : (
             <div className="empty-state">
               <h2>No note open</h2>
