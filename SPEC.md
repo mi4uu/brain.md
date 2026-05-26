@@ -20,6 +20,7 @@ web Obsidian clone. edit `.md` vault from browser & phone. core-plugin parity, n
 - vault-local config = `<VAULT>/.brain/*.json` (settings, index, folder-meta, trash). env = bootstrap default only
 - UI primitives: Radix UI (`@radix-ui/react-*`) — menus, dialogs, tooltips, popovers, tabs, toolbar, switch, toast, scroll-area
 - UI vibe = desktop app (compact rows, hairline borders, subtle elevation). ref pattern: terax-ai `src/components/ui/context-menu.tsx` (Radix + Tailwind, dark-first)
+- default vault + settings paths follow XDG Base Directory Spec on ALL platforms (macOS, Linux, Windows): vault = `${XDG_DATA_HOME:-$HOME/.local/share}/brain.md/vault`, settings = `${XDG_CONFIG_HOME:-$HOME/.config}/brain.md/`. ⊥ implicit `./vault` fallback.
 
 ## §I INTERFACES
 
@@ -75,11 +76,19 @@ web Obsidian clone. edit `.md` vault from browser & phone. core-plugin parity, n
 - `POST /api/folder-meta` body `{path, icon?, color?}` → `{ok, meta}`
 
 ### CLI / env
-- `bun start` → serve `:3000`
-- `VAULT_DIR` = abs path (default `./vault`)
-- `PORT` (default `3000`)
-- `GIT_AUTOCOMMIT` = `1`/`0` (bootstrap default if no settings.json)
-- `GIT_AUTOCOMMIT_DEBOUNCE_MS` (bootstrap default)
+- `brain` or `bun start` → serve `:3000`
+- `brain --help` / `-h` → print usage + exit 0
+- `brain --version` → print version + exit 0
+- `brain --vault-dir <path>` / `-v <path>` → override vault location
+- `brain --port <n>` / `-p <n>` → override HTTP port
+- env (lower precedence than CLI flags):
+  - `VAULT_DIR` (default = XDG path above)
+  - `PORT` (default `3000`)
+  - `XDG_DATA_HOME` / `XDG_CONFIG_HOME` honored on all platforms
+  - `GIT_AUTOCOMMIT` = `1`/`0` (bootstrap default if no settings.json)
+  - `GIT_AUTOCOMMIT_DEBOUNCE_MS` (bootstrap default)
+- precedence: CLI flag > env var > XDG default
+- unknown CLI flag → stderr error + exit 2
 
 ### filesystem layout
 ```
@@ -141,6 +150,8 @@ V40: tooltips instant (delayDuration=0 at provider), match V20. context menu = R
 V41: file tree row actions (3-dot menu + folder new-note button) ! visible only on `:hover` / `:focus-within` of the row. inline duplicates of dropdown-menu items ⊥ — ∀ destructive/structural actions live solely in the 3-dot DropdownMenu (T75). label gets full row width minus chevron + icon when row idle, so deep nesting (Journal/aaa/seepdir/deep01.md) stays readable. ref: VSCode + Obsidian tree behaviour.
 V42: note + folder basenames ! contain `/`, `\`, `%`, NULL byte, CR, LF, or leading `.`. server rejects 400 INVALID_NAME at create/rename/folder-create/media-upload. client validates the same set in new-note/new-folder/rename prompts before submit (inline error, ! send). vault is POSIX-only: `normalizeRel` ⊥ rewrite `\` to `/` (legitimate `\` in basenames impossible under this rule; rewrite previously silently corrupted such files). Elysia ⊥ auto-decode the `*` wildcard param — ∀ route reading a path-shaped wildcard MUST call `decodeWildcard()` (single `decodeURIComponent`) before passing to vault, so existing pathological files (e.g. `ddd%5C.md`) round-trip correctly: client encodes `%` → `%25`, server decodes once → matches disk.
 V43: sidebar sections (Bookmarks, Vault, Tags, Outline, Backlinks) each collapsable independently via Radix Accordion (type="multiple"). open/closed state per-section persisted to localStorage key `brain.sidebar.<id>` (device-local, ⊥ vault). default on first load: Vault open; rest collapsed. Tags section sources from `/api/tags` (I.api), sorted by count desc; click tag → `#/tag/<name>` filter (V33).
+V44: default vault location = `${XDG_DATA_HOME:-$HOME/.local/share}/brain.md/vault` on all platforms (macOS, Linux, Windows — same logic, no OS branch). default settings dir = `${XDG_CONFIG_HOME:-$HOME/.config}/brain.md/`. server resolves on startup: CLI > env > XDG default. `mkdir -p` resolved vault dir if missing (first run = empty vault, ! crash).
+V45: server entry exposes `--help`/`-h`, `--vault-dir`/`-v <path>`, `--port`/`-p <n>`, `--version`. `--help` prints usage block + exits 0; unknown flag → stderr msg + exit 2.
 
 ## §T TASKS
 
@@ -237,6 +248,10 @@ T89|x|sidebar: 5-section Radix Accordion wrapper (Bookmarks, Vault, Tags, Outlin
 T90|x|useSidebarSection hook: localStorage-backed open/closed per section id; read on mount, write on toggle|V43,V8
 T91|x|Tags sidebar section: list `[{tag,count}]` from /api/tags sorted by count desc, click → `#/tag/<name>`|I.api,V33,V43
 T92|x|section headers match terax-ai pattern: compact row, ChevronDown rotate, hover bg, uppercase label like existing OUTLINE / BACKLINKS|V39,V43
+T93|.|XDG path resolver: `getDefaultVaultDir()` + `getDefaultSettingsDir()` in server/src/config/paths.ts using XDG vars w/ HOME fallback, no OS branching|V44
+T94|.|CLI parser in server/src/cli.ts: --help/-h, --vault-dir/-v, --port/-p, --version. unknown flag → exit 2|V45,I.cli
+T95|.|server entry wires precedence (cli > env > XDG default) for VAULT_DIR + PORT. mkdir -p vault on first run|V44,V45,I.cli
+T96|.|update README.md: XDG default paths + CLI usage block|V44,V45
 
 ## §B BUGS
 id|date|cause|fix
