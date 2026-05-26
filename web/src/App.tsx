@@ -112,6 +112,7 @@ export function App() {
     showToast({ description: msg, variant });
   };
   const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [tags, setTags] = useState<Array<{ tag: string; count: number }>>([]);
   const editorViewRef = useRef<EditorView | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const previewHandleRef = useRef<PreviewHandle | null>(null);
@@ -254,6 +255,16 @@ export function App() {
       setTree(t);
     } catch (e) {
       setToast(`Load failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    try {
+      const r = await fetch("/api/tags");
+      if (r.ok) {
+        const items = (await r.json()) as Array<{ tag: string; count: number }>;
+        items.sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+        setTags(items);
+      }
+    } catch {
+      // tags optional; silent fail
     }
   }, []);
 
@@ -793,9 +804,30 @@ export function App() {
             </AccordionItem>
 
             <AccordionItem value="tags" className="sidebar-item">
-              <AccordionTrigger className="sidebar-trigger">Tags</AccordionTrigger>
+              <AccordionTrigger className="sidebar-trigger">
+                Tags{tags.length > 0 ? ` · ${tags.length}` : ""}
+              </AccordionTrigger>
               <AccordionContent className="sidebar-body">
-                <p className="sidebar-empty">Tag list loads here.</p>
+                {tags.length === 0 ? (
+                  <p className="sidebar-empty">No tags in vault.</p>
+                ) : (
+                  <ul className="sidebar-tags">
+                    {tags.map((t) => (
+                      <li key={t.tag}>
+                        <a
+                          href={`#/tag/${encodeURIComponent(t.tag)}`}
+                          className={clsx(
+                            "sidebar-tag",
+                            tagFilter === t.tag && "active",
+                          )}
+                        >
+                          <span className="sidebar-tag-name">#{t.tag}</span>
+                          <span className="sidebar-tag-count">{t.count}</span>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </AccordionContent>
             </AccordionItem>
 

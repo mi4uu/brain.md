@@ -154,6 +154,46 @@
   display: none;
 }
 
+.sidebar .sidebar-tags {
+  list-style: none;
+  padding: 4px 6px 6px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.sidebar .sidebar-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: var(--radius-1);
+  color: var(--text-2);
+  text-decoration: none;
+  font-size: var(--text-sm);
+  transition: background var(--dur-fast) var(--ease);
+}
+.sidebar .sidebar-tag:hover {
+  background: var(--bg-hover);
+  color: var(--text-1);
+}
+.sidebar .sidebar-tag.active {
+  background: var(--bg-selected);
+  color: var(--accent-strong);
+}
+.sidebar .sidebar-tag-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar .sidebar-tag-count {
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
 .sync-connector {
   position: absolute;
   inset: 0;
