@@ -130,9 +130,20 @@
   color: var(--text-3);
   background: var(--bg-surface-2);
   font-weight: 600;
+  cursor: pointer;
+  user-select: none;
 }
 .sidebar .sidebar-trigger:hover {
   color: var(--text-1);
+  background: var(--bg-active);
+}
+.sidebar .sidebar-trigger[data-state="open"] {
+  color: var(--text-2);
+}
+.sidebar .sidebar-trigger > svg {
+  width: 12px;
+  height: 12px;
+  color: var(--text-4);
 }
 .sidebar .sidebar-body {
   padding: 4px 0;

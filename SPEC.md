@@ -236,7 +236,7 @@ T88|x|remove legacy widget code: hand-rolled context menu positioning, custom to
 T89|x|sidebar: 5-section Radix Accordion wrapper (Bookmarks, Vault, Tags, Outline, Backlinks); type="multiple", default Vault open|I.web,V38,V43
 T90|x|useSidebarSection hook: localStorage-backed open/closed per section id; read on mount, write on toggle|V43,V8
 T91|x|Tags sidebar section: list `[{tag,count}]` from /api/tags sorted by count desc, click → `#/tag/<name>`|I.api,V33,V43
-T92|.|section headers match terax-ai pattern: compact row, ChevronDown rotate, hover bg, uppercase label like existing OUTLINE / BACKLINKS|V39,V43
+T92|x|section headers match terax-ai pattern: compact row, ChevronDown rotate, hover bg, uppercase label like existing OUTLINE / BACKLINKS|V39,V43
 
 ## §B BUGS
 id|date|cause|fix
