@@ -15,7 +15,7 @@ const DropdownMenuSub = DropdownMenuPrimitive.Sub;
 const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
 
 const itemBase =
-  "relative flex cursor-default select-none items-center gap-2 rounded-1 px-2 py-1.5 text-sm text-fg-1 outline-none transition-colors duration-fast " +
+  "relative flex cursor-default select-none items-center gap-2 rounded-1 px-2 py-1 text-sm text-fg-1 outline-none transition-colors duration-fast " +
   "focus:bg-hover focus:text-fg-1 data-[highlighted]:bg-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50";
 
 const contentBase =

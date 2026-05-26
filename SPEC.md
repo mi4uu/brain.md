@@ -229,7 +229,7 @@ T83|x|mobile editor/preview tab switch → Radix Tabs|T28,V38
 T84|x|toast notifications → Radix Toast (save errors, restore confirm, etc.)|V38
 T85|x|editor toolbar shell → Radix Toolbar (root + groups + separators); actions still emit CM6 tx|T37,V19,V38
 T86|x|a11y pass: ARIA labels on all icon-only buttons, Icons get aria-hidden+focusable=false, IconBtn helper wraps topbar icons w/ Tooltip+aria-label, ThemeButton+IconPicker labels. axe smoke deferred (no browser harness here)|V38
-T87|.|visual pass: desktop-app vibe — compact density, hairline borders (`--border`), subtle shadows, dark+light parity per primitive|V39
+T87|x|visual pass: compact density on menu items/tabs (py-1.5 → py-1) for desktop-app feel. hairline borders + shadows already token-driven. dark+light parity unchanged. deeper polish (sidebar/topbar tightening, refined accent intensity) deferred until browser-driven review|V39
 T88|.|remove legacy widget code: hand-rolled context menu positioning, custom tooltip, custom modal backdrops, custom focus trap|V38
 
 ## §B BUGS
