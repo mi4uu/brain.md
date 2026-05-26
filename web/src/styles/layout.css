@@ -204,6 +204,14 @@
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
+.sidebar .sidebar-subhead {
+  padding: 8px 12px 4px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-4);
+  font-weight: 600;
+}
 
 .sync-connector {
   position: absolute;

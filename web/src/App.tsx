@@ -58,6 +58,7 @@ import {
   type SidebarSectionId,
 } from "./hooks/useSidebarSections";
 import { validateBasename } from "./lib/validate";
+import { extractTagsFromMd } from "./lib/tags";
 import "./styles/tw.css";
 import "./styles/tokens.css";
 import "./styles/global.css";
@@ -113,6 +114,10 @@ export function App() {
   };
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [tags, setTags] = useState<Array<{ tag: string; count: number }>>([]);
+  const currentDocTags = useMemo(
+    () => (path ? extractTagsFromMd(content) : new Set<string>()),
+    [content, path],
+  );
   const editorViewRef = useRef<EditorView | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const previewHandleRef = useRef<PreviewHandle | null>(null);
@@ -808,26 +813,12 @@ export function App() {
                 Tags{tags.length > 0 ? ` · ${tags.length}` : ""}
               </AccordionTrigger>
               <AccordionContent className="sidebar-body">
-                {tags.length === 0 ? (
-                  <p className="sidebar-empty">No tags in vault.</p>
-                ) : (
-                  <ul className="sidebar-tags">
-                    {tags.map((t) => (
-                      <li key={t.tag}>
-                        <a
-                          href={`#/tag/${encodeURIComponent(t.tag)}`}
-                          className={clsx(
-                            "sidebar-tag",
-                            tagFilter === t.tag && "active",
-                          )}
-                        >
-                          <span className="sidebar-tag-name">#{t.tag}</span>
-                          <span className="sidebar-tag-count">{t.count}</span>
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <TagsContent
+                  tags={tags}
+                  currentDocTags={currentDocTags}
+                  hasOpenNote={path !== null}
+                  activeTag={tagFilter}
+                />
               </AccordionContent>
             </AccordionItem>
 
@@ -1050,6 +1041,98 @@ function IconBtn({
       </TooltipTrigger>
       <TooltipContent side="bottom">{label}</TooltipContent>
     </Tooltip>
+  );
+}
+
+function TagRow({ tag, count, active }: { tag: string; count: number; active: boolean }) {
+  return (
+    <li>
+      <a
+        href={`#/tag/${encodeURIComponent(tag)}`}
+        className={clsx("sidebar-tag", active && "active")}
+      >
+        <span className="sidebar-tag-name">#{tag}</span>
+        <span className="sidebar-tag-count">{count}</span>
+      </a>
+    </li>
+  );
+}
+
+function TagsContent({
+  tags,
+  currentDocTags,
+  hasOpenNote,
+  activeTag,
+}: {
+  tags: Array<{ tag: string; count: number }>;
+  currentDocTags: Set<string>;
+  hasOpenNote: boolean;
+  activeTag: string | null;
+}) {
+  if (tags.length === 0 && currentDocTags.size === 0) {
+    return <p className="sidebar-empty">No tags in vault.</p>;
+  }
+
+  // Tags in current doc but not yet indexed (just-typed) — render with count "·".
+  const vaultMap = new Map(tags.map((t) => [t.tag.toLowerCase(), t]));
+
+  if (!hasOpenNote) {
+    return (
+      <ul className="sidebar-tags">
+        {tags.map((t) => (
+          <TagRow
+            key={t.tag}
+            tag={t.tag}
+            count={t.count}
+            active={activeTag === t.tag}
+          />
+        ))}
+      </ul>
+    );
+  }
+
+  const inDoc: Array<{ tag: string; count: number }> = [];
+  for (const t of currentDocTags) {
+    const hit = vaultMap.get(t);
+    inDoc.push(hit ?? { tag: t, count: 0 });
+  }
+  inDoc.sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+
+  const notInDoc = tags.filter((t) => !currentDocTags.has(t.tag.toLowerCase()));
+
+  return (
+    <>
+      <div className="sidebar-subhead">In this note · {inDoc.length}</div>
+      {inDoc.length === 0 ? (
+        <p className="sidebar-empty">None.</p>
+      ) : (
+        <ul className="sidebar-tags">
+          {inDoc.map((t) => (
+            <TagRow
+              key={`d:${t.tag}`}
+              tag={t.tag}
+              count={t.count}
+              active={activeTag === t.tag}
+            />
+          ))}
+        </ul>
+      )}
+      <div className="sidebar-subhead">Other tags · {notInDoc.length}</div>
+      {notInDoc.length === 0 ? (
+        <p className="sidebar-empty">None.</p>
+      ) : (
+        <ul className="sidebar-tags">
+          {notInDoc.map((t) => (
+            <TagRow
+              key={`v:${t.tag}`}
+              tag={t.tag}
+              count={t.count}
+              active={activeTag === t.tag}
+            />
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
 
