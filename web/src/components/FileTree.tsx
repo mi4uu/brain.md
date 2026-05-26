@@ -8,13 +8,19 @@ import {
   PlusIcon,
   TrashIcon,
 } from "./Icons";
-import { ContextMenu, type MenuItem } from "./ContextMenu";
+import { type MenuItem } from "./ContextMenu";
 import {
   ContextMenu as RadixContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuTrigger,
 } from "./ui/context-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
 import { FolderIconRender, IconBare } from "./FolderIconCatalog";
 import type { TreeData } from "../api/types";
 
@@ -93,17 +99,8 @@ interface TreeProps {
   onSetIcon: (path: string) => void;
 }
 
-type CtxState = { x: number; y: number; node: Node } | null;
-
 export function FileTree(props: TreeProps) {
   const root = useMemo(() => buildTree(props.data), [props.data]);
-  const [ctx, setCtx] = useState<CtxState>(null);
-
-  const openCtx = (e: React.MouseEvent, node: Node) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setCtx({ x: e.clientX, y: e.clientY, node });
-  };
 
   if (root.children.length === 0) {
     return (
@@ -140,17 +137,8 @@ export function FileTree(props: TreeProps) {
         depth={0}
         {...props}
         defaultExpanded
-        openCtx={openCtx}
         getCtxItems={ctxItems}
       />
-      {ctx ? (
-        <ContextMenu
-          x={ctx.x}
-          y={ctx.y}
-          items={ctxItems(ctx.node)}
-          onClose={() => setCtx(null)}
-        />
-      ) : null}
     </div>
   );
 }
@@ -159,8 +147,39 @@ interface ChildrenProps extends TreeProps {
   node: Node;
   depth: number;
   defaultExpanded?: boolean;
-  openCtx: (e: React.MouseEvent, node: Node) => void;
   getCtxItems: (node: Node) => MenuItem[];
+}
+
+function RowDropdownMenu({ items }: { items: MenuItem[] }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button title="More" aria-label="Row actions">
+          <DotsIcon />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={4}>
+        {items.map((it, i) => (
+          <DropdownMenuItem
+            key={i}
+            destructive={it.destructive}
+            disabled={it.disabled}
+            onSelect={(e) => {
+              e.preventDefault();
+              it.onClick();
+            }}
+          >
+            {it.icon ? (
+              <span className="inline-flex h-3.5 w-3.5 items-center justify-center text-fg-3">
+                {it.icon}
+              </span>
+            ) : null}
+            <span>{it.label}</span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 function RowContextMenu({
@@ -221,7 +240,6 @@ function FolderRow({
   node,
   depth,
   defaultExpanded,
-  openCtx,
   getCtxItems,
   ...rest
 }: ChildrenProps) {
@@ -247,13 +265,7 @@ function FolderRow({
           </span>
           <span className="label">{node.name}</span>
           <div className="tree-actions" onClick={(e) => e.stopPropagation()}>
-            <button
-              title="More"
-              aria-label="Folder actions"
-              onClick={(e) => openCtx(e, node)}
-            >
-              <DotsIcon />
-            </button>
+            <RowDropdownMenu items={getCtxItems(node)} />
             <button
               title="New note"
               onClick={() => rest.onCreateNote(node.path)}
@@ -273,7 +285,6 @@ function FolderRow({
         <TreeChildren
           node={node}
           depth={depth + 1}
-          openCtx={openCtx}
           getCtxItems={getCtxItems}
           {...rest}
         />
@@ -288,12 +299,10 @@ function NoteRow({
   onOpen,
   onRename,
   onDelete,
-  openCtx,
   getCtxItems,
   basenameCounts,
 }: {
   node: Node;
-  openCtx: (e: React.MouseEvent, n: Node) => void;
   getCtxItems: (n: Node) => MenuItem[];
 } & Pick<
   TreeProps,
@@ -326,9 +335,7 @@ function NoteRow({
         </span>
         <span className="label">{label}</span>
         <div className="tree-actions" onClick={(e) => e.stopPropagation()}>
-          <button title="More" aria-label="Note actions" onClick={(e) => openCtx(e, node)}>
-            <DotsIcon />
-          </button>
+          <RowDropdownMenu items={getCtxItems(node)} />
           <button title="Rename" onClick={() => onRename(node.path, false)}>
             <PencilIcon />
           </button>
