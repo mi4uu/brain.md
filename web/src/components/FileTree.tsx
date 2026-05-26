@@ -266,18 +266,6 @@ function FolderRow({
           <span className="label">{node.name}</span>
           <div className="tree-actions" onClick={(e) => e.stopPropagation()}>
             <RowDropdownMenu items={getCtxItems(node)} />
-            <button
-              title="New note"
-              onClick={() => rest.onCreateNote(node.path)}
-            >
-              <PlusIcon />
-            </button>
-            <button
-              title="Delete"
-              onClick={() => rest.onDelete(node.path, true)}
-            >
-              <TrashIcon />
-            </button>
           </div>
         </div>
       </RowContextMenu>
@@ -336,12 +324,6 @@ function NoteRow({
         <span className="label">{label}</span>
         <div className="tree-actions" onClick={(e) => e.stopPropagation()}>
           <RowDropdownMenu items={getCtxItems(node)} />
-          <button title="Rename" onClick={() => onRename(node.path, false)}>
-            <PencilIcon />
-          </button>
-          <button title="Delete" onClick={() => onDelete(node.path, false)}>
-            <TrashIcon />
-          </button>
         </div>
       </div>
     </RowContextMenu>

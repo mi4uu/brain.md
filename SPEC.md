@@ -138,6 +138,7 @@ V37: outline panel = headings tree of current note. click → jump editor + prev
 V38: ∀ interactive overlay/menu/dialog/tooltip/popover/tabs/toolbar/select/toast ! built on Radix Primitives via `web/src/components/ui/*` wrappers. ⊥ ad-hoc DOM widgets, ⊥ raw `contextmenu`/`mousedown`-positioned popups, ⊥ hand-rolled focus traps. a11y (focus mgmt, ARIA, kbd nav, ESC, outside-click) delegated to Radix.
 V39: ui wrappers follow terax-ai pattern: `forwardRef` + `cn()` class merge + `data-[state=…]` variants + `data-[side=…]` slide-in. styled w/ Tailwind tokens, theme via CSS vars, dark+light parity verified per primitive.
 V40: tooltips instant (delayDuration=0 at provider), match V20. context menu = Radix ContextMenu, not 3rd-party. command palette = Radix Dialog + cmdk inside.
+V41: file tree row actions (3-dot menu + folder new-note button) ! visible only on `:hover` / `:focus-within` of the row. inline duplicates of dropdown-menu items ⊥ — ∀ destructive/structural actions live solely in the 3-dot DropdownMenu (T75). label gets full row width minus chevron + icon when row idle, so deep nesting (Journal/aaa/seepdir/deep01.md) stays readable. ref: VSCode + Obsidian tree behaviour.
 
 ## §T TASKS
 
@@ -241,3 +242,4 @@ B5|2026-05-26|tag click filtered notes by path substring — "no notes with this
 B6|2026-05-26|embed `![[Note]]` rendered only header (title), no body|rehype lazy-fetch + inline render of target. recursion guard. §V24
 B7|2026-05-26|`@` autocomplete didn't fire — CM6 only auto-triggers on word chars; validFor excluded `@` so popup closed instantly|update listener inspects last typed char; force `startCompletion`. `validFor` regex includes `@`. §V23
 B8|2026-05-26|click inside transcluded embed body jumped parent editor cursor to a wrong line (embed body's data-source-line ≠ parent line)|click handler aborts if ancestor is `.embed-body`. §V25
+B9|2026-05-26|deeply-nested folder rows (Journal/aaa/seepdir/deep01.md) truncated labels to "deep…" — always-visible 3-dot + pencil + trash + new-note inline buttons consumed row width. VSCode shows the same vault clean.|hide `.tree-actions` until `:hover` / `:focus-within`; remove inline pencil/trash/new-note (already in 3-dot DropdownMenu since T75) so only the 3-dot button surfaces on hover. §V41

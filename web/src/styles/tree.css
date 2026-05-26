@@ -4,6 +4,7 @@
 }
 
 .tree-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -65,13 +66,36 @@
 }
 
 .tree-actions {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
   display: flex;
   gap: 2px;
+  padding-left: 12px;
+  background: linear-gradient(
+    to right,
+    transparent 0,
+    var(--bg-hover) 12px,
+    var(--bg-hover) 100%
+  );
+  border-radius: var(--radius-1);
   opacity: 0;
+  pointer-events: none;
   transition: opacity var(--dur-fast) var(--ease);
 }
-.tree-row:hover .tree-actions {
+.tree-row:hover .tree-actions,
+.tree-row:focus-within .tree-actions {
   opacity: 1;
+  pointer-events: auto;
+}
+.tree-row.active .tree-actions {
+  background: linear-gradient(
+    to right,
+    transparent 0,
+    var(--bg-selected) 12px,
+    var(--bg-selected) 100%
+  );
 }
 .tree-actions button {
   width: 24px;
@@ -90,9 +114,12 @@
 @media (hover: none) {
   .tree-actions {
     opacity: 1;
+    pointer-events: auto;
   }
   .tree-row {
     min-height: var(--tap);
+    /* leave room for the absolutely-positioned action on touch */
+    padding-right: 36px;
   }
 }
 
