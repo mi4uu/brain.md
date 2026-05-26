@@ -1,6 +1,7 @@
 import { Elysia, t } from "elysia";
 import type { Vault } from "../vault/vault";
 import { asError } from "./errors";
+import { decodeWildcard } from "./wildcard";
 
 const MIME: Record<string, string> = {
   png: "image/png",
@@ -31,7 +32,7 @@ export function mediaRoutes(vault: Vault) {
     .post(
       "/api/media/*",
       async ({ params, body, set }) => {
-        const noteRel = (params as { "*": string })["*"];
+        const noteRel = decodeWildcard((params as { "*": string })["*"]);
         try {
           const file = body.file;
           if (!(file instanceof File)) {
@@ -52,7 +53,7 @@ export function mediaRoutes(vault: Vault) {
       },
     )
     .get("/api/media-raw/*", async ({ params, set }) => {
-      const rel = (params as { "*": string })["*"];
+      const rel = decodeWildcard((params as { "*": string })["*"]);
       try {
         const bytes = await vault.readMedia(rel);
         set.headers["content-type"] = mimeFor(rel);

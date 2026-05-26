@@ -2,11 +2,12 @@ import { Elysia, t } from "elysia";
 import type { Vault } from "../vault/vault";
 import type { VaultIndex } from "../index/index";
 import { asError } from "./errors";
+import { decodeWildcard } from "./wildcard";
 
 export function noteRoutes(vault: Vault, index: VaultIndex) {
   return new Elysia({ prefix: "/api/note" })
     .get("/*", async ({ params, set }) => {
-      const rel = (params as { "*": string })["*"];
+      const rel = decodeWildcard((params as { "*": string })["*"]);
       try {
         return await vault.readNote(rel);
       } catch (e) {
@@ -18,7 +19,7 @@ export function noteRoutes(vault: Vault, index: VaultIndex) {
     .put(
       "/*",
       async ({ params, body, set }) => {
-        const rel = (params as { "*": string })["*"];
+        const rel = decodeWildcard((params as { "*": string })["*"]);
         try {
           const data = await vault.writeNote(rel, body.content);
           await index.updatePath(rel);
@@ -32,7 +33,7 @@ export function noteRoutes(vault: Vault, index: VaultIndex) {
       { body: t.Object({ content: t.String() }) },
     )
     .delete("/*", async ({ params, set }) => {
-      const rel = (params as { "*": string })["*"];
+      const rel = decodeWildcard((params as { "*": string })["*"]);
       try {
         const trashed = await vault.deleteNote(rel);
         index.remove(rel);
