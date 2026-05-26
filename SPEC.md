@@ -223,7 +223,7 @@ T78|x|quick switcher (Cmd/Ctrl+O) → Radix Dialog + cmdk|T23,V38
 T79|x|settings panel → Radix Dialog + Tabs (vault / editor / git / appearance)|T34,T44,V38
 T80|x|history panel + diff viewer → Radix Dialog + ScrollArea|T41,T42,V38
 T81|x|folder icon picker → Radix Dialog + ScrollArea (catalog grid + emoji input). spec said Popover but no anchor available; picker invoked from context menu — Dialog preserves UX. revisit if "Set icon" moves inline.|T49,V34,V38
-T82|.|switches (autocommit, theme override) → Radix Switch|T27,T44,V38
+T82|x|switches (autocommit) → Radix Switch. theme = native select, no boolean override needed yet|T27,T44,V38
 T83|.|mobile editor/preview tab switch → Radix Tabs|T28,V38
 T84|.|toast notifications → Radix Toast (save errors, restore confirm, etc.)|V38
 T85|.|editor toolbar shell → Radix Toolbar (root + groups + separators); actions still emit CM6 tx|T37,V19,V38

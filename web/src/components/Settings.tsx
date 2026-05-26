@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "./ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+import { Switch } from "./ui/switch";
 
 interface Props {
   onClose: () => void;
@@ -110,15 +111,15 @@ export function Settings({
               </p>
             ) : (
               <>
-                <label className="flex items-center gap-2 text-sm text-fg-1">
-                  <input
-                    type="checkbox"
-                    checked={acEnabled}
-                    onChange={(e) =>
-                      void saveAutocommit({ enabled: e.target.checked })
-                    }
-                  />
+                <label className="flex items-center justify-between gap-3 text-sm text-fg-1">
                   <span>Autocommit changes</span>
+                  <Switch
+                    checked={acEnabled}
+                    onCheckedChange={(checked) =>
+                      void saveAutocommit({ enabled: checked })
+                    }
+                    aria-label="Autocommit changes"
+                  />
                 </label>
                 <Field label="Debounce (ms)">
                   <input
