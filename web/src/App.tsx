@@ -45,6 +45,7 @@ import { useDebouncedSave } from "./hooks/useDebouncedSave";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { Toaster } from "./components/ui/toaster";
 import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs";
+import { toast as showToast } from "./components/ui/use-toast";
 import "./styles/tw.css";
 import "./styles/tokens.css";
 import "./styles/global.css";
@@ -83,7 +84,11 @@ export function App() {
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
   const [folderMeta, setFolderMeta] = useState<FolderMeta>({ version: 1, icons: {}, colors: {} });
   const [iconPickerPath, setIconPickerPath] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const setToast = (msg: string | null) => {
+    if (!msg) return;
+    const variant = /fail/i.test(msg) ? "danger" : "default";
+    showToast({ description: msg, variant });
+  };
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const editorViewRef = useRef<EditorView | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -561,12 +566,6 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [flush]);
 
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 2400);
-    return () => clearTimeout(t);
-  }, [toast]);
-
   const onFileInputChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
@@ -896,7 +895,6 @@ export function App() {
         />
       ) : null}
 
-      {toast ? <div className="toast">{toast}</div> : null}
     </div>
     <Toaster />
     </TooltipProvider>
