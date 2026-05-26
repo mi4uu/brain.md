@@ -47,6 +47,16 @@ import { Toaster } from "./components/ui/toaster";
 import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
 import { toast as showToast } from "./components/ui/use-toast";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "./components/ui/accordion";
+import {
+  useSidebarSections,
+  type SidebarSectionId,
+} from "./hooks/useSidebarSections";
 import { validateBasename } from "./lib/validate";
 import "./styles/tw.css";
 import "./styles/tokens.css";
@@ -86,6 +96,16 @@ export function App() {
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
   const [folderMeta, setFolderMeta] = useState<FolderMeta>({ version: 1, icons: {}, colors: {} });
   const [iconPickerPath, setIconPickerPath] = useState<string | null>(null);
+  const sidebar = useSidebarSections(
+    ["bookmarks", "vault", "tags", "outline", "backlinks"],
+    {
+      bookmarks: false,
+      vault: true,
+      tags: false,
+      outline: false,
+      backlinks: false,
+    },
+  );
   const setToast = (msg: string | null) => {
     if (!msg) return;
     const variant = /fail/i.test(msg) ? "danger" : "default";
@@ -719,53 +739,91 @@ export function App() {
             <FolderPlusIcon />
           </IconBtn>
         </header>
-        {bookmarks.length > 0 ? (
-          <div style={{ padding: "8px 8px 0" }}>
-            <h3 style={{ fontSize: "var(--text-xs)", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em", margin: "0 0 4px 4px" }}>
-              Bookmarks
-            </h3>
-            {bookmarks.map((b) => (
-              <div key={b} className={clsx("tree-row", b === path && "active")} onClick={() => openNote(b)}>
-                <span className="chev" />
-                <StarIcon filled />
-                <span className="label">{(b.split("/").pop() ?? b).replace(/\.md$/, "")}</span>
-              </div>
-            ))}
-          </div>
-        ) : null}
-        <div className="tree-wrap scroll">
-          <FileTree
-            data={tree}
-            activePath={path}
-            folderIcons={folderMeta.icons}
-            basenameCounts={basenameCounts}
-            onOpen={(p) => {
-              void openNote(p);
-              setDrawerOpen(false);
-            }}
-            onCreateNote={createNote}
-            onCreateFolder={createFolder}
-            onRename={renameItem}
-            onDelete={deleteItem}
-            onSetIcon={(p) => setIconPickerPath(p)}
-          />
+        <div className="sidebar-scroll">
+          <Accordion
+            type="multiple"
+            value={sidebar.open}
+            onValueChange={(v) => sidebar.setOpen(v as SidebarSectionId[])}
+            className="sidebar-accordion"
+          >
+            <AccordionItem value="bookmarks" className="sidebar-item">
+              <AccordionTrigger className="sidebar-trigger">
+                Bookmarks{bookmarks.length > 0 ? ` · ${bookmarks.length}` : ""}
+              </AccordionTrigger>
+              <AccordionContent className="sidebar-body">
+                {bookmarks.length === 0 ? (
+                  <p className="sidebar-empty">No bookmarks yet.</p>
+                ) : (
+                  bookmarks.map((b) => (
+                    <div
+                      key={b}
+                      className={clsx("tree-row", b === path && "active")}
+                      onClick={() => openNote(b)}
+                    >
+                      <span className="chev" />
+                      <StarIcon filled />
+                      <span className="label">
+                        {(b.split("/").pop() ?? b).replace(/\.md$/, "")}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </AccordionContent>
+            </AccordionItem>
+
+            <AccordionItem value="vault" className="sidebar-item">
+              <AccordionTrigger className="sidebar-trigger">Vault</AccordionTrigger>
+              <AccordionContent className="sidebar-body">
+                <FileTree
+                  data={tree}
+                  activePath={path}
+                  folderIcons={folderMeta.icons}
+                  basenameCounts={basenameCounts}
+                  onOpen={(p) => {
+                    void openNote(p);
+                    setDrawerOpen(false);
+                  }}
+                  onCreateNote={createNote}
+                  onCreateFolder={createFolder}
+                  onRename={renameItem}
+                  onDelete={deleteItem}
+                  onSetIcon={(p) => setIconPickerPath(p)}
+                />
+              </AccordionContent>
+            </AccordionItem>
+
+            <AccordionItem value="tags" className="sidebar-item">
+              <AccordionTrigger className="sidebar-trigger">Tags</AccordionTrigger>
+              <AccordionContent className="sidebar-body">
+                <p className="sidebar-empty">Tag list loads here.</p>
+              </AccordionContent>
+            </AccordionItem>
+
+            <AccordionItem value="outline" className="sidebar-item">
+              <AccordionTrigger className="sidebar-trigger">Outline</AccordionTrigger>
+              <AccordionContent className="sidebar-body">
+                {path ? (
+                  <Outline content={content} onJump={onOutlineJump} />
+                ) : (
+                  <p className="sidebar-empty">Open a note to see its outline.</p>
+                )}
+              </AccordionContent>
+            </AccordionItem>
+
+            <AccordionItem value="backlinks" className="sidebar-item">
+              <AccordionTrigger className="sidebar-trigger">
+                Backlinks{backlinks.length > 0 ? ` · ${backlinks.length}` : ""}
+              </AccordionTrigger>
+              <AccordionContent className="sidebar-body">
+                {path ? (
+                  <Backlinks items={backlinks} onOpen={openNote} />
+                ) : (
+                  <p className="sidebar-empty">Open a note to see backlinks.</p>
+                )}
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
         </div>
-        {path ? (
-          <div className="side-section">
-            <div className="side-head">Outline</div>
-            <div className="side-body scroll">
-              <Outline content={content} onJump={onOutlineJump} />
-            </div>
-          </div>
-        ) : null}
-        {path ? (
-          <div className="side-section">
-            <div className="side-head">Backlinks{backlinks.length > 0 ? ` · ${backlinks.length}` : ""}</div>
-            <div className="side-body scroll">
-              <Backlinks items={backlinks} onOpen={openNote} />
-            </div>
-          </div>
-        ) : null}
       </aside>
 
       {drawerOpen && isMobile ? <div className="drawer-backdrop open" onClick={() => setDrawerOpen(false)} /> : null}
