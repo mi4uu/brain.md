@@ -18,6 +18,8 @@ web Obsidian clone. edit `.md` vault from browser & phone. core-plugin parity, n
 - frontend stack: React 18 + CodeMirror 6 + unified/remark/rehype + highlight.js + KaTeX + mermaid (lazy)
 - syntax highlighting: highlight.js, theme via CSS variables
 - vault-local config = `<VAULT>/.brain/*.json` (settings, index, folder-meta, trash). env = bootstrap default only
+- UI primitives: Radix UI (`@radix-ui/react-*`) — menus, dialogs, tooltips, popovers, tabs, toolbar, switch, toast, scroll-area
+- UI vibe = desktop app (compact rows, hairline borders, subtle elevation). ref pattern: terax-ai `src/components/ui/context-menu.tsx` (Radix + Tailwind, dark-first)
 
 ## §I INTERFACES
 
@@ -26,6 +28,7 @@ web Obsidian clone. edit `.md` vault from browser & phone. core-plugin parity, n
 - sidebar = vault tree + outline + backlinks. header w/ search + new note + new folder
 - toolbar = single row above both panes (editor + preview). format actions emit CM6 tx.
 - mobile: drawer file tree, swipe to open, edit/preview tab switch
+- all interactive controls (menu, dropdown, context-menu, dialog, popover, tooltip, tabs, toolbar, select, switch, toast, scroll-area) ! Radix-based. local wrappers in `web/src/components/ui/<primitive>.tsx`
 
 ### HTTP API (Elysia, JSON)
 #### note + folder
@@ -132,6 +135,9 @@ V34: folder icons selectable from catalog (~30 SVG) or custom emoji `emoji:<char
 V35: file tree row supports right-click context menu (note: Open/Rename/Delete; folder: New note / New folder / Set icon / Rename / Delete) + 3-dot button revealing same menu on hover.
 V36: active line indicator: editor `.cm-activeLine` + preview `.active-block` share styling (`--bg-hover` + 1px `--accent` bottom box-shadow). SVG path connects both endpoints when both visible.
 V37: outline panel = headings tree of current note. click → jump editor + preview to that heading's line.
+V38: ∀ interactive overlay/menu/dialog/tooltip/popover/tabs/toolbar/select/toast ! built on Radix Primitives via `web/src/components/ui/*` wrappers. ⊥ ad-hoc DOM widgets, ⊥ raw `contextmenu`/`mousedown`-positioned popups, ⊥ hand-rolled focus traps. a11y (focus mgmt, ARIA, kbd nav, ESC, outside-click) delegated to Radix.
+V39: ui wrappers follow terax-ai pattern: `forwardRef` + `cn()` class merge + `data-[state=…]` variants + `data-[side=…]` slide-in. styled w/ Tailwind tokens, theme via CSS vars, dark+light parity verified per primitive.
+V40: tooltips instant (delayDuration=0 at provider), match V20. context menu = Radix ContextMenu, not 3rd-party. command palette = Radix Dialog + cmdk inside.
 
 ## §T TASKS
 
@@ -207,6 +213,23 @@ T68|x|settings.json centralised (bookmarks/dailyDir/git autocommit) w/ atomic pe
 T69|x|GitRepo serialise writes via async mutex (prevent autocommit ↔ manual race)|V18
 T70|x|IconBare (picker grid) vs FolderIconRender (tree badge) split|V34
 T71|x|push initial code to `git@github.com:mi4uu/brain.md.git`|-
+T72|.|add radix deps + tailwind v3 + class-variance-authority + clsx + tailwind-merge; `cn()` util in web/src/lib/utils.ts|V38,V39
+T73|.|scaffold `web/src/components/ui/` primitives per terax-ai pattern: context-menu, dropdown-menu, dialog, popover, tooltip, tabs, toolbar, select, switch, toast, scroll-area, separator, accordion|V38,V39
+T74|.|tree row right-click → Radix ContextMenu (Open/Rename/Delete; folder: New note/folder, Set icon)|V35,V38,V40
+T75|.|tree row 3-dot button → Radix DropdownMenu (same items)|V35,V38
+T76|.|toolbar tooltips → Radix Tooltip (delayDuration=0)|V20,V38,V40
+T77|.|command palette (Cmd/Ctrl+P) → Radix Dialog + cmdk|T24,V38,V40
+T78|.|quick switcher (Cmd/Ctrl+O) → Radix Dialog + cmdk|T23,V38
+T79|.|settings panel → Radix Dialog + Tabs (vault / editor / git / appearance)|T34,T44,V38
+T80|.|history panel + diff viewer → Radix Dialog + ScrollArea|T41,T42,V38
+T81|.|folder icon picker → Radix Popover + ScrollArea (catalog grid + emoji input)|T49,V34,V38
+T82|.|switches (autocommit, theme override) → Radix Switch|T27,T44,V38
+T83|.|mobile editor/preview tab switch → Radix Tabs|T28,V38
+T84|.|toast notifications → Radix Toast (save errors, restore confirm, etc.)|V38
+T85|.|editor toolbar shell → Radix Toolbar (root + groups + separators); actions still emit CM6 tx|T37,V19,V38
+T86|.|a11y pass: kbd nav across all surfaces, focus rings, ARIA labels, axe smoke|V38
+T87|.|visual pass: desktop-app vibe — compact density, hairline borders (`--border`), subtle shadows, dark+light parity per primitive|V39
+T88|.|remove legacy widget code: hand-rolled context menu positioning, custom tooltip, custom modal backdrops, custom focus trap|V38
 
 ## §B BUGS
 id|date|cause|fix
