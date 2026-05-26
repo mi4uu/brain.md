@@ -25,7 +25,7 @@ web Obsidian clone. edit `.md` vault from browser & phone. core-plugin parity, n
 
 ### web UI
 - `/` → app shell. grid: topbar / sidebar / main(2-col panes share toolbar row)
-- sidebar = vault tree + outline + backlinks. header w/ search + new note + new folder
+- sidebar = collapsable sections (Radix Accordion, type="multiple"): Bookmarks | Vault tree | Tags | Outline | Backlinks. each section has chevron-toggle header; state per-section persisted in localStorage. header w/ search + new note + new folder above the accordion.
 - toolbar = single row above both panes (editor + preview). format actions emit CM6 tx.
 - mobile: drawer file tree, swipe to open, edit/preview tab switch
 - all interactive controls (menu, dropdown, context-menu, dialog, popover, tooltip, tabs, toolbar, select, switch, toast, scroll-area) ! Radix-based. local wrappers in `web/src/components/ui/<primitive>.tsx`
@@ -140,6 +140,7 @@ V39: ui wrappers follow terax-ai pattern: `forwardRef` + `cn()` class merge + `d
 V40: tooltips instant (delayDuration=0 at provider), match V20. context menu = Radix ContextMenu, not 3rd-party. command palette = Radix Dialog + cmdk inside.
 V41: file tree row actions (3-dot menu + folder new-note button) ! visible only on `:hover` / `:focus-within` of the row. inline duplicates of dropdown-menu items ⊥ — ∀ destructive/structural actions live solely in the 3-dot DropdownMenu (T75). label gets full row width minus chevron + icon when row idle, so deep nesting (Journal/aaa/seepdir/deep01.md) stays readable. ref: VSCode + Obsidian tree behaviour.
 V42: note + folder basenames ! contain `/`, `\`, `%`, NULL byte, CR, LF, or leading `.`. server rejects 400 INVALID_NAME at create/rename/folder-create/media-upload. client validates the same set in new-note/new-folder/rename prompts before submit (inline error, ! send). vault is POSIX-only: `normalizeRel` ⊥ rewrite `\` to `/` (legitimate `\` in basenames impossible under this rule; rewrite previously silently corrupted such files). Elysia ⊥ auto-decode the `*` wildcard param — ∀ route reading a path-shaped wildcard MUST call `decodeWildcard()` (single `decodeURIComponent`) before passing to vault, so existing pathological files (e.g. `ddd%5C.md`) round-trip correctly: client encodes `%` → `%25`, server decodes once → matches disk.
+V43: sidebar sections (Bookmarks, Vault, Tags, Outline, Backlinks) each collapsable independently via Radix Accordion (type="multiple"). open/closed state per-section persisted to localStorage key `brain.sidebar.<id>` (device-local, ⊥ vault). default on first load: Vault open; rest collapsed. Tags section sources from `/api/tags` (I.api), sorted by count desc; click tag → `#/tag/<name>` filter (V33).
 
 ## §T TASKS
 
@@ -232,6 +233,10 @@ T85|x|editor toolbar shell → Radix Toolbar (root + groups + separators); actio
 T86|x|a11y pass: ARIA labels on all icon-only buttons, Icons get aria-hidden+focusable=false, IconBtn helper wraps topbar icons w/ Tooltip+aria-label, ThemeButton+IconPicker labels. axe smoke deferred (no browser harness here)|V38
 T87|x|visual pass: compact density on menu items/tabs (py-1.5 → py-1) for desktop-app feel. hairline borders + shadows already token-driven. dark+light parity unchanged. deeper polish (sidebar/topbar tightening, refined accent intensity) deferred until browser-driven review|V39
 T88|x|remove legacy widget code: hand-rolled context menu positioning, custom tooltip, custom modal backdrops, custom focus trap|V38
+T89|.|sidebar: 5-section Radix Accordion wrapper (Bookmarks, Vault, Tags, Outline, Backlinks); type="multiple", default Vault open|I.web,V38,V43
+T90|.|useSidebarSection hook: localStorage-backed open/closed per section id; read on mount, write on toggle|V43,V8
+T91|.|Tags sidebar section: list `[{tag,count}]` from /api/tags sorted by count desc, click → `#/tag/<name>`|I.api,V33,V43
+T92|.|section headers match terax-ai pattern: compact row, ChevronDown rotate, hover bg, uppercase label like existing OUTLINE / BACKLINKS|V39,V43
 
 ## §B BUGS
 id|date|cause|fix
