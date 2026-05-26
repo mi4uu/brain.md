@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { gitApi, type GitCommit } from "../api/git";
 import { DiffView } from "./DiffView";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog";
+import { ScrollArea } from "./ui/scroll-area";
 
 interface Props {
   path: string | null;
@@ -71,84 +79,118 @@ export function HistoryPanel({ path, onClose, onRestored }: Props) {
   };
 
   return (
-    <>
-      <div className="modal-backdrop" onClick={onClose} />
-      <div className="history-panel" role="dialog" aria-modal="true">
-        <header>
-          <h2>History</h2>
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="grid h-[80vh] max-w-5xl grid-rows-[auto_auto_1fr] gap-0 p-0">
+        <DialogHeader className="flex flex-row items-center gap-3 border-b border-border px-4 py-3">
+          <DialogTitle className="text-md font-semibold">History</DialogTitle>
           {path ? (
-            <div className="seg-tabs">
+            <div className="inline-flex items-center gap-0.5 rounded-2 border border-border bg-surface-alt p-0.5 text-sm">
               <button
-                className={`seg ${scope === "note" ? "active" : ""}`}
+                type="button"
+                className={`rounded-1 px-2 py-1 ${scope === "note" ? "bg-surface-elev text-fg-1 shadow-1" : "text-fg-3"}`}
                 onClick={() => setScope("note")}
               >
                 This note
               </button>
               <button
-                className={`seg ${scope === "vault" ? "active" : ""}`}
+                type="button"
+                className={`rounded-1 px-2 py-1 ${scope === "vault" ? "bg-surface-elev text-fg-1 shadow-1" : "text-fg-3"}`}
                 onClick={() => setScope("vault")}
               >
                 All vault
               </button>
             </div>
           ) : (
-            <span className="muted" style={{ fontSize: "var(--text-sm)" }}>All vault</span>
+            <span className="text-sm text-fg-3">All vault</span>
           )}
           {path && scope === "note" ? (
-            <span className="muted" style={{ fontSize: "var(--text-sm)" }}>— {path}</span>
+            <span className="truncate text-sm text-fg-3">— {path}</span>
           ) : null}
-          <span style={{ flex: 1 }} />
-          <button className="btn" onClick={() => void reload()}>Refresh</button>
-          <button className="btn" onClick={onClose}>Close</button>
-        </header>
-        {error ? <p style={{ color: "var(--callout-danger)", padding: "0 16px" }}>{error}</p> : null}
-        <div className="history-body">
-          <aside className="history-list scroll">
-            {log.length === 0 ? (
-              <p className="muted" style={{ padding: 16, textAlign: "center" }}>
-                {scope === "note"
-                  ? "No commits touching this note yet. Try All vault."
-                  : "No commits yet."}
-              </p>
-            ) : (
-              log.map((c) => (
-                <div
-                  key={c.sha}
-                  className={`history-item${selected?.sha === c.sha ? " active" : ""}`}
-                  onClick={() => setSelected(c)}
-                >
-                  <div className="hi-subject">{c.subject || "(no message)"}</div>
-                  <div className="hi-meta">
-                    <span>{c.sha.slice(0, 7)}</span>
-                    <span>·</span>
-                    <span>{new Date(c.ts).toLocaleString()}</span>
-                  </div>
-                </div>
-              ))
-            )}
-          </aside>
-          <section className="history-diff">
+          <span className="flex-1" />
+          <button
+            type="button"
+            className="rounded-1 px-2 py-1 text-sm text-fg-2 hover:bg-hover"
+            onClick={() => void reload()}
+          >
+            Refresh
+          </button>
+        </DialogHeader>
+        <DialogDescription className="sr-only">
+          List of git commits with diff preview and restore action.
+        </DialogDescription>
+        {error ? (
+          <p className="px-4 py-2 text-sm text-callout-danger">{error}</p>
+        ) : (
+          <div />
+        )}
+        <div className="grid min-h-0 grid-cols-[280px_1fr]">
+          <ScrollArea className="border-r border-border">
+            <div className="p-2">
+              {log.length === 0 ? (
+                <p className="p-3 text-center text-sm text-fg-3">
+                  {scope === "note"
+                    ? "No commits touching this note yet. Try All vault."
+                    : "No commits yet."}
+                </p>
+              ) : (
+                log.map((c) => (
+                  <button
+                    key={c.sha}
+                    type="button"
+                    onClick={() => setSelected(c)}
+                    className={`flex w-full flex-col gap-0.5 rounded-1 px-2 py-1.5 text-left text-sm transition-colors duration-fast ${
+                      selected?.sha === c.sha
+                        ? "bg-accent-soft text-accent"
+                        : "text-fg-1 hover:bg-hover"
+                    }`}
+                  >
+                    <span className="truncate font-medium">
+                      {c.subject || "(no message)"}
+                    </span>
+                    <span className="flex gap-1 text-xs text-fg-3">
+                      <span>{c.sha.slice(0, 7)}</span>
+                      <span>·</span>
+                      <span>{new Date(c.ts).toLocaleString()}</span>
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </ScrollArea>
+          <ScrollArea>
             {selected ? (
-              <>
-                <div className="history-diff-head">
-                  <div>
-                    <strong>{selected.subject}</strong>{" "}
-                    <span className="muted">{selected.sha.slice(0, 7)}</span>
+              <div className="flex h-full flex-col">
+                <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2">
+                  <div className="min-w-0 truncate">
+                    <strong className="text-sm">{selected.subject}</strong>{" "}
+                    <span className="text-xs text-fg-3">
+                      {selected.sha.slice(0, 7)}
+                    </span>
                   </div>
                   {path ? (
-                    <button className="btn primary" onClick={restore}>
+                    <button
+                      type="button"
+                      onClick={restore}
+                      className="shrink-0 rounded-1 bg-accent px-3 py-1 text-sm font-medium text-white hover:bg-accent-strong"
+                    >
                       Restore this version
                     </button>
                   ) : null}
                 </div>
-                {loadingPatch ? <p className="muted" style={{ padding: 16 }}>loading…</p> : <DiffView patch={patch} />}
-              </>
+                {loadingPatch ? (
+                  <p className="p-4 text-sm text-fg-3">loading…</p>
+                ) : (
+                  <DiffView patch={patch} />
+                )}
+              </div>
             ) : (
-              <p className="muted" style={{ padding: 16, textAlign: "center" }}>Select a commit.</p>
+              <p className="p-4 text-center text-sm text-fg-3">
+                Select a commit.
+              </p>
             )}
-          </section>
+          </ScrollArea>
         </div>
-      </div>
-    </>
+      </DialogContent>
+    </Dialog>
   );
 }
