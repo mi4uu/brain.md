@@ -218,8 +218,8 @@ T73|x|scaffold `web/src/components/ui/` primitives per terax-ai pattern: context
 T74|x|tree row right-click → Radix ContextMenu (Open/Rename/Delete; folder: New note/folder, Set icon)|V35,V38,V40
 T75|x|tree row 3-dot button → Radix DropdownMenu (same items)|V35,V38
 T76|x|toolbar tooltips → Radix Tooltip (delayDuration=0)|V20,V38,V40
-T77|.|command palette (Cmd/Ctrl+P) → Radix Dialog + cmdk|T24,V38,V40
-T78|.|quick switcher (Cmd/Ctrl+O) → Radix Dialog + cmdk|T23,V38
+T77|x|command palette (Cmd/Ctrl+P) → Radix Dialog + cmdk|T24,V38,V40
+T78|x|quick switcher (Cmd/Ctrl+O) → Radix Dialog + cmdk|T23,V38
 T79|.|settings panel → Radix Dialog + Tabs (vault / editor / git / appearance)|T34,T44,V38
 T80|.|history panel + diff viewer → Radix Dialog + ScrollArea|T41,T42,V38
 T81|.|folder icon picker → Radix Popover + ScrollArea (catalog grid + emoji input)|T49,V34,V38
