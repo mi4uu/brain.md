@@ -227,7 +227,7 @@ T81|x|folder icon picker → Radix Dialog + ScrollArea (catalog grid + emoji inp
 T82|x|switches (autocommit) → Radix Switch. theme = native select, no boolean override needed yet|T27,T44,V38
 T83|x|mobile editor/preview tab switch → Radix Tabs|T28,V38
 T84|x|toast notifications → Radix Toast (save errors, restore confirm, etc.)|V38
-T85|.|editor toolbar shell → Radix Toolbar (root + groups + separators); actions still emit CM6 tx|T37,V19,V38
+T85|x|editor toolbar shell → Radix Toolbar (root + groups + separators); actions still emit CM6 tx|T37,V19,V38
 T86|.|a11y pass: kbd nav across all surfaces, focus rings, ARIA labels, axe smoke|V38
 T87|.|visual pass: desktop-app vibe — compact density, hairline borders (`--border`), subtle shadows, dark+light parity per primitive|V39
 T88|.|remove legacy widget code: hand-rolled context menu positioning, custom tooltip, custom modal backdrops, custom focus trap|V38
