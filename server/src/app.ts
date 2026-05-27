@@ -27,6 +27,7 @@ import { settingsRoutes } from "./api/settings";
 import { ragRoutes } from "./api/rag";
 import { authRoutes } from "./api/auth";
 import { authMiddleware } from "./api/auth-middleware";
+import { folderPermsRoutes } from "./api/folder-perms";
 import { AuthStore } from "./auth/store";
 import { TokenStore } from "./auth/tokens";
 
@@ -81,7 +82,8 @@ export function createApp(opts: AppOptions = {}) {
     .use(gitRoutes(repo, autocommit, settings))
     .use(metaRoutes(vault))
     .use(settingsRoutes(settings, autocommit))
-    .use(ragRoutes(ragPipeline, settings));
+    .use(ragRoutes(ragPipeline, settings))
+    .use(folderPermsRoutes(vault));
   return {
     app,
     vault,

@@ -317,8 +317,8 @@ T113|x|auth routes: GET /api/auth/status, POST /api/auth/set, POST /api/auth/cle
 T114|x|auth middleware: no-op when auth.json absent; otherwise enforce Bearer on /api/* (except /auth/{status,login}) + /mcp/*|V53
 T115|.|client auth: login Dialog when status.configured && ! authenticated; token in localStorage; fetch wrapper adds Authorization header|I.web,V53
 T116|.|Settings UI tab "Security": set / change / remove password buttons; status display ("auth off" / "auth on")|I.web,V53
-T117|.|folder perms data model: extend folder-meta.json schema `{icons, colors, mcp:{<path>:{read,write}}}` + `resolveFolderPerms(notePath)` helper|V52
-T118|.|folder perms routes: GET / POST /api/folder-mcp-perms, DELETE /api/folder-mcp-perms/*path|I.api,V52
+T117|x|folder perms data model: extend folder-meta.json schema `{icons, colors, mcp:{<path>:{read,write}}}` + `resolveFolderPerms(notePath)` helper|V52
+T118|x|folder perms routes: GET / POST /api/folder-mcp-perms, DELETE /api/folder-mcp-perms/*path|I.api,V52
 T119|.|folder perms UI: folder context-menu item "MCP permissions…" → Radix Dialog w/ read + write Switches + "reset to inherited" button|I.web,V52
 T120|.|MCP server entry: server/src/mcp/server.ts using @modelcontextprotocol/sdk HTTP+SSE transport; mount on Elysia at /mcp/*|I.mcp,V46
 T121|.|MCP tool impls: 9 tools (search_notes, similar_notes, read_note, list_notes, get_backlinks, list_tags, get_tasks, write_note, append_note); ∀ enforce V52 perm check before vault op|I.mcp,V46,V52
