@@ -1,11 +1,11 @@
 import type { Vault, MutationEvent } from "../vault/vault";
-import { chunkNote } from "./chunker";
+import { chunkNote, chunkTasks } from "./chunker";
 import { LocalEmbedder } from "./embedder-local";
 import { OpenAICompatEmbedder } from "./embedder-openai";
 import type { Embedder } from "./provider";
 import { describeProvider } from "./provider";
 import { RagStore } from "./store";
-import type { EmbeddedChunk, RagConfig } from "./types";
+import type { EmbeddedChunk, EmbeddedTaskChunk, RagConfig } from "./types";
 
 // V47 + V49: high-level RAG pipeline. Owns:
 //   - one RagStore opened against <VAULT>/.brain/lance/
@@ -99,28 +99,53 @@ export class RagPipeline {
   private async indexOne(rel: string): Promise<void> {
     const note = await this.vault.readNote(rel);
     const chunks = chunkNote(rel, note.content);
-    // Always wipe prior rows for this path so removed paragraphs don't linger.
-    await this.store.deleteByPath(rel);
-    if (chunks.length === 0) {
-      this.lastIndexedAt = Date.now();
-      return;
-    }
-    const vectors = await this.embedder.embed(chunks.map((c) => c.text));
+    const tasks = chunkTasks(rel, note.content);
     const desc = describeProvider(this.cfg);
-    const rows: EmbeddedChunk[] = chunks.map((c, i) => ({
-      ...c,
-      id: `${rel}#${c.chunkIndex}`,
-      embedding: vectors[i]!,
-      mtime: note.mtime,
-      modelId: desc.modelId,
-      providerId: desc.providerId,
-    }));
-    await this.store.upsert(rows);
+
+    // Always wipe prior rows for this path so removed content doesn't linger.
+    await this.store.deleteByPath(rel);
+    await this.store.deleteTasksByPath(rel);
+
+    // Embed body chunks + task texts in a single batch so we pay the
+    // embedder warm-up cost once per note.
+    const bodyTexts = chunks.map((c) => c.text);
+    const taskTexts = tasks.map((t) => t.text);
+    const allVectors =
+      bodyTexts.length + taskTexts.length === 0
+        ? []
+        : await this.embedder.embed([...bodyTexts, ...taskTexts]);
+
+    if (chunks.length > 0) {
+      const noteRows: EmbeddedChunk[] = chunks.map((c, i) => ({
+        ...c,
+        id: `${rel}#${c.chunkIndex}`,
+        embedding: allVectors[i]!,
+        mtime: note.mtime,
+        modelId: desc.modelId,
+        providerId: desc.providerId,
+      }));
+      await this.store.upsert(noteRows);
+    }
+
+    if (tasks.length > 0) {
+      const offset = chunks.length;
+      const taskRows: EmbeddedTaskChunk[] = tasks.map((t, i) => ({
+        ...t,
+        id: `${rel}#L${t.lineNo}`,
+        embedding: allVectors[offset + i]!,
+        mtime: note.mtime,
+        modelId: desc.modelId,
+        providerId: desc.providerId,
+      }));
+      await this.store.upsertTasks(taskRows);
+    }
+
     this.lastIndexedAt = Date.now();
   }
 
   async deleteNote(rel: string): Promise<void> {
     await this.store.deleteByPath(rel);
+    await this.store.deleteTasksByPath(rel);
   }
 
   // Public encode hook for ad-hoc queries (used by /api/similar).
