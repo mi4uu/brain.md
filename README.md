@@ -92,6 +92,13 @@ To enable semantic search and the MCP `similar_notes` tool, open
 `bge-small-en-v1.5` running locally via Xenova ONNX (one-time ~133 MB
 model download, then fully offline).
 
+> **Want a tour?** Point brain.md at the demo vault that ships with
+> the repo:
+> ```sh
+> bun run dev:server -- --vault-dir "$PWD/example/vault"
+> ```
+> Every screenshot below was taken against [`example/vault/`](example/).
+
 ---
 
 ## 📦 Install
