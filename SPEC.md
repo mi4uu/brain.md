@@ -297,7 +297,7 @@ T93|x|XDG path resolver: `getDefaultVaultDir()` + `getDefaultSettingsDir()` in s
 T94|x|CLI parser in server/src/cli.ts: --help/-h, --vault-dir/-v, --port/-p, --version. unknown flag → exit 2|V45,I.cli
 T95|x|server entry wires precedence (cli > env > XDG default) for VAULT_DIR + PORT. mkdir -p vault on first run|V44,V45,I.cli
 T96|x|update README.md: XDG default paths + CLI usage block|V44,V45
-T97|.|add deps: @modelcontextprotocol/sdk + @lancedb/lancedb + @xenova/transformers + gpt-tokenizer + argon2|V46,V47,V49,V53
+T97|x|add deps: @modelcontextprotocol/sdk + @lancedb/lancedb + @xenova/transformers + gpt-tokenizer (argon2 dropped — using Bun.password built-in)|V46,V47,V49,V53
 T98|.|RAG module scaffold: server/src/rag/{chunker,embedder-local,embedder-openai,provider,store,types}.ts|V47,V48,V49
 T99|.|chunker.ts: paragraph-based ≤512-token chunks w/ 64-token overlap; preserves heading trail + line range; excludes frontmatter|V48
 T100|.|local embedder: bge-small-en-v1.5 via @xenova/transformers; lazy-load model on first call; batch encode|V49
