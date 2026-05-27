@@ -311,7 +311,7 @@ T107|.|POST /api/rag/reindex route|I.api,V47
 T108|.|POST /api/rag/test route — dry-run embed sample text w/ passed-in config (no save); useful before applying openai-compat settings|I.api,V49,V51
 T109|.|settings.json rag schema: `{enabled, provider:"local"|"openai-compat", local:{model,dim}, openaiCompat:{baseURL,model,apiKey,dim}}`|V49
 T110|.|Settings UI tab "AI / RAG": enable toggle (Switch), provider select (Select), conditional fields, Test button, Reindex button, status pill|I.web,V49,V51
-T111|.|`.brain/lance/` added to vault `.gitignore`|V51
+T111|x|`.brain/lance/` covered by existing `.brain/` pattern in vault `.gitignore` (server/src/git/git.ts:21); no change needed|V51
 T112|.|auth module: server/src/auth/{hasher,tokens,store}.ts — argon2id hash, in-memory token map, 24h ttl|V53
 T113|.|auth routes: GET /api/auth/status, POST /api/auth/set, POST /api/auth/clear, POST /api/auth/login, POST /api/auth/logout|I.api,V53
 T114|.|auth middleware: no-op when auth.json absent; otherwise enforce Bearer on /api/* (except /auth/{status,login}) + /mcp/*|V53
