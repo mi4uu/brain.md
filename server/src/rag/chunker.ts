@@ -3,7 +3,13 @@ import {
   CHUNK_OVERLAP_TOKENS,
   CHUNK_TARGET_TOKENS,
   type Chunk,
+  type TaskChunk,
 } from "./types";
+
+// V55: a task line in markdown.
+// Captures: leading bullet+space, [x|X|space], text after the checkbox.
+// We anchor to start-of-line because task lines must be top-level on their line.
+const TASK_RE = /^(\s*[-*+])\s+\[([ xX])\]\s+(.+)$/;
 
 interface Block {
   text: string;
@@ -32,6 +38,28 @@ export function chunkNote(
   if (blocks.length === 0) return [];
 
   return packBlocks(path, blocks, target, overlap);
+}
+
+// V55: extract task lines into one TaskChunk each. Reuses the
+// frontmatter strip so lineNo aligns with the original file. Lines
+// matching the TASK_RE are reported by their 1-based source line.
+export function chunkTasks(path: string, content: string): TaskChunk[] {
+  const { body, bodyOffset } = stripFrontmatter(content);
+  if (body === "") return [];
+  const out: TaskChunk[] = [];
+  const lines = body.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const m = TASK_RE.exec(lines[i] ?? "");
+    if (!m) continue;
+    const checkbox = (m[2] ?? " ").toLowerCase();
+    out.push({
+      path,
+      lineNo: i + 1 + bodyOffset,
+      text: (m[3] ?? "").trim(),
+      done: checkbox === "x",
+    });
+  }
+  return out;
 }
 
 function stripFrontmatter(content: string): { body: string; bodyOffset: number } {

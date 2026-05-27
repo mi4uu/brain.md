@@ -72,3 +72,27 @@ export interface RagStatus {
 // V49: chunker constants
 export const CHUNK_TARGET_TOKENS = 512;
 export const CHUNK_OVERLAP_TOKENS = 64;
+
+// V55: per-task indexed unit (parallel to Chunk for note body).
+export interface TaskChunk {
+  path: string;
+  lineNo: number; // 1-based, same coordinate system as Chunk.lineStart
+  text: string;
+  done: boolean;
+}
+
+export interface EmbeddedTaskChunk extends TaskChunk {
+  id: string; // `${path}#L${lineNo}`
+  embedding: Float32Array;
+  mtime: number;
+  modelId: string;
+  providerId: ProviderId;
+}
+
+export interface TaskHit {
+  path: string;
+  lineNo: number;
+  text: string;
+  done: boolean;
+  score: number;
+}

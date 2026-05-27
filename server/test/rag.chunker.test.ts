@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { encode } from "gpt-tokenizer";
-import { chunkNote } from "../src/rag/chunker";
+import { chunkNote, chunkTasks } from "../src/rag/chunker";
 
 describe("RAG chunker — V48", () => {
   test("empty body → no chunks", () => {
@@ -79,5 +79,46 @@ describe("RAG chunker — V48", () => {
     // the last block of chunk 0 should reappear inside chunk 1 (sliding window)
     const tail0Last = chunks[0]!.text.split("\n\n").at(-1)!;
     expect(chunks[1]!.text.includes(tail0Last)).toBe(true);
+  });
+});
+
+describe("chunkTasks — V55", () => {
+  test("empty / no-tasks input → []", () => {
+    expect(chunkTasks("a.md", "")).toEqual([]);
+    expect(chunkTasks("a.md", "just a paragraph\n\nno tasks here")).toEqual([]);
+  });
+
+  test("extracts open + done tasks with line numbers", () => {
+    const md = `# Heading\n\n- [ ] first task\n- [x] done thing\n- [X] capital done\nplain bullet not task\n* [ ] starred task\n+ [ ] plussed task`;
+    const tasks = chunkTasks("p.md", md);
+    expect(tasks.map((t) => ({ line: t.lineNo, text: t.text, done: t.done }))).toEqual([
+      { line: 3, text: "first task", done: false },
+      { line: 4, text: "done thing", done: true },
+      { line: 5, text: "capital done", done: true },
+      { line: 7, text: "starred task", done: false },
+      { line: 8, text: "plussed task", done: false },
+    ]);
+  });
+
+  test("frontmatter offsets line numbers correctly", () => {
+    const md = `---\ntitle: x\n---\n\n- [ ] one\n- [x] two`;
+    const tasks = chunkTasks("p.md", md);
+    expect(tasks[0]!.lineNo).toBe(5);
+    expect(tasks[1]!.lineNo).toBe(6);
+  });
+
+  test("nested list still emits each task", () => {
+    const md = `- [ ] parent\n  - [ ] nested\n    - [x] deep`;
+    expect(chunkTasks("p.md", md).map((t) => t.text)).toEqual([
+      "parent",
+      "nested",
+      "deep",
+    ]);
+  });
+
+  test("path is preserved on every row", () => {
+    expect(chunkTasks("Daily/2026-01-01.md", "- [ ] x")[0]!.path).toBe(
+      "Daily/2026-01-01.md",
+    );
   });
 });
