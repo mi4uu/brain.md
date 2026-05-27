@@ -9,7 +9,7 @@
 Markdown vault. Live editor. Semantic search. MCP server.
 All on disk. No vendor. No API key required.
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Runtime: Bun](https://img.shields.io/badge/runtime-Bun-black.svg)](https://bun.com)
 [![MCP: streamable-http](https://img.shields.io/badge/MCP-streamable--http-7c3aed.svg)](docs/mcp.md)
 [![RAG: LanceDB](https://img.shields.io/badge/RAG-LanceDB-ec4899.svg)](#-semantic-search-rag)
@@ -402,7 +402,40 @@ Contributions welcome. The repo uses a spec-first workflow:
 
 ## 📄 License
 
-MIT — see [LICENSE](LICENSE).
+**GNU Affero General Public License v3.0 or later** — see
+[LICENSE](LICENSE).
+
+brain.md is, and will stay, free / libre / open-source. The AGPL was
+picked over weaker permissive licenses for two specific reasons:
+
+1. **It closes the SaaS loophole.** If you modify brain.md and run
+   it as a network service for others — hosted, multi-tenant,
+   rebranded, whatever — you must publish your modified source under
+   the same AGPL. Strong copyleft for a server-side tool means the
+   community always gets the improvements back.
+2. **It can't be relicensed under a permissive license downstream.**
+   Forks stay open forever. Nobody can scoop the project, slap a new
+   logo on it, and ship a proprietary "Pro" cut.
+
+You're free to:
+
+- run brain.md, personally or commercially, without limits;
+- fork, modify, redistribute, even rebrand — provided your fork stays
+  under the AGPL and you publish the source you're running.
+
+You're **not** free to:
+
+- ship a closed-source product based on brain.md;
+- host a modified brain.md as a public service without publishing
+  your modifications under the AGPL.
+
+### Trademarks
+
+The name **brain.md** and the brain.md logo are *not* covered by the
+AGPL. If you fork the project, you're welcome to do almost anything
+with the code — but please use your own name and your own mark for
+your fork so users aren't confused about which project they're
+running.
 
 ---
 

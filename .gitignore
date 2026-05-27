@@ -6,4 +6,6 @@ build
 .env
 .env.local
 vault
+!example/vault/
+!example/vault/**
 .brain
