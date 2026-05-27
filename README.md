@@ -109,7 +109,7 @@ powershell -c "irm https://raw.githubusercontent.com/mi4uu/brain.md/main/install
 Then:
 
 ```sh
-brain                    # serve on :3000, vault at $HOME/.local/share/brain.md/vault
+brainmd                  # serve on :3000, vault at $HOME/.local/share/brain.md/vault
 open http://localhost:3000
 ```
 
@@ -125,7 +125,7 @@ model download, then fully offline).
 > **Want a tour?** Point brain.md at the demo vault that ships with
 > the repo:
 > ```sh
-> brain --vault-dir ./example/vault
+> brainmd --vault-dir ./example/vault
 > ```
 > Every screenshot below was taken against [`example/vault/`](example/).
 
@@ -169,27 +169,27 @@ Grab the file for your machine from the latest release:
 
 ```sh
 # macOS Apple Silicon — swap the URL suffix for your platform from the table above
-curl -L -o brain \
+curl -L -o brainmd \
   https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-darwin-arm64
-chmod +x brain
-./brain                                  # → serves on http://localhost:3000
+chmod +x brainmd
+./brainmd                                # → serves on http://localhost:3000
 ```
 
 ```sh
-# Optional: drop it on your $PATH so you can run `brain` anywhere
-sudo mv brain /usr/local/bin/brain
-brain --help                             # see all flags
-brain --port 4000                        # custom port
-brain --vault-dir ~/notes/my-vault       # custom vault location
+# Optional: drop it on your $PATH so you can run `brainmd` anywhere
+sudo mv brainmd /usr/local/bin/brainmd
+brainmd --help                           # see all flags
+brainmd --port 4000                      # custom port
+brainmd --vault-dir ~/notes/my-vault     # custom vault location
 ```
 
 #### One-liner — Windows (PowerShell)
 
 ```powershell
 iwr https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-windows-x64.exe `
-    -OutFile brain.exe
-.\brain.exe                              # → serves on http://localhost:3000
-.\brain.exe --help                       # all flags
+    -OutFile brainmd.exe
+.\brainmd.exe                            # → serves on http://localhost:3000
+.\brainmd.exe --help                     # all flags
 ```
 
 > **First run:** brain.md creates an empty vault at the XDG default
@@ -384,12 +384,12 @@ with a 24-hour TTL.
 ## ⌨️ CLI
 
 ```sh
-brain [options]            # or: bun run start
-brain --help               # -h
-brain --version
-brain --vault-dir <path>   # -v <path>
-brain --port <n>           # -p <n>
-brain --mcp-disabled       # skip mounting MCP at /mcp/*
+brainmd [options]            # or: bun run start
+brainmd --help               # -h
+brainmd --version
+brainmd --vault-dir <path>   # -v <path>
+brainmd --port <n>           # -p <n>
+brainmd --mcp-disabled       # skip mounting MCP at /mcp/*
 ```
 
 Precedence: **CLI flag > env var > XDG default**. Unknown flag →

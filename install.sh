@@ -11,7 +11,7 @@
 set -eu
 
 REPO="mi4uu/brain.md"
-BIN_NAME="brain"
+BIN_NAME="brainmd"
 INSTALL_DIR="${BRAIN_INSTALL:-$HOME/.local/bin}"
 VERSION="${BRAIN_VERSION:-latest}"
 
@@ -84,8 +84,8 @@ case ":$PATH:" in
 esac
 
 bold "Get started:"
-printf "  brain --help                        # see all flags\n"
-printf "  brain                               # serve on :3000\n"
-printf "  brain --vault-dir ~/my-notes        # custom vault\n"
+printf "  brainmd --help                       # see all flags\n"
+printf "  brainmd                              # serve on :3000\n"
+printf "  brainmd --vault-dir ~/my-notes       # custom vault\n"
 printf "\n"
 printf "Then open: \033[34mhttp://localhost:3000\033[0m\n"

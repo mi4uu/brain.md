@@ -20,9 +20,9 @@ export class CliError extends Error {
   }
 }
 
-const USAGE = `Usage: brain [options]
+const USAGE = `Usage: brainmd [options]
 
-Web Obsidian-style markdown vault editor.
+A local-first second brain for you and your AI agents.
 
 Options:
   -v, --vault-dir <path>   Path to the vault directory.

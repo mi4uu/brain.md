@@ -10,7 +10,7 @@
 $ErrorActionPreference = "Stop"
 
 $Repo       = "mi4uu/brain.md"
-$BinName    = "brain.exe"
+$BinName    = "brainmd.exe"
 $InstallDir = if ($env:BRAIN_INSTALL) { $env:BRAIN_INSTALL } else { Join-Path $HOME ".brain.md\bin" }
 $Version    = if ($env:BRAIN_VERSION) { $env:BRAIN_VERSION } else { "latest" }
 
@@ -75,8 +75,8 @@ if (-not $onPath) {
 }
 
 Write-Host "Get started:" -ForegroundColor White
-Write-Host "  brain --help                        # see all flags"
-Write-Host "  brain                               # serve on :3000"
-Write-Host "  brain --vault-dir `"$HOME\my-notes`"   # custom vault"
+Write-Host "  brainmd --help                       # see all flags"
+Write-Host "  brainmd                              # serve on :3000"
+Write-Host "  brainmd --vault-dir `"$HOME\my-notes`"  # custom vault"
 Write-Host ""
 Write-Host "Then open: http://localhost:3000" -ForegroundColor Blue

@@ -11,7 +11,7 @@ async function main() {
     action = parseArgs(process.argv.slice(2));
   } catch (e) {
     const msg = e instanceof CliError ? e.message : String(e);
-    process.stderr.write(`brain: ${msg}\n\nTry 'brain --help' for usage.\n`);
+    process.stderr.write(`brainmd: ${msg}\n\nTry 'brainmd --help' for usage.\n`);
     process.exit(2);
   }
 
@@ -20,7 +20,7 @@ async function main() {
     process.exit(0);
   }
   if (action.kind === "version") {
-    process.stdout.write(`brain ${VERSION}\n`);
+    process.stdout.write(`brainmd ${VERSION}\n`);
     process.exit(0);
   }
 
