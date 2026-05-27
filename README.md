@@ -119,33 +119,60 @@ model download, then fully offline).
 
 ## 📦 Install
 
-### Download a prebuilt binary *(easiest)*
+### 🚀 Download a prebuilt binary *(easiest — no Bun, no source clone)*
 
-Every push to `main` triggers a matrix build that produces a
-**single-file executable** per platform — the web UI is embedded
-inside the binary, so there's nothing else to install.
+Every release ships a **single-file executable** per platform with
+the web UI embedded inside it. No Bun runtime, no Node.js, no
+`git clone`, no `bun install` — just download, mark executable, run.
 
-| Platform                     | Architecture | File                                                                                          |
-|------------------------------|--------------|-----------------------------------------------------------------------------------------------|
-| 🍎 &nbsp; macOS (Apple Silicon) | `arm64`      | [`brain-md-darwin-arm64`](https://github.com/mi4uu/brain.md/releases/latest)                  |
-| 🍎 &nbsp; macOS (Intel)         | `x64`        | [`brain-md-darwin-x64`](https://github.com/mi4uu/brain.md/releases/latest)                    |
-| 🐧 &nbsp; Linux                  | `x64`        | [`brain-md-linux-x64`](https://github.com/mi4uu/brain.md/releases/latest)                     |
-| 🐧 &nbsp; Linux                  | `arm64`      | [`brain-md-linux-arm64`](https://github.com/mi4uu/brain.md/releases/latest)                   |
-| 🪟 &nbsp; Windows                 | `x64`        | [`brain-md-windows-x64.exe`](https://github.com/mi4uu/brain.md/releases/latest)               |
+Grab the file for your machine from the latest release:
+👉 **[github.com/mi4uu/brain.md/releases/latest](https://github.com/mi4uu/brain.md/releases/latest)**
+
+| Platform                          | Architecture | Asset                                                                                                          |
+|-----------------------------------|--------------|----------------------------------------------------------------------------------------------------------------|
+| 🍎 &nbsp; macOS — Apple Silicon  | `arm64`      | [`brain-md-darwin-arm64`](https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-darwin-arm64)    |
+| 🍎 &nbsp; macOS — Intel          | `x64`        | [`brain-md-darwin-x64`](https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-darwin-x64)        |
+| 🐧 &nbsp; Linux                   | `x64`        | [`brain-md-linux-x64`](https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-linux-x64)          |
+| 🐧 &nbsp; Linux                   | `arm64`      | [`brain-md-linux-arm64`](https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-linux-arm64)      |
+| 🪟 &nbsp; Windows                  | `x64`        | [`brain-md-windows-x64.exe`](https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-windows-x64.exe) |
+
+#### One-liner — macOS / Linux
 
 ```sh
-# example — macOS Apple Silicon
+# macOS Apple Silicon — swap the URL suffix for your platform from the table above
 curl -L -o brain \
   https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-darwin-arm64
 chmod +x brain
-./brain                  # serves on :3000, vault at $XDG_DATA_HOME/brain.md/vault
-open http://localhost:3000
+./brain                                  # → serves on http://localhost:3000
 ```
 
-> Untagged commits land as build artifacts on the
-> [Actions page](https://github.com/mi4uu/brain.md/actions) (30-day
-> retention); tagged releases (`vX.Y.Z`) get attached to the
-> [Releases page](https://github.com/mi4uu/brain.md/releases).
+```sh
+# Optional: drop it on your $PATH so you can run `brain` anywhere
+sudo mv brain /usr/local/bin/brain
+brain --help                             # see all flags
+brain --port 4000                        # custom port
+brain --vault-dir ~/notes/my-vault       # custom vault location
+```
+
+#### One-liner — Windows (PowerShell)
+
+```powershell
+iwr https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-windows-x64.exe `
+    -OutFile brain.exe
+.\brain.exe                              # → serves on http://localhost:3000
+.\brain.exe --help                       # all flags
+```
+
+> **First run:** brain.md creates an empty vault at the XDG default
+> (`$HOME/.local/share/brain.md/vault` on macOS/Linux, the equivalent
+> on Windows) and serves the editor at <http://localhost:3000>.
+> Want to try the demo vault first? Download
+> [`example/vault/`](example/) and pass it with
+> `brain --vault-dir ./vault`.
+
+> Untagged commits also produce binaries — they live as build
+> artifacts on the [Actions page](https://github.com/mi4uu/brain.md/actions)
+> with 30-day retention.
 
 ### From source
 
