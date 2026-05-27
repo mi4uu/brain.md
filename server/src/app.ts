@@ -25,6 +25,10 @@ import { gitRoutes } from "./api/git";
 import { metaRoutes } from "./api/meta";
 import { settingsRoutes } from "./api/settings";
 import { ragRoutes } from "./api/rag";
+import { authRoutes } from "./api/auth";
+import { authMiddleware } from "./api/auth-middleware";
+import { AuthStore } from "./auth/store";
+import { TokenStore } from "./auth/tokens";
 
 export interface AppOptions {
   vaultDir?: string;
@@ -55,9 +59,14 @@ export function createApp(opts: AppOptions = {}) {
   const ragStore = new RagStore(join(vault.root, ".brain", "lance"), ragDim);
   const ragPipeline = new RagPipeline(vault, ragStore, initialRagCfg);
 
+  const authStore = new AuthStore(vault);
+  const tokenStore = new TokenStore();
+
   const app = new Elysia()
     .use(cors())
+    .use(authMiddleware(authStore, tokenStore))
     .get("/health", () => ({ ok: true, vaultDir: vault.root }))
+    .use(authRoutes(authStore, tokenStore))
     .use(treeRoutes(vault))
     .use(noteRoutes(vault, index))
     .use(folderRoutes(vault))
@@ -73,7 +82,18 @@ export function createApp(opts: AppOptions = {}) {
     .use(metaRoutes(vault))
     .use(settingsRoutes(settings, autocommit))
     .use(ragRoutes(ragPipeline, settings));
-  return { app, vault, index, repo, autocommit, settings, ragStore, ragPipeline };
+  return {
+    app,
+    vault,
+    index,
+    repo,
+    autocommit,
+    settings,
+    ragStore,
+    ragPipeline,
+    authStore,
+    tokenStore,
+  };
 }
 
 export type AppHandle = ReturnType<typeof createApp>;

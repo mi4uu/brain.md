@@ -30,13 +30,22 @@ async function main() {
   // mkdir -p so first run on a fresh XDG default doesn't crash
   await mkdir(config.vaultDir, { recursive: true });
 
-  const { app, index, repo, autocommit, settings, ragStore, ragPipeline } =
-    createApp({
-      vaultDir: config.vaultDir,
-      gitAutocommit: config.gitAutocommit,
-      gitDebounceMs: config.gitDebounceMs,
-    });
+  const {
+    app,
+    index,
+    repo,
+    autocommit,
+    settings,
+    ragStore,
+    ragPipeline,
+    authStore,
+  } = createApp({
+    vaultDir: config.vaultDir,
+    gitAutocommit: config.gitAutocommit,
+    gitDebounceMs: config.gitDebounceMs,
+  });
 
+  await authStore.load();
   const loaded = await settings.load();
   // settings.json overrides env defaults
   autocommit.setEnabled(loaded.git.autocommit);

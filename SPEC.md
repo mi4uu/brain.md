@@ -312,9 +312,9 @@ T108|x|POST /api/rag/test route — dry-run embed sample text w/ passed-in confi
 T109|x|settings.json rag schema: `{enabled, provider:"local"|"openai-compat", local:{model,dim}, openaiCompat:{baseURL,model,apiKey,dim}}`|V49
 T110|.|Settings UI tab "AI / RAG": enable toggle (Switch), provider select (Select), conditional fields, Test button, Reindex button, status pill|I.web,V49,V51
 T111|x|`.brain/lance/` covered by existing `.brain/` pattern in vault `.gitignore` (server/src/git/git.ts:21); no change needed|V51
-T112|.|auth module: server/src/auth/{hasher,tokens,store}.ts — argon2id hash, in-memory token map, 24h ttl|V53
-T113|.|auth routes: GET /api/auth/status, POST /api/auth/set, POST /api/auth/clear, POST /api/auth/login, POST /api/auth/logout|I.api,V53
-T114|.|auth middleware: no-op when auth.json absent; otherwise enforce Bearer on /api/* (except /auth/{status,login}) + /mcp/*|V53
+T112|x|auth module: server/src/auth/{hasher,tokens,store}.ts — argon2id hash via Bun.password, in-memory token map, 24h ttl|V53
+T113|x|auth routes: GET /api/auth/status, POST /api/auth/set, POST /api/auth/clear, POST /api/auth/login, POST /api/auth/logout|I.api,V53
+T114|x|auth middleware: no-op when auth.json absent; otherwise enforce Bearer on /api/* (except /auth/{status,login}) + /mcp/*|V53
 T115|.|client auth: login Dialog when status.configured && ! authenticated; token in localStorage; fetch wrapper adds Authorization header|I.web,V53
 T116|.|Settings UI tab "Security": set / change / remove password buttons; status display ("auth off" / "auth on")|I.web,V53
 T117|.|folder perms data model: extend folder-meta.json schema `{icons, colors, mcp:{<path>:{read,write}}}` + `resolveFolderPerms(notePath)` helper|V52
