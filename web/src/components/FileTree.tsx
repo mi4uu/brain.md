@@ -104,6 +104,7 @@ interface TreeProps {
   onRename: (path: string, isFolder: boolean) => void;
   onDelete: (path: string, isFolder: boolean) => void;
   onSetIcon: (path: string) => void;
+  onSetMcpPerms?: (path: string) => void;
 }
 
 export function FileTree(props: TreeProps) {
@@ -127,6 +128,15 @@ export function FileTree(props: TreeProps) {
           { label: "New note here", icon: <PlusIcon />, onClick: () => props.onCreateNote(node.path) },
           { label: "New folder here", icon: <FolderIcon />, onClick: () => props.onCreateFolder(node.path) },
           { label: "Set icon…", icon: <IconBare iconKey="star" />, onClick: () => props.onSetIcon(node.path) },
+          ...(props.onSetMcpPerms
+            ? [
+                {
+                  label: "MCP permissions…",
+                  icon: <IconBare iconKey="star" />,
+                  onClick: () => props.onSetMcpPerms!(node.path),
+                } as MenuItem,
+              ]
+            : []),
           { label: "Rename folder", icon: <PencilIcon />, onClick: () => props.onRename(node.path, true) },
           { label: "Delete folder", icon: <TrashIcon />, destructive: true, onClick: () => props.onDelete(node.path, true) },
         ]
