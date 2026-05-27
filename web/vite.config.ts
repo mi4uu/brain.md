@@ -7,6 +7,9 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": "http://localhost:3000",
+      // MCP endpoints so clients (LM Studio, Claude Desktop) can point
+      // at the dev port :5173 and reach the backend MCP transport on :3000.
+      "/mcp": "http://localhost:3000",
     },
   },
   build: {
