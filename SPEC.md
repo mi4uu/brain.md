@@ -324,7 +324,7 @@ T120|x|MCP server entry: server/src/mcp/server.ts using @modelcontextprotocol/sd
 T121|x|MCP tool impls: 9 tools (search_notes, similar_notes, read_note, list_notes, get_backlinks, list_tags, get_tasks, write_note, append_note); ∀ read/write tool enforces V52 folder perm check before vault op; all calls logged to stderr (audit)|I.mcp,V46,V52
 T122|x|MCP resources: vault://tree (filtered by read perm) + vault://note/<+path> via ResourceTemplate|I.mcp,V52
 T123|x|CLI `--mcp-disabled` flag wired into cli.ts + AppOptions; default = MCP mounted|I.cli,V46
-T124|.|README + docs/mcp.md: Claude Desktop config snippet for HTTP+SSE w/ optional Bearer token|V46,V53
+T124|x|README + docs/mcp.md: Claude Desktop config snippet for HTTP+SSE w/ optional Bearer token|V46,V53
 
 ## §B BUGS
 id|date|cause|fix
