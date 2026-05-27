@@ -104,4 +104,67 @@ describe("RagStore — V47", () => {
     store = new RagStore(dir, DIM);
     await store.open();
   });
+
+  // ---------------- tasks (V55) ----------------
+
+  function makeTask(
+    path: string,
+    line: number,
+    vec: number[],
+    done = false,
+  ) {
+    return {
+      id: `${path}#L${line}`,
+      path,
+      lineNo: line,
+      text: `task at L${line} ${done ? "done" : "open"}`,
+      done,
+      embedding: Float32Array.from(vec),
+      mtime: 1700000000 + line,
+      modelId: "test-model",
+      providerId: "local" as const,
+    };
+  }
+
+  test("countTasks starts at 0", async () => {
+    expect(await store.countTasks()).toBe(0);
+  });
+
+  test("upsertTasks + searchTasks returns nearest first", async () => {
+    await store.upsertTasks([
+      makeTask("a.md", 1, [1, 0, 0, 0], false),
+      makeTask("a.md", 3, [0, 1, 0, 0], true),
+      makeTask("b.md", 5, [0, 0, 1, 0], false),
+    ]);
+    expect(await store.countTasks()).toBe(3);
+    const all = await store.searchTasks(Float32Array.from([1, 0, 0, 0]), 3, "all");
+    expect(all[0]!.path).toBe("a.md");
+    expect(all[0]!.lineNo).toBe(1);
+    expect(all[0]!.score).toBeGreaterThan(0.99);
+  });
+
+  test("searchTasks filter=open excludes done", async () => {
+    // a.md#L3 is done; should not appear
+    const open = await store.searchTasks(Float32Array.from([0, 1, 0, 0]), 5, "open");
+    expect(open.every((h) => h.done === false)).toBe(true);
+    expect(open.find((h) => h.path === "a.md" && h.lineNo === 3)).toBeUndefined();
+  });
+
+  test("searchTasks filter=done returns only done rows", async () => {
+    const done = await store.searchTasks(Float32Array.from([0, 1, 0, 0]), 5, "done");
+    expect(done.every((h) => h.done === true)).toBe(true);
+    expect(done[0]!.path).toBe("a.md");
+    expect(done[0]!.lineNo).toBe(3);
+  });
+
+  test("deleteTasksByPath removes only that note's tasks", async () => {
+    await store.deleteTasksByPath("a.md");
+    expect(await store.countTasks()).toBe(1);
+    const remaining = await store.searchTasks(
+      Float32Array.from([0, 0, 1, 0]),
+      5,
+      "all",
+    );
+    expect(remaining[0]!.path).toBe("b.md");
+  });
 });
