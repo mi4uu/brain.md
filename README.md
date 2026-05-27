@@ -366,8 +366,8 @@ Every env knob:
   `WebStandardStreamableHTTPServerTransport`
 - **Auth**: `Bun.password` (argon2id, no native build)
 
-The full living spec is in [SPEC.md](SPEC.md). Bugs and the invariants
-they spawned live in §B / §V.
+Per-component documentation lives next to the code; see [docs/](docs/)
+for the MCP reference.
 
 ---
 
@@ -388,15 +388,13 @@ Want to nudge one of these up the list? Open an issue or PR.
 
 ## 🤝 Contributing
 
-Contributions welcome. The repo uses a spec-first workflow:
+Contributions welcome.
 
-1. Read [SPEC.md](SPEC.md) — every feature is anchored to an
-   invariant (§V) and a task (§T).
-2. For non-trivial changes, draft a `/spec amend` proposal first
-   (we live with the spec the way Rust lives with RFCs).
-3. Write the test before the implementation. Server tests run with
+1. Open an issue first for anything non-trivial — a quick design
+   sketch saves a long PR rewrite.
+2. Write the test before the implementation. Server tests run with
    `bun test`; the suite is currently **160 green**.
-4. Open a PR. CI runs typecheck (server + web) + `bun test`.
+3. Open a PR. CI runs typecheck (server + web) + `bun test`.
 
 ---
 

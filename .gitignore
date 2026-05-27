@@ -9,3 +9,7 @@ vault
 !example/vault/
 !example/vault/**
 .brain
+
+# living spec — kept local, not shipped in the repo
+SPEC.md
+FORMAT.md
