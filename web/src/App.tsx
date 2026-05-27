@@ -62,6 +62,11 @@ import { extractTagsFromMd } from "./lib/tags";
 import { useAuth } from "./hooks/useAuth";
 import { LoginDialog } from "./components/LoginDialog";
 import { FolderPermsDialog } from "./components/FolderPermsDialog";
+import { AboutDialog } from "./components/AboutDialog";
+import {
+  HeartFilledIcon,
+  InfoCircledIcon,
+} from "@radix-ui/react-icons";
 import "./styles/tw.css";
 import "./styles/tokens.css";
 import "./styles/global.css";
@@ -102,6 +107,7 @@ export function App() {
   const [folderMeta, setFolderMeta] = useState<FolderMeta>({ version: 1, icons: {}, colors: {} });
   const [iconPickerPath, setIconPickerPath] = useState<string | null>(null);
   const [permsPath, setPermsPath] = useState<string | null>(null);
+  const [showAbout, setShowAbout] = useState(false);
   const sidebar = useSidebarSections(
     ["bookmarks", "vault", "tags", "outline", "backlinks"],
     {
@@ -746,6 +752,19 @@ export function App() {
         <IconBtn label="Settings" onClick={() => setShowSettings(true)}>
           <SettingsIcon />
         </IconBtn>
+        <IconBtn label="About brain.md" onClick={() => setShowAbout(true)}>
+          <InfoCircledIcon />
+        </IconBtn>
+        <a
+          href="https://github.com/sponsors/mi4uu"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn icon sponsor-btn"
+          aria-label="Sponsor brain.md on GitHub"
+          title="Sponsor brain.md on GitHub"
+        >
+          <HeartFilledIcon />
+        </a>
         {gitStatus?.enabled ? (
           <div className="topbar-center">
             <GitStatusChip status={gitStatus} />
@@ -1028,6 +1047,8 @@ export function App() {
           onClose={() => setPermsPath(null)}
         />
       ) : null}
+
+      <AboutDialog open={showAbout} onOpenChange={setShowAbout} />
 
     </div>
     <Toaster />

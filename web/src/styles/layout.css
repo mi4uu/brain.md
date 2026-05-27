@@ -65,6 +65,17 @@
   }
 }
 
+/* Sponsor heart: subtle muted pink at rest, full pink on hover */
+.topbar .sponsor-btn {
+  color: var(--text-3);
+  opacity: 0.75;
+  transition: color var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+}
+.topbar .sponsor-btn:hover {
+  color: #ec4899; /* pink-500 */
+  opacity: 1;
+}
+
 .topbar .title {
   font-weight: 600;
   letter-spacing: -0.01em;

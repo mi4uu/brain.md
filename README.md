@@ -402,6 +402,26 @@ Want to nudge one of these up the list? Open an issue or PR.
 
 ---
 
+## 💖 Sponsor
+
+brain.md is a solo open-source effort. If it's useful to you and you
+can chip in, sponsorship pays for the time that goes into new features,
+docs and review.
+
+<p align="center">
+  <a href="https://github.com/sponsors/mi4uu">
+    <img
+      src="https://img.shields.io/badge/Sponsor-mi4uu-ec4899?logo=github-sponsors&logoColor=white&style=for-the-badge"
+      alt="Sponsor mi4uu on GitHub"
+    />
+  </a>
+</p>
+
+> The `Sponsor ❤` button at the top of this repo and the small heart
+> in the brain.md topbar (next to **About**) both lead here.
+
+---
+
 ## 🤝 Contributing
 
 Contributions welcome.
