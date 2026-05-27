@@ -6,9 +6,6 @@
 
 **A local-first second brain for you — and for your AI agents.**
 
-Markdown vault. Live editor. Semantic search. MCP server.
-All on disk. No vendor. No API key required.
-
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Runtime: Bun](https://img.shields.io/badge/runtime-Bun-black.svg)](https://bun.com)
 [![MCP: streamable-http](https://img.shields.io/badge/MCP-streamable--http-7c3aed.svg)](docs/mcp.md)
@@ -17,6 +14,25 @@ All on disk. No vendor. No API key required.
 </div>
 
 ![brain.md welcome](docs/img/hero-welcome.png)
+
+<div align="center">
+
+### What you get
+
+</div>
+
+| | |
+|---|---|
+| 📝 &nbsp; **Obsidian-compatible markdown** | Wikilinks, embeds, callouts, math, mermaid, tasks, frontmatter, aliases. Open your existing Obsidian vault — it just works. |
+| ⚡ &nbsp; **Live editor + preview** | CodeMirror 6 with cursor-anchored scroll sync, autosave, instant tooltips, command palette, quick switcher. |
+| 🔍 &nbsp; **Semantic search built in** | Per-vault [LanceDB](https://lancedb.com) vector store. Notes are chunked, embedded and indexed on every save. No external service to set up. |
+| 🤖 &nbsp; **Pluggable embedders** | Default: `bge-small-en-v1.5` running locally via Xenova ONNX. Or point at **Ollama**, **LM Studio**, **OpenAI** — anything with `/v1/embeddings`. |
+| 🛰️ &nbsp; **MCP server (HTTP + SSE)** | 9 tools + 2 resources mounted on the same port. Claude Desktop and any MCP-compliant agent can read, search and write your notes. |
+| 🔒 &nbsp; **Per-folder agent permissions** | Right-click a folder → set `{read, write}` for the MCP surface. Keep `Journal/Private/` out of agent reach without locking down the vault. |
+| 🔑 &nbsp; **Optional password auth** | argon2id, bearer tokens, 24-hour TTL — gates both HTTP API and MCP. Off by default, on with one click. |
+| 📜 &nbsp; **Git autocommit** | Every save lands in git. Full history, diff, restore, manual checkpoints. The vault is a real git repo on disk. |
+| 🌍 &nbsp; **No vendor lock-in** | Your vault is a folder of `.md` files. Open it in VSCode, Obsidian, `cat`, anything. brain.md is just one more way to view and query it. |
+| 💸 &nbsp; **Zero API keys required** | Out of the box it runs fully offline. Cloud embedders are an opt-in, not a default. |
 
 ---
 
