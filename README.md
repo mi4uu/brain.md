@@ -119,6 +119,34 @@ model download, then fully offline).
 
 ## 📦 Install
 
+### Download a prebuilt binary *(easiest)*
+
+Every push to `main` triggers a matrix build that produces a
+**single-file executable** per platform — the web UI is embedded
+inside the binary, so there's nothing else to install.
+
+| Platform                     | Architecture | File                                                                                          |
+|------------------------------|--------------|-----------------------------------------------------------------------------------------------|
+| 🍎 &nbsp; macOS (Apple Silicon) | `arm64`      | [`brain-md-darwin-arm64`](https://github.com/mi4uu/brain.md/releases/latest)                  |
+| 🍎 &nbsp; macOS (Intel)         | `x64`        | [`brain-md-darwin-x64`](https://github.com/mi4uu/brain.md/releases/latest)                    |
+| 🐧 &nbsp; Linux                  | `x64`        | [`brain-md-linux-x64`](https://github.com/mi4uu/brain.md/releases/latest)                     |
+| 🐧 &nbsp; Linux                  | `arm64`      | [`brain-md-linux-arm64`](https://github.com/mi4uu/brain.md/releases/latest)                   |
+| 🪟 &nbsp; Windows                 | `x64`        | [`brain-md-windows-x64.exe`](https://github.com/mi4uu/brain.md/releases/latest)               |
+
+```sh
+# example — macOS Apple Silicon
+curl -L -o brain \
+  https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-darwin-arm64
+chmod +x brain
+./brain                  # serves on :3000, vault at $XDG_DATA_HOME/brain.md/vault
+open http://localhost:3000
+```
+
+> Untagged commits land as build artifacts on the
+> [Actions page](https://github.com/mi4uu/brain.md/actions) (30-day
+> retention); tagged releases (`vX.Y.Z`) get attached to the
+> [Releases page](https://github.com/mi4uu/brain.md/releases).
+
 ### From source
 
 ```sh
@@ -134,6 +162,13 @@ For development:
 bun run dev:server       # backend on :3000
 bun run dev:web          # vite on :5173 (with /api proxy)
 ```
+
+If you run `bun run start` from a fresh source checkout (no compiled
+binary, no `web/dist`), the server downloads the matching web bundle
+from the GitHub release into
+`$XDG_CACHE_HOME/brain.md/web/<version>/` on first request and serves
+from there. To always work offline, run `bun --cwd web run build`
+once.
 
 > Requires [Bun ≥ 1.3](https://bun.com). brain.md uses `Bun.password`
 > (built-in argon2id) so you don't need a native crypto build.

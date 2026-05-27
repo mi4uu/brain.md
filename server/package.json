@@ -27,7 +27,6 @@
   "dependencies": {
     "elysia": "^1.1.25",
     "@elysiajs/cors": "^1.1.1",
-    "@elysiajs/static": "^1.1.1",
     "@modelcontextprotocol/sdk": "^1.0.4",
     "@lancedb/lancedb": "^0.20.0",
     "apache-arrow": "^18.1.0",

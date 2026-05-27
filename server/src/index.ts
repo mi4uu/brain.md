@@ -86,6 +86,11 @@ async function main() {
     }
   }
 
+  // Mount the embedded / on-disk / downloaded web client last so it
+  // acts as the SPA catch-all for everything not handled by /api or /mcp.
+  const { mountEmbeddedWeb } = await import("./web/serve");
+  await mountEmbeddedWeb(app);
+
   app.listen(config.port);
   console.log(`brain.md server :${config.port} → vault ${config.vaultDir}`);
 }
