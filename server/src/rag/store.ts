@@ -1,14 +1,13 @@
-import * as lancedb from "@lancedb/lancedb";
-import {
-  Field,
-  FixedSizeList,
-  Float32,
-  Float64,
-  Int32,
-  List,
-  Schema,
-  Utf8,
-} from "apache-arrow";
+// LanceDB + apache-arrow are loaded lazily inside open() so the module
+// can be imported safely even when the host doesn't have the native
+// LanceDB binding available (e.g. inside a `bun --compile` binary where
+// the platform-specific .node file isn't bundled). The penalty is one
+// extra dynamic import on the first RAG mutation; the cost is amortised
+// across the whole pipeline lifecycle.
+//
+// Types are imported with `import type` so they have no runtime cost.
+import type * as lancedb from "@lancedb/lancedb";
+import type { Schema } from "apache-arrow";
 import type { EmbeddedChunk, SearchHit, ProviderId } from "./types";
 
 // V47: per-vault LanceDB at <VAULT>/.brain/lance/, table notes_v1.
@@ -77,31 +76,38 @@ export class RagStore {
     public readonly dim: number,
   ) {}
 
-  private buildSchema(): Schema {
-    return new Schema([
-      new Field("id", new Utf8(), false),
-      new Field("path", new Utf8(), false),
-      new Field("chunk_index", new Int32(), false),
-      new Field("text", new Utf8(), false),
-      new Field(
+  private async buildSchema(): Promise<Schema> {
+    const arrow = await import("apache-arrow");
+    return new arrow.Schema([
+      new arrow.Field("id", new arrow.Utf8(), false),
+      new arrow.Field("path", new arrow.Utf8(), false),
+      new arrow.Field("chunk_index", new arrow.Int32(), false),
+      new arrow.Field("text", new arrow.Utf8(), false),
+      new arrow.Field(
         "embedding",
-        new FixedSizeList(this.dim, new Field("item", new Float32(), true)),
+        new arrow.FixedSizeList(
+          this.dim,
+          new arrow.Field("item", new arrow.Float32(), true),
+        ),
         false,
       ),
-      new Field(
+      new arrow.Field(
         "heading_trail",
-        new List(new Field("item", new Utf8(), true)),
+        new arrow.List(new arrow.Field("item", new arrow.Utf8(), true)),
         true,
       ),
-      new Field("line_start", new Int32(), false),
-      new Field("line_end", new Int32(), false),
-      new Field("mtime", new Float64(), false),
-      new Field("model_id", new Utf8(), false),
-      new Field("provider_id", new Utf8(), false),
+      new arrow.Field("line_start", new arrow.Int32(), false),
+      new arrow.Field("line_end", new arrow.Int32(), false),
+      new arrow.Field("mtime", new arrow.Float64(), false),
+      new arrow.Field("model_id", new arrow.Utf8(), false),
+      new arrow.Field("provider_id", new arrow.Utf8(), false),
     ]);
   }
 
   async open(): Promise<void> {
+    // Load LanceDB (with its native binding) the first time the store is
+    // actually opened, NOT at module load — see top-of-file comment.
+    const lancedb = await import("@lancedb/lancedb");
     this.db = await lancedb.connect(this.dir);
     const names = await this.db.tableNames();
     if (names.includes(TABLE_NAME)) {
@@ -109,7 +115,7 @@ export class RagStore {
     } else {
       this.table = await this.db.createEmptyTable(
         TABLE_NAME,
-        this.buildSchema(),
+        await this.buildSchema(),
       );
     }
   }

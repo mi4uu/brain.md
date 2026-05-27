@@ -89,19 +89,33 @@ files you can open in any editor at any time.
 
 ## ⚡ Quick start
 
-```sh
-git clone https://github.com/mi4uu/brain.md.git
-cd brain.md
-bun install
+One line. No clone, no Bun, no Node — the installer detects your OS +
+arch, downloads the matching prebuilt binary from the latest GitHub
+release, drops it in `~/.local/bin` (or `%USERPROFILE%\.brain.md\bin`
+on Windows), and verifies it runs.
 
-# in two shells:
-bun run dev:server   # backend on :3000
-bun run dev:web      # vite dev server on :5173 (proxies /api → :3000)
+### macOS / Linux
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mi4uu/brain.md/main/install.sh | bash
 ```
 
-Open <http://localhost:5173>. First run creates your vault at
-`$HOME/.local/share/brain.md/vault` (XDG default, same logic on macOS,
-Linux and Windows).
+### Windows (PowerShell)
+
+```powershell
+powershell -c "irm https://raw.githubusercontent.com/mi4uu/brain.md/main/install.ps1 | iex"
+```
+
+Then:
+
+```sh
+brain                    # serve on :3000, vault at $HOME/.local/share/brain.md/vault
+open http://localhost:3000
+```
+
+Open <http://localhost:3000>. First run creates your vault at the
+XDG default (`$HOME/.local/share/brain.md/vault` on macOS / Linux,
+the equivalent on Windows).
 
 To enable semantic search and the MCP `similar_notes` tool, open
 **Settings → AI / RAG** and flip the switch. Default embedder is
@@ -111,7 +125,7 @@ model download, then fully offline).
 > **Want a tour?** Point brain.md at the demo vault that ships with
 > the repo:
 > ```sh
-> bun run dev:server -- --vault-dir "$PWD/example/vault"
+> brain --vault-dir ./example/vault
 > ```
 > Every screenshot below was taken against [`example/vault/`](example/).
 
@@ -119,7 +133,22 @@ model download, then fully offline).
 
 ## 📦 Install
 
-### 🚀 Download a prebuilt binary *(easiest — no Bun, no source clone)*
+### Option A — install script *(recommended, see [Quick start](#-quick-start))*
+
+```sh
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/mi4uu/brain.md/main/install.sh | bash
+
+# Windows
+powershell -c "irm https://raw.githubusercontent.com/mi4uu/brain.md/main/install.ps1 | iex"
+```
+
+The script picks the right asset for your OS and CPU, writes it to
+`~/.local/bin/brain` (or `%USERPROFILE%\.brain.md\bin\brain.exe`),
+chmod's it, and verifies it boots. Pin a version with
+`BRAIN_VERSION=v0.1.0`, change the install dir with `BRAIN_INSTALL=…`.
+
+### Option B — download the binary manually
 
 Every release ships a **single-file executable** per platform with
 the web UI embedded inside it. No Bun runtime, no Node.js, no
@@ -174,7 +203,7 @@ iwr https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-windows-
 > artifacts on the [Actions page](https://github.com/mi4uu/brain.md/actions)
 > with 30-day retention.
 
-### From source
+### Option C — from source
 
 ```sh
 git clone https://github.com/mi4uu/brain.md.git
