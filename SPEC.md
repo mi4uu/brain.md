@@ -21,6 +21,13 @@ web Obsidian clone. edit `.md` vault from browser & phone. core-plugin parity, n
 - UI primitives: Radix UI (`@radix-ui/react-*`) — menus, dialogs, tooltips, popovers, tabs, toolbar, switch, toast, scroll-area
 - UI vibe = desktop app (compact rows, hairline borders, subtle elevation). ref pattern: terax-ai `src/components/ui/context-menu.tsx` (Radix + Tailwind, dark-first)
 - default vault + settings paths follow XDG Base Directory Spec on ALL platforms (macOS, Linux, Windows): vault = `${XDG_DATA_HOME:-$HOME/.local/share}/brain.md/vault`, settings = `${XDG_CONFIG_HOME:-$HOME/.config}/brain.md/`. ⊥ implicit `./vault` fallback.
+- AI surface: MCP server (HTTP+SSE on `/mcp/*` of same Elysia app) + RAG via LanceDB (local, embedded, per-vault). zero external API key required for default install.
+- embedding (default): bge-small-en-v1.5 via @xenova/transformers (ONNX, local, dim=384, ~133MB cache on first use).
+- embedding (alternative): any OpenAI-compatible `/v1/embeddings` endpoint (Ollama, LM Studio, OpenAI, etc.). configurable in Settings.
+- vector store: LanceDB (`@lancedb/lancedb`) at `<VAULT>/.brain/lance/`.
+- chunking: paragraph-based, ≤512-token chunks w/ ~64-token overlap; per-note metadata (path, heading-trail, line range); frontmatter excluded.
+- auth: OPTIONAL. default = no auth (auth.json absent → all endpoints open). user sets password via Settings → `<VAULT>/.brain/auth.json` written (argon2id) → bearer token required for HTTP API + MCP. removable via Settings.
+- per-folder MCP permissions: each folder may set explicit `{read,write}` in `<VAULT>/.brain/folder-meta.json` under `mcp.<folder-path>`. default = `{read:true, write:true}`; explicit override wins; resolution walks note's parent folder ancestors to root; nearest override applies. applies to MCP tools only, ! HTTP API.
 
 ## §I INTERFACES
 
@@ -89,6 +96,34 @@ web Obsidian clone. edit `.md` vault from browser & phone. core-plugin parity, n
   - `GIT_AUTOCOMMIT_DEBOUNCE_MS` (bootstrap default)
 - precedence: CLI flag > env var > XDG default
 - unknown CLI flag → stderr error + exit 2
+- `brain --mcp-disabled` → skip mounting MCP routes (default = MCP enabled)
+
+### auth (HTTP) — OPTIONAL
+- default: no auth. all endpoints open unless `<VAULT>/.brain/auth.json` exists.
+- `GET  /api/auth/status` → `{configured:bool, authenticated:bool}`
+- `POST /api/auth/set` body `{newPassword, currentPassword?}` → `{ok}` (set initial OR change; currentPassword required if already configured)
+- `POST /api/auth/clear` body `{currentPassword}` → `{ok}` (removes auth.json; endpoints open again)
+- `POST /api/auth/login` body `{password}` → `{token, expiresAt}` (24h)
+- `POST /api/auth/logout` body `{token}` → `{ok}`
+- once auth.json exists: ∀ /api/* (minus /auth/status, /auth/login) + /mcp/* require `Authorization: Bearer <token>`
+
+### MCP server (HTTP+SSE, mounted at `/mcp/*`)
+- POST `/mcp` JSON-RPC + GET `/mcp/sse` server→client streaming (MCP 2024-11-05 streamable HTTP)
+- auth: same bearer token as HTTP API (only when auth.json exists)
+- tools: search_notes, similar_notes, read_note, list_notes, get_backlinks, list_tags, get_tasks, write_note, append_note
+- resources: `vault://tree`, `vault://note/<path>`
+- ∀ tool call enforces per-folder permissions (V52); read tools need `read:true`, write tools need `write:true` on the affected note's folder chain.
+
+### folder MCP permissions (HTTP)
+- `GET  /api/folder-mcp-perms` → `Record<folderPath,{read,write}>`
+- `POST /api/folder-mcp-perms` body `{path, read, write}` → upsert one folder
+- `DELETE /api/folder-mcp-perms/*path` → drop override (falls back to inherited)
+
+### RAG API (HTTP)
+- `GET  /api/similar?q=<text>&k=<n>` → `[{path, score, snippet, lineRange, headingTrail}]` (top-k cosine)
+- `POST /api/rag/reindex` → `{ok, indexed, skipped, durationMs}`
+- `GET  /api/rag/status` → `{enabled, provider:"local"|"openai-compat", model, dim, chunks, lastIndexedAt, needsReindex}`
+- `POST /api/rag/test` body `{provider, config}` → `{ok, dim, sampleEmbedding?}` (dry-run probe before saving openai-compat settings)
 
 ### filesystem layout
 ```
@@ -100,8 +135,10 @@ web Obsidian clone. edit `.md` vault from browser & phone. core-plugin parity, n
   .brain/
     index.json          # cached index (mtime-based, rebuilt incrementally)
     settings.json       # per-vault config: bookmarks, dailyDir, git autocommit
-    folder-meta.json    # per-folder icons + colors
+    folder-meta.json    # per-folder icons + colors + MCP perms
     trash/<ts>/...      # recoverable deletes
+    auth.json           # argon2id hash (absent → no auth)
+    lance/              # LanceDB tables (RAG embeddings), .gitignored
   .git/                  # autocommit history (if GIT_AUTOCOMMIT)
 ```
 
@@ -152,6 +189,14 @@ V42: note + folder basenames ! contain `/`, `\`, `%`, NULL byte, CR, LF, or lead
 V43: sidebar sections (Bookmarks, Vault, Tags, Outline, Backlinks) each collapsable independently via Radix Accordion (type="multiple"). open/closed state per-section persisted to localStorage key `brain.sidebar.<id>` (device-local, ⊥ vault). default on first load: Vault open; rest collapsed. Tags section sources from `/api/tags` (I.api), sorted by count desc; click tag → `#/tag/<name>` filter (V33).
 V44: default vault location = `${XDG_DATA_HOME:-$HOME/.local/share}/brain.md/vault` on all platforms (macOS, Linux, Windows — same logic, no OS branch). default settings dir = `${XDG_CONFIG_HOME:-$HOME/.config}/brain.md/`. server resolves on startup: CLI > env > XDG default. `mkdir -p` resolved vault dir if missing (first run = empty vault, ! crash).
 V45: server entry exposes `--help`/`-h`, `--vault-dir`/`-v <path>`, `--port`/`-p <n>`, `--version`. `--help` prints usage block + exits 0; unknown flag → stderr msg + exit 2.
+V46: MCP write tools (write_note, append_note) gated by per-folder permissions (V52) AND CLI flag `--mcp-disabled`. ∀ MCP tool call logged: name + args summary + result code (auditing).
+V47: RAG chunks stored in LanceDB at `<VAULT>/.brain/lance/` table `notes_v1` cols: `id` (path#idx), `path`, `chunk_index`, `text`, `embedding` (float32[dim]), `heading_trail`, `line_start`, `line_end`, `mtime`, `model_id`, `provider_id`. incremental upsert on note write; row delete on note delete; rename = delete+reinsert.
+V48: chunking deterministic — split body on markdown paragraph boundaries (blank line), accumulate ≤512 tokens (approx via gpt-tokenizer cl100k), 64-token overlap between adjacent chunks. frontmatter excluded.
+V49: embedding provider abstraction: `local` = @xenova/transformers (default model = bge-small-en-v1.5, dim=384); `openai-compat` = POST `<baseURL>/embeddings` (or `<baseURL>/v1/embeddings` if baseURL lacks `/v1`) w/ `{input, model}` JSON body + optional `Authorization: Bearer <apiKey>`. config in `.brain/settings.json` under `rag.provider`, `rag.local.{model,dim}`, `rag.openaiCompat.{baseURL, model, apiKey, dim}`. switching provider OR model_id → store rows tagged w/ old `{provider_id, model_id}` → mismatch triggers `needsReindex=true` in `/api/rag/status`.
+V50: MCP startup ! block on RAG readiness — `similar_notes` returns `{error:"index building", indexed:N, total:M}` while incomplete. full-text + read tools always available.
+V51: RAG state surfaced in `/api/rag/status`; Settings UI tab: enable toggle + provider select (local|openai-compat) + conditional fields (baseURL, model, apiKey) + Test button (calls `/api/rag/test`) + manual Reindex button. ⊥ persist embeddings to git (`.brain/lance/` in `.gitignore`).
+V52: per-folder MCP permissions = `{read:bool, write:bool}` per folder path in `<VAULT>/.brain/folder-meta.json` under `mcp.<path>`. resolution: walk note's parent folder ancestors to root; nearest explicit override wins; absent → default `{read:true, write:true}`. applies to MCP tool calls only, ! HTTP API (HTTP gates via V53).
+V53: auth OPTIONAL. when `<VAULT>/.brain/auth.json` exists, ∀ /api/* (except `/auth/status` + `/auth/login`) + /mcp/* require `Authorization: Bearer <token>`. argon2id hash (memorycost 19MiB, timecost 2, parallelism 1). password set/changed via `/api/auth/set` (current required if already configured); cleared via `/api/auth/clear` (current required). tokens in-memory, 24h TTL, lost on restart. ⊥ env-based bootstrap — Settings UI is the sole entry point.
 
 ## §T TASKS
 
@@ -252,6 +297,34 @@ T93|x|XDG path resolver: `getDefaultVaultDir()` + `getDefaultSettingsDir()` in s
 T94|x|CLI parser in server/src/cli.ts: --help/-h, --vault-dir/-v, --port/-p, --version. unknown flag → exit 2|V45,I.cli
 T95|x|server entry wires precedence (cli > env > XDG default) for VAULT_DIR + PORT. mkdir -p vault on first run|V44,V45,I.cli
 T96|x|update README.md: XDG default paths + CLI usage block|V44,V45
+T97|.|add deps: @modelcontextprotocol/sdk + @lancedb/lancedb + @xenova/transformers + gpt-tokenizer + argon2|V46,V47,V49,V53
+T98|.|RAG module scaffold: server/src/rag/{chunker,embedder-local,embedder-openai,provider,store,types}.ts|V47,V48,V49
+T99|.|chunker.ts: paragraph-based ≤512-token chunks w/ 64-token overlap; preserves heading trail + line range; excludes frontmatter|V48
+T100|.|local embedder: bge-small-en-v1.5 via @xenova/transformers; lazy-load model on first call; batch encode|V49
+T101|.|openai-compat embedder: POST `<baseURL>/embeddings` (auto-append `/v1` if absent) w/ `{input, model}`, optional Bearer apiKey; handle 4xx/5xx w/ typed errors|V49
+T102|.|store.ts: LanceDB wrapper — open/create table notes_v1, upsert(rows), deleteByPath(path), search(vec,k), countAll(), distinctProviderModel()|V47
+T103|.|RAG pipeline: indexNote / deleteNote / renameNote hook into vault.onMutation; provider chosen per settings.rag.provider|V47,V48,V49
+T104|.|initial index build on startup if rag.enabled && store.count==0; non-blocking|V47,V50
+T105|.|GET /api/similar?q=&k= route|I.api,V47
+T106|.|GET /api/rag/status route (incl. provider + needsReindex flag)|I.api,V51
+T107|.|POST /api/rag/reindex route|I.api,V47
+T108|.|POST /api/rag/test route — dry-run embed sample text w/ passed-in config (no save); useful before applying openai-compat settings|I.api,V49,V51
+T109|.|settings.json rag schema: `{enabled, provider:"local"|"openai-compat", local:{model,dim}, openaiCompat:{baseURL,model,apiKey,dim}}`|V49
+T110|.|Settings UI tab "AI / RAG": enable toggle (Switch), provider select (Select), conditional fields, Test button, Reindex button, status pill|I.web,V49,V51
+T111|.|`.brain/lance/` added to vault `.gitignore`|V51
+T112|.|auth module: server/src/auth/{hasher,tokens,store}.ts — argon2id hash, in-memory token map, 24h ttl|V53
+T113|.|auth routes: GET /api/auth/status, POST /api/auth/set, POST /api/auth/clear, POST /api/auth/login, POST /api/auth/logout|I.api,V53
+T114|.|auth middleware: no-op when auth.json absent; otherwise enforce Bearer on /api/* (except /auth/{status,login}) + /mcp/*|V53
+T115|.|client auth: login Dialog when status.configured && ! authenticated; token in localStorage; fetch wrapper adds Authorization header|I.web,V53
+T116|.|Settings UI tab "Security": set / change / remove password buttons; status display ("auth off" / "auth on")|I.web,V53
+T117|.|folder perms data model: extend folder-meta.json schema `{icons, colors, mcp:{<path>:{read,write}}}` + `resolveFolderPerms(notePath)` helper|V52
+T118|.|folder perms routes: GET / POST /api/folder-mcp-perms, DELETE /api/folder-mcp-perms/*path|I.api,V52
+T119|.|folder perms UI: folder context-menu item "MCP permissions…" → Radix Dialog w/ read + write Switches + "reset to inherited" button|I.web,V52
+T120|.|MCP server entry: server/src/mcp/server.ts using @modelcontextprotocol/sdk HTTP+SSE transport; mount on Elysia at /mcp/*|I.mcp,V46
+T121|.|MCP tool impls: 9 tools (search_notes, similar_notes, read_note, list_notes, get_backlinks, list_tags, get_tasks, write_note, append_note); ∀ enforce V52 perm check before vault op|I.mcp,V46,V52
+T122|.|MCP resources: vault://tree (filtered by read perm) + vault://note/<path>|I.mcp,V52
+T123|.|CLI `--mcp-disabled` flag wired into cli.ts; default = MCP mounted|I.cli,V46
+T124|.|README + docs/mcp.md: Claude Desktop config snippet for HTTP+SSE w/ optional Bearer token|V46,V53
 
 ## §B BUGS
 id|date|cause|fix
