@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Vault } from "../vault/vault";
+import { DEFAULT_RAG_CONFIG, type RagConfig } from "../rag/types";
 
 export interface GitSettings {
   autocommit: boolean;
@@ -12,12 +13,14 @@ export interface AppSettings {
   bookmarks: string[];
   dailyDir: string;
   git: GitSettings;
+  rag: RagConfig;
 }
 
 export interface SettingsPatch {
   bookmarks?: string[];
   dailyDir?: string;
   git?: Partial<GitSettings>;
+  rag?: Partial<RagConfig>;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -25,6 +28,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   bookmarks: [],
   dailyDir: "Journal",
   git: { autocommit: true, debounceMs: 15000 },
+  rag: DEFAULT_RAG_CONFIG,
 };
 
 const REL = ".brain/settings.json";
@@ -61,6 +65,7 @@ export class SettingsStore {
         autocommit: partial.git?.autocommit ?? this.data.git.autocommit,
         debounceMs: partial.git?.debounceMs ?? this.data.git.debounceMs,
       },
+      rag: mergeRag(this.data.rag, partial.rag),
     };
     this.data = next;
     await this.persist();
@@ -71,6 +76,9 @@ export class SettingsStore {
     const abs = this.vault.abs(REL);
     await mkdir(dirname(abs), { recursive: true });
     const tmp = `${abs}.tmp-${process.pid}-${Date.now()}`;
+    // Never persist the apiKey to disk in plaintext if someone wants it
+    // env-only — for v1 we DO persist (vault is single-user; auth.json
+    // gates remote access). Document in V49 if revisited.
     await writeFile(tmp, JSON.stringify(this.data, null, 2));
     try {
       await rename(tmp, abs);
@@ -79,6 +87,43 @@ export class SettingsStore {
       throw e;
     }
   }
+}
+
+function mergeRag(cur: RagConfig, patch?: Partial<RagConfig>): RagConfig {
+  if (!patch) return cur;
+  return {
+    enabled: typeof patch.enabled === "boolean" ? patch.enabled : cur.enabled,
+    provider:
+      patch.provider === "local" || patch.provider === "openai-compat"
+        ? patch.provider
+        : cur.provider,
+    local: {
+      model:
+        typeof patch.local?.model === "string" ? patch.local.model : cur.local.model,
+      dim:
+        typeof patch.local?.dim === "number" && patch.local.dim > 0
+          ? patch.local.dim
+          : cur.local.dim,
+    },
+    openaiCompat: {
+      baseURL:
+        typeof patch.openaiCompat?.baseURL === "string"
+          ? patch.openaiCompat.baseURL
+          : cur.openaiCompat.baseURL,
+      model:
+        typeof patch.openaiCompat?.model === "string"
+          ? patch.openaiCompat.model
+          : cur.openaiCompat.model,
+      apiKey:
+        typeof patch.openaiCompat?.apiKey === "string"
+          ? patch.openaiCompat.apiKey
+          : cur.openaiCompat.apiKey,
+      dim:
+        typeof patch.openaiCompat?.dim === "number" && patch.openaiCompat.dim > 0
+          ? patch.openaiCompat.dim
+          : cur.openaiCompat.dim,
+    },
+  };
 }
 
 function mergeWithDefaults(p: Partial<AppSettings>): AppSettings {
@@ -94,5 +139,6 @@ function mergeWithDefaults(p: Partial<AppSettings>): AppSettings {
           ? Math.max(500, p.git.debounceMs)
           : DEFAULT_SETTINGS.git.debounceMs,
     },
+    rag: mergeRag(DEFAULT_RAG_CONFIG, p.rag),
   };
 }
