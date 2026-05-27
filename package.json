@@ -3,6 +3,32 @@
   "private": true,
   "version": "0.1.0",
   "license": "AGPL-3.0-or-later",
+  "description": "A local-first second brain for you — and for your AI agents. Markdown vault, live editor, semantic search (RAG via LanceDB), and an MCP server.",
+  "author": {
+    "name": "Michał Lipiński",
+    "url": "https://lipinski.work/"
+  },
+  "homepage": "https://github.com/mi4uu/brain.md#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mi4uu/brain.md.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mi4uu/brain.md/issues"
+  },
+  "keywords": [
+    "second-brain",
+    "notes",
+    "markdown",
+    "obsidian",
+    "rag",
+    "mcp",
+    "lancedb",
+    "ai-agents",
+    "local-first",
+    "bun",
+    "elysia"
+  ],
   "type": "module",
   "workspaces": ["server", "web"],
   "scripts": {

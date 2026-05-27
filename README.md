@@ -457,4 +457,8 @@ running.
 
 **brain.md** — your notes, your machine, your agents.
 
+Built by **[Michał Lipiński](https://lipinski.work/)**
+&nbsp;·&nbsp; [github.com/mi4uu/brain.md](https://github.com/mi4uu/brain.md)
+&nbsp;·&nbsp; [report a bug](https://github.com/mi4uu/brain.md/issues/new)
+
 </div>

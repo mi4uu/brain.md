@@ -3,6 +3,20 @@
   "private": true,
   "version": "0.1.0",
   "license": "AGPL-3.0-or-later",
+  "description": "brain.md backend — Elysia + Bun. Vault FS, search index, git autocommit, RAG pipeline (LanceDB), MCP server, optional auth.",
+  "author": {
+    "name": "Michał Lipiński",
+    "url": "https://lipinski.work/"
+  },
+  "homepage": "https://github.com/mi4uu/brain.md#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mi4uu/brain.md.git",
+    "directory": "server"
+  },
+  "bugs": {
+    "url": "https://github.com/mi4uu/brain.md/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "bun run --watch src/index.ts",
