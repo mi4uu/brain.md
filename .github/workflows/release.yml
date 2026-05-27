@@ -44,7 +44,8 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Build web client (Vite)
-        run: bun --cwd web run build
+        working-directory: web
+        run: bun run build
 
       - name: Embed web bundle into the server tree
         # Scans web/dist/, overwrites server/src/web/assets.ts with a
