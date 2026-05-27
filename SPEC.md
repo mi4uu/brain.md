@@ -300,7 +300,7 @@ T96|x|update README.md: XDG default paths + CLI usage block|V44,V45
 T97|x|add deps: @modelcontextprotocol/sdk + @lancedb/lancedb + @xenova/transformers + gpt-tokenizer (argon2 dropped — using Bun.password built-in)|V46,V47,V49,V53
 T98|x|RAG module scaffold: server/src/rag/{chunker,embedder-local,embedder-openai,provider,store,types}.ts|V47,V48,V49
 T99|x|chunker.ts: paragraph-based ≤512-token chunks w/ 64-token overlap; preserves heading trail + line range; excludes frontmatter|V48
-T100|.|local embedder: bge-small-en-v1.5 via @xenova/transformers; lazy-load model on first call; batch encode|V49
+T100|x|local embedder: bge-small-en-v1.5 via @xenova/transformers; lazy-load model on first call; batch encode|V49
 T101|.|openai-compat embedder: POST `<baseURL>/embeddings` (auto-append `/v1` if absent) w/ `{input, model}`, optional Bearer apiKey; handle 4xx/5xx w/ typed errors|V49
 T102|.|store.ts: LanceDB wrapper — open/create table notes_v1, upsert(rows), deleteByPath(path), search(vec,k), countAll(), distinctProviderModel()|V47
 T103|.|RAG pipeline: indexNote / deleteNote / renameNote hook into vault.onMutation; provider chosen per settings.rag.provider|V47,V48,V49
