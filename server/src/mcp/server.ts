@@ -78,9 +78,12 @@ function logCall(name: string, args: unknown, ok: boolean): void {
   console.error(`[mcp] tool=${name} ok=${ok} args=${argSummary}`);
 }
 
-export function createMcp(deps: McpDeps) {
+// MCP clients (Claude Desktop, LM Studio, …) open and close transports
+// at will. The SDK's stateless mode requires a NEW Server + Transport
+// per request, so we extract handler registration here and rebuild
+// both objects on every /mcp request inside mcpRoutes() below.
+function registerHandlers(server: McpServer, deps: McpDeps): void {
   const { vault, index, pipeline, ragEnabled } = deps;
-  const server = new McpServer({ name: "brain.md", version: "0.1.0" });
 
   // ---------------- tools ----------------
 
@@ -333,26 +336,36 @@ export function createMcp(deps: McpDeps) {
     },
   );
 
-  // ---------------- transport ----------------
+}
 
-  const transport = new WebStandardStreamableHTTPServerTransport({
-    sessionIdGenerator: () => crypto.randomUUID(),
-  });
-  // Connect now; transport is shared across requests (transport handles its
-  // own session state internally).
-  void server.connect(transport);
-
-  return { server, transport };
+// Stateless transport: every JSON-RPC request gets a one-shot JSON
+// response. No session tracking, no SSE stream. This is the only mode
+// that survives clients that open/close transports per call (LM Studio,
+// Claude Desktop, the @modelcontextprotocol/inspector REPL). The SDK
+// requires a fresh Server + Transport pair per request in this mode.
+//
+// Trade-off: server→client notifications (resources/list changed,
+// tools/list changed, log forwards) won't reach the client. brain.md's
+// tools don't emit those today, so this is invisible to users.
+export function createMcp(deps: McpDeps) {
+  return {
+    handleRequest: async (request: Request): Promise<Response> => {
+      const server = new McpServer({ name: "brain.md", version: "0.1.0" });
+      registerHandlers(server, deps);
+      const transport = new WebStandardStreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+        enableJsonResponse: true,
+      });
+      await server.connect(transport);
+      return transport.handleRequest(request);
+    },
+  };
 }
 
 export function mcpRoutes(mcp: ReturnType<typeof createMcp>) {
-  // Both POST and GET land on /mcp; the transport inspects method + headers
-  // (mcp-session-id, last-event-id, etc.) and dispatches.
-  return new Elysia()
-    .all("/mcp", async ({ request }) => {
-      return mcp.transport.handleRequest(request);
-    })
-    .all("/mcp/sse", async ({ request }) => {
-      return mcp.transport.handleRequest(request);
-    });
+  const handle = async ({ request }: { request: Request }) =>
+    mcp.handleRequest(request);
+  // Mount both no-slash and with-slash so clients that normalize either
+  // way (LM Studio appends '/', Claude Desktop omits it) both land here.
+  return new Elysia().all("/mcp", handle).all("/mcp/", handle);
 }
