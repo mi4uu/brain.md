@@ -43,6 +43,59 @@
   text-overflow: ellipsis;
 }
 
+/* V54: Related list — shares the backlinks visual language. */
+.related-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.related-item {
+  padding: 6px 8px;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.related-item:hover {
+  background: var(--bg-hover);
+}
+.related-item .from {
+  font-weight: 500;
+  color: var(--text-1);
+}
+.related-item .ctx {
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* T137: tag-suggest toast body — small chip buttons. */
+.tag-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.tag-suggest-btn {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  padding: 2px 8px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-1);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.tag-suggest-btn:hover {
+  background: var(--bg-active);
+}
+
 /* .cmd-bar + .modal-backdrop removed in T88 — CommandBar uses Radix Dialog */
 
 .outline {

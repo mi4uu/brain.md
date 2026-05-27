@@ -84,7 +84,7 @@ export function createApp(opts: AppOptions = {}) {
     .use(gitRoutes(repo, autocommit, settings))
     .use(metaRoutes(vault))
     .use(settingsRoutes(settings, autocommit))
-    .use(ragRoutes(ragPipeline, settings))
+    .use(ragRoutes(ragPipeline, settings, vault, index))
     .use(folderPermsRoutes(vault));
 
   // T120: mount MCP unless disabled via CLI flag

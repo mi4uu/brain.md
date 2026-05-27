@@ -27,7 +27,7 @@
 | ⚡ &nbsp; **Live editor + preview** | CodeMirror 6 with cursor-anchored scroll sync, autosave, instant tooltips, command palette, quick switcher. |
 | 🔍 &nbsp; **Semantic search built in** | Per-vault [LanceDB](https://lancedb.com) vector store. Notes are chunked, embedded and indexed on every save. No external service to set up. |
 | 🤖 &nbsp; **Pluggable embedders** | Default: `bge-small-en-v1.5` running locally via Xenova ONNX. Or point at **Ollama**, **LM Studio**, **OpenAI** — anything with `/v1/embeddings`. |
-| 🛰️ &nbsp; **MCP server (HTTP + SSE)** | 9 tools + 2 resources mounted on the same port. Claude Desktop and any MCP-compliant agent can read, search and write your notes. |
+| 🛰️ &nbsp; **MCP server (HTTP + SSE)** | 16 tools + 2 resources mounted on the same port. Claude Desktop and any MCP-compliant agent can read, search, query and write your notes. |
 | 🔒 &nbsp; **Per-folder agent permissions** | Right-click a folder → set `{read, write}` for the MCP surface. Keep `Journal/Private/` out of agent reach without locking down the vault. |
 | 🔑 &nbsp; **Optional password auth** | argon2id, bearer tokens, 24-hour TTL — gates both HTTP API and MCP. Off by default, on with one click. |
 | 📜 &nbsp; **Git autocommit** | Every save lands in git. Full history, diff, restore, manual checkpoints. The vault is a real git repo on disk. |
@@ -243,9 +243,12 @@ connector marks the link between them.
 ![Editor + preview, sidebar with backlinks](docs/img/project-with-sidebar.png)
 
 The right rail collects **Bookmarks · Vault · Tags · Outline ·
-Backlinks**. Each section is collapsible and remembers its state per
-device (`localStorage`). The **Tags** panel splits into *In this note*
-and *Other tags* the moment you open a note.
+Backlinks · Related**. Each section is collapsible and remembers its
+state per device (`localStorage`). The **Tags** panel splits into
+*In this note* and *Other tags* the moment you open a note. The
+**Related** panel powers itself from the RAG index — same engine the
+agents use — and after every save brain.md quietly suggests up to three
+tags borrowed from your closest semantic neighbours.
 
 ### Markdown that actually does things
 
@@ -306,12 +309,16 @@ and upserts the vectors into a per-vault **LanceDB** table at
 
 REST surface:
 
-| Method | Path                       | What                                              |
-|--------|----------------------------|---------------------------------------------------|
-| GET    | `/api/similar?q=…&k=…`     | Top-k semantic hits with snippet + line range     |
-| GET    | `/api/rag/status`          | Provider, model, dim, chunks, `needsReindex`      |
-| POST   | `/api/rag/reindex`         | Walks the vault and rebuilds the index            |
-| POST   | `/api/rag/test`            | Dry-run an embedder config without saving         |
+| Method | Path                          | What                                                   |
+|--------|-------------------------------|--------------------------------------------------------|
+| GET    | `/api/similar?q=…&k=…`        | Top-k semantic hits with snippet + line range          |
+| GET    | `/api/related/*path?k=…`      | Notes semantically close to a given path               |
+| POST   | `/api/context`                | Pack top chunks into a token-budgeted markdown block   |
+| GET    | `/api/orphans?limit=…`        | Notes with no backlinks AND low semantic neighbours    |
+| GET    | `/api/digest?since=7d`        | Topic clusters across recently modified notes          |
+| GET    | `/api/rag/status`             | Provider, model, dim, chunks, `needsReindex`           |
+| POST   | `/api/rag/reindex`            | Walks the vault and rebuilds the index                 |
+| POST   | `/api/rag/test`               | Dry-run an embedder config without saving              |
 
 ### 🛰️ MCP server
 
@@ -322,19 +329,26 @@ any MCP-compliant agent out of the box.
 
 ![MCP Server page in brain.md](docs/img/mcp-server-page.png)
 
-Tools (9):
+Tools (16):
 
-| Tool             | Folder perm | What it does                                |
-|------------------|-------------|---------------------------------------------|
-| `search_notes`   | none        | Full-text vault search                      |
-| `similar_notes`  | none        | Semantic RAG (top-k chunks)                 |
-| `read_note`      | `read`      | Note body + mtime                           |
-| `list_notes`     | `read`      | Filtered vault tree                         |
-| `get_backlinks`  | `read`      | Inbound wikilinks                           |
-| `list_tags`      | none        | Tag → count map                             |
-| `get_tasks`      | none        | Aggregate tasks (filter: open/done/all)     |
-| `write_note`     | `write`     | Create or overwrite a note                  |
-| `append_note`    | `write`     | Append a paragraph (blank-line separator)   |
+| Tool                  | Folder perm | What it does                                                       |
+|-----------------------|-------------|--------------------------------------------------------------------|
+| `search_notes`        | none        | Full-text vault search                                             |
+| `similar_notes`       | none        | Semantic RAG (top-k chunks)                                        |
+| `read_note`           | `read`      | Note body + mtime                                                  |
+| `list_notes`          | `read`      | Filtered vault tree                                                |
+| `get_backlinks`       | `read`      | Inbound wikilinks                                                  |
+| `list_tags`           | none        | Tag → count map                                                    |
+| `get_tasks`           | none        | Aggregate tasks (filter: open/done/all)                            |
+| `write_note`          | `write`     | Create or overwrite a note                                         |
+| `append_note`         | `write`     | Append a paragraph (blank-line separator)                          |
+| `find_related`        | `read`      | Notes semantically close to a given path (excludes self)           |
+| `find_similar_tasks`  | `read`      | Semantic search across task lines (filter: open/done/all)          |
+| `semantic_outline`    | `read`      | Cluster a note's chunks into topical groups (cosine ≥ threshold)   |
+| `context_for_query`   | `read`      | Pack top-relevant chunks into a markdown context block (token cap) |
+| `find_orphans`        | `read`      | Notes with 0 backlinks AND low semantic neighbour density          |
+| `weekly_digest`       | `read`      | Topic clusters across notes modified in a recent window (e.g. 7d)  |
+| `compare_notes`       | `read`      | Cosine sim + unified diff + shared headings between two notes      |
 
 Resources (2):
 

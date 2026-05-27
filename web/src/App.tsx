@@ -7,6 +7,8 @@ import { FileTree } from "./components/FileTree";
 import { Editor } from "./components/Editor";
 import { Preview, type PreviewHandle } from "./components/Preview";
 import { Backlinks } from "./components/Backlinks";
+import { Related } from "./components/Related";
+import type { RelatedHit } from "./api/client";
 import { CommandBar } from "./components/CommandBar";
 import { Outline } from "./components/Outline";
 import { Settings } from "./components/Settings";
@@ -58,7 +60,7 @@ import {
   type SidebarSectionId,
 } from "./hooks/useSidebarSections";
 import { validateBasename } from "./lib/validate";
-import { extractTagsFromMd } from "./lib/tags";
+import { extractTagsFromMd, insertFrontmatterTag } from "./lib/tags";
 import { useAuth } from "./hooks/useAuth";
 import { LoginDialog } from "./components/LoginDialog";
 import { FolderPermsDialog } from "./components/FolderPermsDialog";
@@ -88,6 +90,13 @@ export function App() {
   const [path, setPath] = useState<string | null>(null);
   const [content, setContent] = useState("");
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
+  type RelatedState =
+    | { kind: "idle" }
+    | { kind: "loading" }
+    | { kind: "disabled" }
+    | { kind: "error"; message: string }
+    | { kind: "ready"; hits: RelatedHit[] };
+  const [relatedState, setRelatedState] = useState<RelatedState>({ kind: "idle" });
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [mobileView, setMobileView] = useState<"edit" | "preview">("edit");
   const [cmd, setCmd] = useState<"search" | "switcher" | null>(null);
@@ -109,13 +118,14 @@ export function App() {
   const [permsPath, setPermsPath] = useState<string | null>(null);
   const [showAbout, setShowAbout] = useState(false);
   const sidebar = useSidebarSections(
-    ["bookmarks", "vault", "tags", "outline", "backlinks"],
+    ["bookmarks", "vault", "tags", "outline", "backlinks", "related"],
     {
       bookmarks: false,
       vault: true,
       tags: false,
       outline: false,
       backlinks: false,
+      related: false,
     },
   );
   const setToast = (msg: string | null) => {
@@ -393,6 +403,15 @@ export function App() {
         if (window.location.hash !== want) window.location.hash = want;
         const bl = await api.backlinks(p);
         setBacklinks(bl);
+        // V54: kick off the related fetch in parallel. The server responds
+        // 503 immediately when RAG is disabled, so this stays cheap.
+        setRelatedState({ kind: "loading" });
+        api.related(p, 8).then((r) => {
+          if (r.ok) setRelatedState({ kind: "ready", hits: r.hits });
+          else if (r.code === "RAG_DISABLED")
+            setRelatedState({ kind: "disabled" });
+          else setRelatedState({ kind: "error", message: r.error });
+        });
         if (opts?.headingSlug) {
           // jump to heading after content settles
           setTimeout(() => jumpToHeadingSlug(opts.headingSlug!, data.content), 60);
@@ -450,8 +469,65 @@ export function App() {
         // ignore
       }
       void refreshAliases();
+      // V54 / T137: surface up to 3 tag suggestions derived from the
+      // frontmatter of the closest semantic neighbours. Whole pipeline
+      // is best-effort and silent: any failure → no toast at all.
+      void suggestTagsAfterSave(p, c);
     },
     [refreshAliases],
+  );
+
+  const suggestTagsAfterSave = useCallback(
+    async (p: string, c: string) => {
+      const r = await api.related(p, 5).catch(() => null);
+      if (!r || !r.ok || r.hits.length === 0) return;
+      const currentTags = extractTagsFromMd(c);
+      const seenPaths = new Set<string>();
+      const neighbours = r.hits.filter((h) => {
+        if (h.path === p) return false;
+        if (seenPaths.has(h.path)) return false;
+        seenPaths.add(h.path);
+        return true;
+      }).slice(0, 5);
+      const counts = new Map<string, number>();
+      await Promise.all(
+        neighbours.map(async (h) => {
+          const note = await api.readNote(h.path).catch(() => null);
+          if (!note) return;
+          for (const t of extractTagsFromMd(note.content)) {
+            if (currentTags.has(t)) continue;
+            counts.set(t, (counts.get(t) ?? 0) + 1);
+          }
+        }),
+      );
+      if (counts.size === 0) return;
+      const top = [...counts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([t]) => t);
+      if (top.length === 0) return;
+      const apply = (tag: string) => {
+        setContent((cur) => insertFrontmatterTag(cur, tag));
+      };
+      showToast({
+        title: "Suggested tags",
+        description: (
+          <div className="tag-suggest">
+            {top.map((t) => (
+              <button
+                type="button"
+                key={t}
+                className="tag-suggest-btn"
+                onClick={() => apply(t)}
+              >
+                #{t}
+              </button>
+            ))}
+          </div>
+        ),
+      });
+    },
+    [],
   );
 
   const { status: saveStatus, flush } = useDebouncedSave(content, path, onSave, 500);
@@ -874,6 +950,22 @@ export function App() {
                   <Backlinks items={backlinks} onOpen={openNote} />
                 ) : (
                   <p className="sidebar-empty">Open a note to see backlinks.</p>
+                )}
+              </AccordionContent>
+            </AccordionItem>
+
+            <AccordionItem value="related" className="sidebar-item">
+              <AccordionTrigger className="sidebar-trigger">
+                Related
+                {relatedState.kind === "ready" && relatedState.hits.length > 0
+                  ? ` · ${relatedState.hits.length}`
+                  : ""}
+              </AccordionTrigger>
+              <AccordionContent className="sidebar-body">
+                {path ? (
+                  <Related state={relatedState} onOpen={openNote} />
+                ) : (
+                  <p className="sidebar-empty">Open a note to see related ones.</p>
                 )}
               </AccordionContent>
             </AccordionItem>

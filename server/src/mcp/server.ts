@@ -18,6 +18,17 @@ import {
   resolveFolderPerms,
   type McpFolderPerms,
 } from "../api/folder-perms";
+import {
+  related as qRelated,
+  contextForQuery as qContext,
+  semanticOutline as qOutline,
+  orphans as qOrphans,
+  weeklyDigest as qDigest,
+  compareNotes as qCompare,
+  similarTasks as qSimilarTasks,
+  RagDisabledError,
+  type RagDeps,
+} from "../rag/queries";
 
 const TASK_RE = /^(\s*[-*+])\s+\[([ xX])\]\s+(.*)$/;
 
@@ -284,6 +295,176 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
       const r = await vault.writeNote(path, next);
       logCall("append_note", { path, bytes: content.length }, true);
       return { content: [{ type: "text", text: JSON.stringify({ ok: true, ...r }) }] };
+    },
+  );
+
+  // ---------------- V54: RAG-derived tools ----------------
+
+  const ragDeps: RagDeps = { vault, index, pipeline, ragEnabled };
+
+  const ragError = (name: string, args: unknown, err: unknown) => {
+    logCall(name, args, false);
+    const isDisabled = err instanceof RagDisabledError;
+    return {
+      isError: true,
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            error: isDisabled ? "RAG disabled" : (err instanceof Error ? err.message : String(err)),
+            code: isDisabled ? "RAG_DISABLED" : "RAG_ERROR",
+          }),
+        },
+      ],
+    };
+  };
+
+  server.registerTool(
+    "find_similar_tasks",
+    {
+      description:
+        "Semantic search across task lines (- [ ] / - [x]). Filter open/done/all.",
+      inputSchema: {
+        query: z.string().min(1),
+        k: z.number().int().min(1).max(50).optional(),
+        filter: z.enum(["open", "done", "all"]).optional(),
+      },
+    },
+    async ({ query, k, filter }) => {
+      try {
+        const hits = await qSimilarTasks(ragDeps, query, k ?? 10, filter ?? "open");
+        logCall("find_similar_tasks", { query, k, filter }, true);
+        return { content: [{ type: "text", text: JSON.stringify(hits) }] };
+      } catch (err) {
+        return ragError("find_similar_tasks", { query, k, filter }, err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "find_related",
+    {
+      description: "Notes semantically close to a given note path (excludes self).",
+      inputSchema: {
+        path: z.string().min(1),
+        k: z.number().int().min(1).max(20).optional(),
+      },
+    },
+    async ({ path, k }) => {
+      try {
+        const perms = resolveFolderPerms(path, await readPerms(vault));
+        if (!perms.read) denied("read", path);
+        const hits = await qRelated(ragDeps, path, k ?? 5);
+        logCall("find_related", { path, k }, true);
+        return { content: [{ type: "text", text: JSON.stringify(hits) }] };
+      } catch (err) {
+        return ragError("find_related", { path, k }, err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "semantic_outline",
+    {
+      description:
+        "Cluster a note's chunks into topical groups (cosine ≥ threshold). Returns one entry per cluster.",
+      inputSchema: {
+        path: z.string().min(1),
+        threshold: z.number().min(0).max(1).optional(),
+      },
+    },
+    async ({ path, threshold }) => {
+      try {
+        const clusters = await qOutline(ragDeps, path, threshold ?? 0.7);
+        logCall("semantic_outline", { path, threshold }, true);
+        return { content: [{ type: "text", text: JSON.stringify(clusters) }] };
+      } catch (err) {
+        return ragError("semantic_outline", { path, threshold }, err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "context_for_query",
+    {
+      description:
+        "Pack top-relevant chunks into a markdown context block under a token budget. Returns text + sources + truncated flag.",
+      inputSchema: {
+        query: z.string().min(1),
+        budget_tokens: z.number().int().min(64).max(16000).optional(),
+      },
+    },
+    async ({ query, budget_tokens }) => {
+      try {
+        const out = await qContext(ragDeps, query, budget_tokens ?? 2000);
+        logCall("context_for_query", { query, budget_tokens }, true);
+        return { content: [{ type: "text", text: JSON.stringify(out) }] };
+      } catch (err) {
+        return ragError("context_for_query", { query, budget_tokens }, err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "find_orphans",
+    {
+      description:
+        "Notes with zero backlinks AND low semantic neighbours (isolation = 1 - max cosine).",
+      inputSchema: {
+        limit: z.number().int().min(1).max(50).optional(),
+        min_isolation: z.number().min(0).max(1).optional(),
+      },
+    },
+    async ({ limit, min_isolation }) => {
+      try {
+        const out = await qOrphans(ragDeps, limit ?? 10, min_isolation ?? 0.35);
+        logCall("find_orphans", { limit, min_isolation }, true);
+        return { content: [{ type: "text", text: JSON.stringify(out) }] };
+      } catch (err) {
+        return ragError("find_orphans", { limit, min_isolation }, err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "weekly_digest",
+    {
+      description:
+        "Topic clusters across notes modified in a recent window (e.g. '7d', '24h').",
+      inputSchema: {
+        since: z.string().optional(),
+        threshold: z.number().min(0).max(1).optional(),
+      },
+    },
+    async ({ since, threshold }) => {
+      try {
+        const out = await qDigest(ragDeps, since ?? "7d", threshold ?? 0.6);
+        logCall("weekly_digest", { since, threshold }, true);
+        return { content: [{ type: "text", text: JSON.stringify(out) }] };
+      } catch (err) {
+        return ragError("weekly_digest", { since, threshold }, err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "compare_notes",
+    {
+      description:
+        "Compare two notes: cosine similarity of intros + naive unified diff + shared headings.",
+      inputSchema: {
+        a: z.string().min(1),
+        b: z.string().min(1),
+      },
+    },
+    async ({ a, b }) => {
+      try {
+        const out = await qCompare(ragDeps, a, b);
+        logCall("compare_notes", { a, b }, true);
+        return { content: [{ type: "text", text: JSON.stringify(out) }] };
+      } catch (err) {
+        return ragError("compare_notes", { a, b }, err);
+      }
     },
   );
 

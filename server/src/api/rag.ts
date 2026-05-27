@@ -1,6 +1,8 @@
 import { Elysia, t } from "elysia";
 import type { RagPipeline } from "../rag/pipeline";
 import type { SettingsStore } from "../settings/settings";
+import type { Vault } from "../vault/vault";
+import type { VaultIndex } from "../index/index";
 import { describeProvider } from "../rag/provider";
 import { LocalEmbedder } from "../rag/embedder-local";
 import {
@@ -12,6 +14,14 @@ import type {
   OpenAICompatProviderConfig,
   RagStatus,
 } from "../rag/types";
+import {
+  related as qRelated,
+  contextForQuery as qContext,
+  orphans as qOrphans,
+  weeklyDigest as qDigest,
+  RagDisabledError,
+  type RagDeps,
+} from "../rag/queries";
 
 // V47 / V49 / V51: RAG HTTP surface.
 // - GET  /api/similar?q=&k=        T105
@@ -22,7 +32,30 @@ import type {
 // All routes assume the pipeline has been started by index.ts and that
 // settings reflect the chosen provider/model.
 
-export function ragRoutes(pipeline: RagPipeline, settings: SettingsStore) {
+export function ragRoutes(
+  pipeline: RagPipeline,
+  settings: SettingsStore,
+  vault: Vault,
+  index: VaultIndex,
+) {
+  const deps: RagDeps = {
+    vault,
+    index,
+    pipeline,
+    ragEnabled: () => settings.get().rag.enabled,
+  };
+  const handleErr = (e: unknown, set: { status?: unknown }) => {
+    if (e instanceof RagDisabledError) {
+      set.status = 503;
+      return { error: "RAG disabled", code: "RAG_DISABLED" };
+    }
+    set.status = 500;
+    return {
+      error: e instanceof Error ? e.message : String(e),
+      code: e instanceof EmbedderHttpError ? "EMBEDDER_HTTP" : "RAG",
+    };
+  };
+
   return new Elysia()
     .get(
       "/api/similar",
@@ -96,6 +129,82 @@ export function ragRoutes(pipeline: RagPipeline, settings: SettingsStore) {
         return { error: e instanceof Error ? e.message : String(e) };
       }
     })
+    // V54: derived RAG endpoints — share queries layer with MCP tools.
+    .get(
+      "/api/related/*",
+      async ({ params, query, set }) => {
+        const path = (params as { "*"?: string })["*"] ?? "";
+        if (!path) {
+          set.status = 400;
+          return { error: "missing path" };
+        }
+        const k = Number(query.k ?? 5);
+        if (!Number.isInteger(k) || k < 1 || k > 20) {
+          set.status = 400;
+          return { error: "k must be integer in [1, 20]" };
+        }
+        try {
+          return await qRelated(deps, path, k);
+        } catch (e) {
+          return handleErr(e, set);
+        }
+      },
+      { query: t.Object({ k: t.Optional(t.String()) }) },
+    )
+    .post(
+      "/api/context",
+      async ({ body, set }) => {
+        try {
+          return await qContext(deps, body.q, body.budget_tokens ?? 2000);
+        } catch (e) {
+          return handleErr(e, set);
+        }
+      },
+      {
+        body: t.Object({
+          q: t.String({ minLength: 1 }),
+          budget_tokens: t.Optional(t.Number()),
+        }),
+      },
+    )
+    .get(
+      "/api/orphans",
+      async ({ query, set }) => {
+        const limit = Number(query.limit ?? 10);
+        const minIso = Number(query.min_isolation ?? 0.35);
+        try {
+          return await qOrphans(deps, limit, minIso);
+        } catch (e) {
+          return handleErr(e, set);
+        }
+      },
+      {
+        query: t.Object({
+          limit: t.Optional(t.String()),
+          min_isolation: t.Optional(t.String()),
+        }),
+      },
+    )
+    .get(
+      "/api/digest",
+      async ({ query, set }) => {
+        const since = (query.since ?? "7d").toString();
+        const threshold = query.threshold
+          ? Number(query.threshold)
+          : 0.6;
+        try {
+          return await qDigest(deps, since, threshold);
+        } catch (e) {
+          return handleErr(e, set);
+        }
+      },
+      {
+        query: t.Object({
+          since: t.Optional(t.String()),
+          threshold: t.Optional(t.String()),
+        }),
+      },
+    )
     .post(
       "/api/rag/test",
       async ({ body, set }) => {

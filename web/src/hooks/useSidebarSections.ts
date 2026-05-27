@@ -11,7 +11,8 @@ export type SidebarSectionId =
   | "vault"
   | "tags"
   | "outline"
-  | "backlinks";
+  | "backlinks"
+  | "related";
 
 function readInitial(ids: SidebarSectionId[], defaults: Record<SidebarSectionId, boolean>): SidebarSectionId[] {
   if (typeof window === "undefined") {

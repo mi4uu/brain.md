@@ -93,4 +93,34 @@ export const api = {
   mediaUrl(path: string): string {
     return `${BASE}/api/media-raw/${encodePath(path)}`;
   },
+  // V54: returns 503 + {code:"RAG_DISABLED"} when RAG is off — caller should
+  // swallow and render an empty state instead of treating it as fatal.
+  async related(
+    path: string,
+    k = 5,
+  ): Promise<
+    | { ok: true; hits: RelatedHit[] }
+    | { ok: false; code: "RAG_DISABLED" | "RAG_ERROR"; error: string }
+  > {
+    const res = await fetch(
+      `${BASE}/api/related/${encodePath(path)}?k=${k}`,
+    );
+    if (res.ok) return { ok: true, hits: (await res.json()) as RelatedHit[] };
+    const body = await res.json().catch(() => ({}));
+    return {
+      ok: false,
+      code: body.code ?? "RAG_ERROR",
+      error: body.error ?? `${res.status}`,
+    };
+  },
 };
+
+export interface RelatedHit {
+  path: string;
+  chunkIndex: number;
+  score: number;
+  snippet: string;
+  headingTrail: string[];
+  lineStart: number;
+  lineEnd: number;
+}
