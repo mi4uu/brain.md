@@ -310,13 +310,13 @@ T106|x|GET /api/rag/status route (incl. provider + needsReindex flag)|I.api,V51
 T107|x|POST /api/rag/reindex route|I.api,V47
 T108|x|POST /api/rag/test route — dry-run embed sample text w/ passed-in config (no save); useful before applying openai-compat settings|I.api,V49,V51
 T109|x|settings.json rag schema: `{enabled, provider:"local"|"openai-compat", local:{model,dim}, openaiCompat:{baseURL,model,apiKey,dim}}`|V49
-T110|.|Settings UI tab "AI / RAG": enable toggle (Switch), provider select (Select), conditional fields, Test button, Reindex button, status pill|I.web,V49,V51
+T110|x|Settings UI tab "AI / RAG": enable toggle (Switch), provider select (Select), conditional fields, Test button, Reindex button, status pill|I.web,V49,V51
 T111|x|`.brain/lance/` covered by existing `.brain/` pattern in vault `.gitignore` (server/src/git/git.ts:21); no change needed|V51
 T112|x|auth module: server/src/auth/{hasher,tokens,store}.ts — argon2id hash via Bun.password, in-memory token map, 24h ttl|V53
 T113|x|auth routes: GET /api/auth/status, POST /api/auth/set, POST /api/auth/clear, POST /api/auth/login, POST /api/auth/logout|I.api,V53
 T114|x|auth middleware: no-op when auth.json absent; otherwise enforce Bearer on /api/* (except /auth/{status,login}) + /mcp/*|V53
 T115|x|client auth: login Dialog when status.configured && ! authenticated; token in localStorage; fetch wrapper adds Authorization header|I.web,V53
-T116|.|Settings UI tab "Security": set / change / remove password buttons; status display ("auth off" / "auth on")|I.web,V53
+T116|x|Settings UI tab "Security": set / change / remove password buttons; status display ("auth off" / "auth on")|I.web,V53
 T117|x|folder perms data model: extend folder-meta.json schema `{icons, colors, mcp:{<path>:{read,write}}}` + `resolveFolderPerms(notePath)` helper|V52
 T118|x|folder perms routes: GET / POST /api/folder-mcp-perms, DELETE /api/folder-mcp-perms/*path|I.api,V52
 T119|.|folder perms UI: folder context-menu item "MCP permissions…" → Radix Dialog w/ read + write Switches + "reset to inherited" button|I.web,V52
