@@ -5,6 +5,7 @@
 export interface CliOptions {
   vaultDir?: string;
   port?: number;
+  mcpDisabled?: boolean;
 }
 
 export type CliAction =
@@ -28,6 +29,7 @@ Options:
                            Default: $XDG_DATA_HOME/brain.md/vault
                                     ($HOME/.local/share/brain.md/vault)
   -p, --port <n>           HTTP port. Default: 3000
+      --mcp-disabled       Don't mount the MCP server at /mcp/*
   -h, --help               Show this help and exit
       --version            Show version and exit
 
@@ -77,6 +79,11 @@ export function parseArgs(argv: string[]): CliAction {
       const { value, nextIndex } = takeValue(argv, i, "--vault-dir");
       opts.vaultDir = value;
       i = nextIndex;
+      continue;
+    }
+    if (a === "--mcp-disabled") {
+      opts.mcpDisabled = true;
+      i++;
       continue;
     }
     if (a === "-p" || a === "--port" || a.startsWith("--port=")) {

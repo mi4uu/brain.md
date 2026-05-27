@@ -30,11 +30,13 @@ import { authMiddleware } from "./api/auth-middleware";
 import { folderPermsRoutes } from "./api/folder-perms";
 import { AuthStore } from "./auth/store";
 import { TokenStore } from "./auth/tokens";
+import { createMcp, mcpRoutes } from "./mcp/server";
 
 export interface AppOptions {
   vaultDir?: string;
   gitAutocommit?: boolean;
   gitDebounceMs?: number;
+  mcpDisabled?: boolean;
 }
 
 export function createApp(opts: AppOptions = {}) {
@@ -84,6 +86,18 @@ export function createApp(opts: AppOptions = {}) {
     .use(settingsRoutes(settings, autocommit))
     .use(ragRoutes(ragPipeline, settings))
     .use(folderPermsRoutes(vault));
+
+  // T120: mount MCP unless disabled via CLI flag
+  let mcp: ReturnType<typeof createMcp> | undefined;
+  if (!opts.mcpDisabled) {
+    mcp = createMcp({
+      vault,
+      index,
+      pipeline: ragPipeline,
+      ragEnabled: () => settings.get().rag.enabled,
+    });
+    app.use(mcpRoutes(mcp));
+  }
   return {
     app,
     vault,
@@ -95,6 +109,7 @@ export function createApp(opts: AppOptions = {}) {
     ragPipeline,
     authStore,
     tokenStore,
+    mcp,
   };
 }
 

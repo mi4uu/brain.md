@@ -43,6 +43,7 @@ async function main() {
     vaultDir: config.vaultDir,
     gitAutocommit: config.gitAutocommit,
     gitDebounceMs: config.gitDebounceMs,
+    mcpDisabled: action.options.mcpDisabled,
   });
 
   await authStore.load();

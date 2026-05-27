@@ -320,10 +320,10 @@ T116|.|Settings UI tab "Security": set / change / remove password buttons; statu
 T117|x|folder perms data model: extend folder-meta.json schema `{icons, colors, mcp:{<path>:{read,write}}}` + `resolveFolderPerms(notePath)` helper|V52
 T118|x|folder perms routes: GET / POST /api/folder-mcp-perms, DELETE /api/folder-mcp-perms/*path|I.api,V52
 T119|.|folder perms UI: folder context-menu item "MCP permissions…" → Radix Dialog w/ read + write Switches + "reset to inherited" button|I.web,V52
-T120|.|MCP server entry: server/src/mcp/server.ts using @modelcontextprotocol/sdk HTTP+SSE transport; mount on Elysia at /mcp/*|I.mcp,V46
-T121|.|MCP tool impls: 9 tools (search_notes, similar_notes, read_note, list_notes, get_backlinks, list_tags, get_tasks, write_note, append_note); ∀ enforce V52 perm check before vault op|I.mcp,V46,V52
-T122|.|MCP resources: vault://tree (filtered by read perm) + vault://note/<path>|I.mcp,V52
-T123|.|CLI `--mcp-disabled` flag wired into cli.ts; default = MCP mounted|I.cli,V46
+T120|x|MCP server entry: server/src/mcp/server.ts using @modelcontextprotocol/sdk HTTP+SSE transport (WebStandardStreamableHTTPServerTransport); mount on Elysia at /mcp + /mcp/sse. File uses @ts-nocheck to dodge SDK generic stack overflow|I.mcp,V46
+T121|x|MCP tool impls: 9 tools (search_notes, similar_notes, read_note, list_notes, get_backlinks, list_tags, get_tasks, write_note, append_note); ∀ read/write tool enforces V52 folder perm check before vault op; all calls logged to stderr (audit)|I.mcp,V46,V52
+T122|x|MCP resources: vault://tree (filtered by read perm) + vault://note/<+path> via ResourceTemplate|I.mcp,V52
+T123|x|CLI `--mcp-disabled` flag wired into cli.ts + AppOptions; default = MCP mounted|I.cli,V46
 T124|.|README + docs/mcp.md: Claude Desktop config snippet for HTTP+SSE w/ optional Bearer token|V46,V53
 
 ## §B BUGS
