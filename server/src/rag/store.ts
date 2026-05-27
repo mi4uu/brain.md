@@ -1,35 +1,189 @@
+import * as lancedb from "@lancedb/lancedb";
+import {
+  Field,
+  FixedSizeList,
+  Float32,
+  Float64,
+  Int32,
+  List,
+  Schema,
+  Utf8,
+} from "apache-arrow";
 import type { EmbeddedChunk, SearchHit, ProviderId } from "./types";
 
-// Stub — real impl lands in T102 using @lancedb/lancedb.
+// V47: per-vault LanceDB at <VAULT>/.brain/lance/, table notes_v1.
+// Schema fixed at construction (dim must match embedder.dim). Mismatched
+// stores after model swap force a full reindex (caller's job — flagged
+// via /api/rag/status.needsReindex).
+
+const TABLE_NAME = "notes_v1";
+
+interface RowOut {
+  id: string;
+  path: string;
+  chunk_index: number;
+  text: string;
+  embedding: number[]; // arrow gives back number[] for fixed-size-list
+  heading_trail: string[];
+  line_start: number;
+  line_end: number;
+  mtime: number;
+  model_id: string;
+  provider_id: string;
+  _distance?: number;
+}
+
+function escapeSql(s: string): string {
+  return s.replace(/'/g, "''");
+}
+
+// LanceDB returns list columns as Arrow Vector instances rather than plain
+// JS arrays. Normalise to string[] for callers.
+function toStringArray(v: unknown): string[] {
+  if (!v) return [];
+  if (Array.isArray(v)) return v.map(String);
+  const vec = v as { toArray?: () => unknown[]; length?: number };
+  if (typeof vec.toArray === "function") {
+    return vec.toArray().map(String);
+  }
+  if (typeof vec.length === "number") {
+    return Array.from(v as ArrayLike<unknown>).map(String);
+  }
+  return [];
+}
+
+function rowToWire(r: EmbeddedChunk): Record<string, unknown> {
+  return {
+    id: r.id,
+    path: r.path,
+    chunk_index: r.chunkIndex,
+    text: r.text,
+    embedding: Array.from(r.embedding),
+    heading_trail: r.headingTrail,
+    line_start: r.lineStart,
+    line_end: r.lineEnd,
+    mtime: r.mtime,
+    model_id: r.modelId,
+    provider_id: r.providerId,
+  };
+}
+
 export class RagStore {
+  private db?: lancedb.Connection;
+  private table?: lancedb.Table;
+
   constructor(
     public readonly dir: string,
     public readonly dim: number,
   ) {}
 
+  private buildSchema(): Schema {
+    return new Schema([
+      new Field("id", new Utf8(), false),
+      new Field("path", new Utf8(), false),
+      new Field("chunk_index", new Int32(), false),
+      new Field("text", new Utf8(), false),
+      new Field(
+        "embedding",
+        new FixedSizeList(this.dim, new Field("item", new Float32(), true)),
+        false,
+      ),
+      new Field(
+        "heading_trail",
+        new List(new Field("item", new Utf8(), true)),
+        true,
+      ),
+      new Field("line_start", new Int32(), false),
+      new Field("line_end", new Int32(), false),
+      new Field("mtime", new Float64(), false),
+      new Field("model_id", new Utf8(), false),
+      new Field("provider_id", new Utf8(), false),
+    ]);
+  }
+
   async open(): Promise<void> {
-    throw new Error("RagStore.open not implemented (T102)");
+    this.db = await lancedb.connect(this.dir);
+    const names = await this.db.tableNames();
+    if (names.includes(TABLE_NAME)) {
+      this.table = await this.db.openTable(TABLE_NAME);
+    } else {
+      this.table = await this.db.createEmptyTable(
+        TABLE_NAME,
+        this.buildSchema(),
+      );
+    }
   }
 
-  async upsert(_rows: EmbeddedChunk[]): Promise<void> {
-    throw new Error("RagStore.upsert not implemented (T102)");
+  private requireTable(): lancedb.Table {
+    if (!this.table) throw new Error("RagStore not opened (call open() first)");
+    return this.table;
   }
 
-  async deleteByPath(_path: string): Promise<void> {
-    throw new Error("RagStore.deleteByPath not implemented (T102)");
+  async upsert(rows: EmbeddedChunk[]): Promise<void> {
+    if (rows.length === 0) return;
+    const t = this.requireTable();
+    const wire = rows.map(rowToWire);
+    await t
+      .mergeInsert("id")
+      .whenMatchedUpdateAll()
+      .whenNotMatchedInsertAll()
+      .execute(wire);
   }
 
-  async search(_vector: Float32Array, _k: number): Promise<SearchHit[]> {
-    throw new Error("RagStore.search not implemented (T102)");
+  async deleteByPath(path: string): Promise<void> {
+    const t = this.requireTable();
+    await t.delete(`path = '${escapeSql(path)}'`);
+  }
+
+  async search(vector: Float32Array, k: number): Promise<SearchHit[]> {
+    const t = this.requireTable();
+    const rows = (await t
+      .vectorSearch(Array.from(vector))
+      .limit(k)
+      .toArray()) as RowOut[];
+    return rows.map((r) => ({
+      path: r.path,
+      chunkIndex: r.chunk_index,
+      // LanceDB default metric for fixed-size float vectors is L2;
+      // with L2-normalised embeddings, L2² = 2(1 - cos_sim), so
+      // cos_sim = 1 - distance/2 → score ∈ [0, 1].
+      score:
+        typeof r._distance === "number"
+          ? Math.max(0, Math.min(1, 1 - r._distance / 2))
+          : 0,
+      snippet: r.text,
+      headingTrail: toStringArray(r.heading_trail),
+      lineStart: r.line_start,
+      lineEnd: r.line_end,
+    }));
   }
 
   async countAll(): Promise<number> {
-    throw new Error("RagStore.countAll not implemented (T102)");
+    const t = this.requireTable();
+    return t.countRows();
   }
 
   async distinctProviderModel(): Promise<
     Array<{ providerId: ProviderId; modelId: string }>
   > {
-    throw new Error("RagStore.distinctProviderModel not implemented (T102)");
+    const t = this.requireTable();
+    const rows = (await t
+      .query()
+      .select(["provider_id", "model_id"])
+      .toArray()) as Array<{ provider_id: string; model_id: string }>;
+    const seen = new Set<string>();
+    const out: Array<{ providerId: ProviderId; modelId: string }> = [];
+    for (const r of rows) {
+      const key = `${r.provider_id}|${r.model_id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ providerId: r.provider_id as ProviderId, modelId: r.model_id });
+    }
+    return out;
+  }
+
+  async close(): Promise<void> {
+    this.table = undefined;
+    this.db = undefined;
   }
 }

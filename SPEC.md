@@ -302,7 +302,7 @@ T98|x|RAG module scaffold: server/src/rag/{chunker,embedder-local,embedder-opena
 T99|x|chunker.ts: paragraph-based ≤512-token chunks w/ 64-token overlap; preserves heading trail + line range; excludes frontmatter|V48
 T100|x|local embedder: bge-small-en-v1.5 via @xenova/transformers; lazy-load model on first call; batch encode|V49
 T101|x|openai-compat embedder: POST `<baseURL>/embeddings` (auto-append `/v1` if absent) w/ `{input, model}`, optional Bearer apiKey; handle 4xx/5xx w/ typed errors|V49
-T102|.|store.ts: LanceDB wrapper — open/create table notes_v1, upsert(rows), deleteByPath(path), search(vec,k), countAll(), distinctProviderModel()|V47
+T102|x|store.ts: LanceDB wrapper — open/create table notes_v1, upsert(rows), deleteByPath(path), search(vec,k), countAll(), distinctProviderModel()|V47
 T103|.|RAG pipeline: indexNote / deleteNote / renameNote hook into vault.onMutation; provider chosen per settings.rag.provider|V47,V48,V49
 T104|.|initial index build on startup if rag.enabled && store.count==0; non-blocking|V47,V50
 T105|.|GET /api/similar?q=&k= route|I.api,V47
