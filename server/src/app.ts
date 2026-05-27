@@ -1,11 +1,15 @@
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
+import { join } from "node:path";
 import { config } from "./config";
 import { Vault } from "./vault/vault";
 import { VaultIndex } from "./index/index";
 import { GitRepo } from "./git/git";
 import { Autocommit } from "./git/autocommit";
 import { SettingsStore } from "./settings/settings";
+import { RagStore } from "./rag/store";
+import { RagPipeline } from "./rag/pipeline";
+import { DEFAULT_RAG_CONFIG } from "./rag/types";
 import { treeRoutes } from "./api/tree";
 import { noteRoutes } from "./api/notes";
 import { folderRoutes } from "./api/folders";
@@ -20,6 +24,7 @@ import { tagRoutes } from "./api/tags";
 import { gitRoutes } from "./api/git";
 import { metaRoutes } from "./api/meta";
 import { settingsRoutes } from "./api/settings";
+import { ragRoutes } from "./api/rag";
 
 export interface AppOptions {
   vaultDir?: string;
@@ -38,6 +43,18 @@ export function createApp(opts: AppOptions = {}) {
   });
   vault.onMutation((e) => autocommit.notify(e.path));
 
+  // RAG pipeline — store dim is taken from the currently selected provider's
+  // dim. SettingsStore.load() will overwrite this cfg with the persisted one;
+  // index.ts is responsible for calling pipeline.applyConfig(persistedCfg)
+  // and triggering the initial reindex after settings.load() returns.
+  const initialRagCfg = DEFAULT_RAG_CONFIG;
+  const ragDim =
+    initialRagCfg.provider === "local"
+      ? initialRagCfg.local.dim
+      : initialRagCfg.openaiCompat.dim;
+  const ragStore = new RagStore(join(vault.root, ".brain", "lance"), ragDim);
+  const ragPipeline = new RagPipeline(vault, ragStore, initialRagCfg);
+
   const app = new Elysia()
     .use(cors())
     .get("/health", () => ({ ok: true, vaultDir: vault.root }))
@@ -54,8 +71,9 @@ export function createApp(opts: AppOptions = {}) {
     .use(tagRoutes(index))
     .use(gitRoutes(repo, autocommit, settings))
     .use(metaRoutes(vault))
-    .use(settingsRoutes(settings, autocommit));
-  return { app, vault, index, repo, autocommit, settings };
+    .use(settingsRoutes(settings, autocommit))
+    .use(ragRoutes(ragPipeline, settings));
+  return { app, vault, index, repo, autocommit, settings, ragStore, ragPipeline };
 }
 
 export type AppHandle = ReturnType<typeof createApp>;

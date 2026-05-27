@@ -30,11 +30,12 @@ async function main() {
   // mkdir -p so first run on a fresh XDG default doesn't crash
   await mkdir(config.vaultDir, { recursive: true });
 
-  const { app, index, repo, autocommit, settings } = createApp({
-    vaultDir: config.vaultDir,
-    gitAutocommit: config.gitAutocommit,
-    gitDebounceMs: config.gitDebounceMs,
-  });
+  const { app, index, repo, autocommit, settings, ragStore, ragPipeline } =
+    createApp({
+      vaultDir: config.vaultDir,
+      gitAutocommit: config.gitAutocommit,
+      gitDebounceMs: config.gitDebounceMs,
+    });
 
   const loaded = await settings.load();
   // settings.json overrides env defaults
@@ -50,6 +51,31 @@ async function main() {
     }
   }
   await index.loadOrBuild();
+
+  // T104: RAG startup. open store if enabled; non-blocking initial reindex
+  // if empty. Errors surface via console but never crash the server.
+  if (loaded.rag.enabled) {
+    try {
+      await ragStore.open();
+      ragPipeline.applyConfig(loaded.rag);
+      ragPipeline.start();
+      const count = await ragStore.countAll().catch(() => 0);
+      if (count === 0) {
+        // fire-and-forget initial reindex (V50)
+        void ragPipeline
+          .reindexAll()
+          .then((r) =>
+            console.log(
+              `[rag] initial index: ${r.indexed} notes / ${r.skipped} skipped in ${r.durationMs}ms`,
+            ),
+          )
+          .catch((e) => console.warn("[rag] initial index failed:", e));
+      }
+    } catch (e) {
+      console.warn("[rag] startup failed; RAG disabled:", e);
+    }
+  }
+
   app.listen(config.port);
   console.log(`brain.md server :${config.port} → vault ${config.vaultDir}`);
 }

@@ -123,6 +123,11 @@ export class RagPipeline {
     await this.store.deleteByPath(rel);
   }
 
+  // Public encode hook for ad-hoc queries (used by /api/similar).
+  async embed(texts: string[]): Promise<Float32Array[]> {
+    return this.embedder.embed(texts);
+  }
+
   async reindexAll(): Promise<{ indexed: number; skipped: number; durationMs: number }> {
     const t0 = Date.now();
     const notes = await this.vault.listAllNotes();
