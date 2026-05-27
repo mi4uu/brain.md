@@ -59,6 +59,8 @@ import {
 } from "./hooks/useSidebarSections";
 import { validateBasename } from "./lib/validate";
 import { extractTagsFromMd } from "./lib/tags";
+import { useAuth } from "./hooks/useAuth";
+import { LoginDialog } from "./components/LoginDialog";
 import "./styles/tw.css";
 import "./styles/tokens.css";
 import "./styles/global.css";
@@ -74,6 +76,7 @@ import "katex/dist/katex.min.css";
 
 export function App() {
   const { theme, setTheme, resolved } = useTheme();
+  const auth = useAuth();
   const isMobile = useMediaQuery("(max-width: 840px)");
   const [tree, setTree] = useState<TreeData>({ folders: [], notes: [] });
   const [path, setPath] = useState<string | null>(null);
@@ -664,6 +667,11 @@ export function App() {
 
   return (
     <TooltipProvider>
+    <LoginDialog
+      open={auth.configured && !auth.authenticated && !auth.loading}
+      onLogin={auth.login}
+      error={auth.error}
+    />
     <div className="shell">
       <header className="topbar">
         <button

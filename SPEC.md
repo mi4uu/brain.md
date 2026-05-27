@@ -315,7 +315,7 @@ T111|x|`.brain/lance/` covered by existing `.brain/` pattern in vault `.gitignor
 T112|x|auth module: server/src/auth/{hasher,tokens,store}.ts — argon2id hash via Bun.password, in-memory token map, 24h ttl|V53
 T113|x|auth routes: GET /api/auth/status, POST /api/auth/set, POST /api/auth/clear, POST /api/auth/login, POST /api/auth/logout|I.api,V53
 T114|x|auth middleware: no-op when auth.json absent; otherwise enforce Bearer on /api/* (except /auth/{status,login}) + /mcp/*|V53
-T115|.|client auth: login Dialog when status.configured && ! authenticated; token in localStorage; fetch wrapper adds Authorization header|I.web,V53
+T115|x|client auth: login Dialog when status.configured && ! authenticated; token in localStorage; fetch wrapper adds Authorization header|I.web,V53
 T116|.|Settings UI tab "Security": set / change / remove password buttons; status display ("auth off" / "auth on")|I.web,V53
 T117|x|folder perms data model: extend folder-meta.json schema `{icons, colors, mcp:{<path>:{read,write}}}` + `resolveFolderPerms(notePath)` helper|V52
 T118|x|folder perms routes: GET / POST /api/folder-mcp-perms, DELETE /api/folder-mcp-perms/*path|I.api,V52
