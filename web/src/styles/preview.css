@@ -12,6 +12,14 @@
   font-size: var(--text-md);
   line-height: var(--line-relaxed);
   color: var(--text-1);
+  /* V62: prevent long URLs / inline code / unbroken paths from pushing
+     the doc wider than its parent. Without this the preview overflows
+     the viewport on narrow screens (≤ 540px) — toolbar buttons get
+     pushed off-screen, prose runs past the right edge, the whole page
+     gets a horizontal scroll. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
 }
 
 .preview .doc h1,
@@ -146,18 +154,23 @@
   transform: translateY(1px);
 }
 
+/* V62: table-layout: fixed + per-cell word-break keeps tables inside the
+   doc width on narrow screens instead of pushing the viewport sideways. */
 .preview .doc table {
   border-collapse: collapse;
   margin: var(--space-3) 0;
   width: 100%;
   font-family: var(--font-sans);
   font-size: var(--text-sm);
+  table-layout: fixed;
 }
 .preview .doc th,
 .preview .doc td {
   border: 1px solid var(--border);
   padding: 6px 10px;
   text-align: left;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 .preview .doc th {
   background: var(--bg-surface-2);

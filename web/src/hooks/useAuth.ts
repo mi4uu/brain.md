@@ -45,6 +45,15 @@ export function useAuth(): UseAuthValue {
       try {
         const { token } = await authApi.login(password);
         setToken(token);
+        // The App tree/settings/aliases fetches all ran BEFORE login and
+        // returned 401 / empty. They aren't keyed on auth state so they
+        // won't re-run automatically. Cheapest reliable fix: full reload.
+        // (Refactoring every data hook to depend on auth.authenticated is
+        // the deeper fix and lives in a future cleanup task.)
+        if (typeof window !== "undefined") {
+          window.location.reload();
+          return true;
+        }
         await refresh();
         return true;
       } catch (e) {
