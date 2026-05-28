@@ -15,7 +15,7 @@ import { ASSETS } from "./assets";
 //                         someone clone the repo, run `bun start` and have
 //                         the UI work without building the frontend first.
 
-const VERSION = "0.2.3";
+const VERSION = "0.2.4";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",

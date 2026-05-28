@@ -18,7 +18,12 @@
 }
 
 .editor-host .cm-content {
-  max-width: 760px;
+  /* V62 mobile fix: CM6's internal sizing ignored `max-width` and held
+     content at a fixed 760px on narrow viewports — left margin ballooned
+     to ~180px on a 390-px-wide phone. `width: min(100%, 760px)` lets the
+     content shrink below 760 while still capping the readable column on
+     wide screens. !important defeats CM's own injected `width: …`. */
+  width: min(100%, 760px) !important;
   margin: 0 auto;
   caret-color: var(--accent);
 }
