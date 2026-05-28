@@ -126,14 +126,14 @@ export function Settings({
               </p>
             ) : (
               <>
-                <label className="flex items-center justify-between gap-3 text-sm text-fg-1">
+                <div className="flex items-center justify-between gap-3 text-sm text-fg-1">
                   <span>Autocommit changes</span>
                   <Switch
                     checked={acEnabled}
                     onCheckedChange={(c) => void saveAutocommit({ enabled: c })}
                     aria-label="Autocommit changes"
                   />
-                </label>
+                </div>
                 <Field label="Debounce (ms)">
                   <input
                     className="input"
@@ -270,14 +270,17 @@ function RagPanel() {
 
   return (
     <div className="space-y-4">
-      <label className="flex items-center justify-between gap-3 text-sm text-fg-1">
+      {/* div, not <label> — wrapping a Radix Switch (renders <button>) in
+          <label> makes browsers forward the label click to the button AND
+          fire the underlying click, toggling state twice → no-op. */}
+      <div className="flex items-center justify-between gap-3 text-sm text-fg-1">
         <span>Enable RAG</span>
         <Switch
           checked={cfg.enabled}
           onCheckedChange={(c) => void save({ enabled: c })}
           aria-label="Enable RAG"
         />
-      </label>
+      </div>
       <Field label="Provider">
         <select
           className="input"
