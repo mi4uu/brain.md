@@ -441,6 +441,51 @@ with a 24-hour TTL.
 
 ![Settings — Security](docs/img/settings-security.png)
 
+#### MCP config when auth is enabled
+
+The plain-text MCP example earlier in the README assumes no auth.
+When you turn auth on, every request to `/mcp` needs an
+`Authorization: Bearer <token>` header. Most MCP clients have a
+field for it:
+
+**Claude Desktop / Claude Code / Cursor** (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "brain.md": {
+      "type": "streamable-http",
+      "url": "https://brainmd.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_TOKEN_HERE"
+      }
+    }
+  }
+}
+```
+
+**How to get a token.** brain.md issues tokens through
+`POST /api/auth/login`. You can do it from anywhere — most useful
+is a quick `curl`:
+
+```sh
+curl -X POST https://brainmd.example.com/api/auth/login \
+  -H 'content-type: application/json' \
+  -d '{"password":"YOUR_PASSWORD"}' | jq -r .token
+```
+
+Paste the returned token into the `headers.Authorization` field
+above, restart the MCP client, done.
+
+> **Heads-up.** Tokens have a 24-hour TTL and are stored in memory only
+> — a server restart invalidates every token. If your agent suddenly
+> starts seeing `401 Unauthorized`, get a fresh token. Long-term: pin
+> the token on the client and let your agent re-login on 401 (most
+> MCP clients don't do this yet — patches welcome).
+
+If you're embedding the URL itself anywhere persistent, prefer a
+secret-manager / `.env` over hard-coding the bearer string.
+
 ---
 
 ## ⌨️ CLI
