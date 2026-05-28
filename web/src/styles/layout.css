@@ -33,6 +33,21 @@
 @media (max-width: 720px) {
   .topbar-center { display: none; }
 }
+/* V62: on narrow viewports the topbar action row (search, daily, tasks,
+   trash, theme, settings, about, sponsor) overflows past the right edge
+   because flex items don't shrink below their natural width. Allow
+   horizontal scroll so every action stays reachable. The brand stays
+   pinned left, the menu button stays clickable, and the user can swipe
+   the rest. flex-shrink: 0 on children keeps icons at native size. */
+@media (max-width: 840px) {
+  .topbar {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .topbar::-webkit-scrollbar { display: none; }
+  .topbar > * { flex-shrink: 0; }
+}
 
 .topbar .brand {
   display: inline-flex;
