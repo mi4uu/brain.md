@@ -22,6 +22,7 @@ import {
   RagDisabledError,
   type RagDeps,
 } from "../rag/queries";
+import { decodeWildcard } from "./wildcard";
 
 // V47 / V49 / V51: RAG HTTP surface.
 // - GET  /api/similar?q=&k=        T105
@@ -133,7 +134,9 @@ export function ragRoutes(
     .get(
       "/api/related/*",
       async ({ params, query, set }) => {
-        const path = (params as { "*"?: string })["*"] ?? "";
+        // B10 / V42: URL-decode the wildcard segment so paths with spaces,
+        // `&`, or other reserved chars match what's on disk.
+        const path = decodeWildcard((params as { "*"?: string })["*"] ?? "");
         if (!path) {
           set.status = 400;
           return { error: "missing path" };
