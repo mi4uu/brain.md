@@ -33,12 +33,11 @@
 @media (max-width: 720px) {
   .topbar-center { display: none; }
 }
-/* V62: on narrow viewports the topbar action row (search, daily, tasks,
-   trash, theme, settings, about, sponsor) overflows past the right edge
-   because flex items don't shrink below their natural width. Allow
-   horizontal scroll so every action stays reachable. The brand stays
-   pinned left, the menu button stays clickable, and the user can swipe
-   the rest. flex-shrink: 0 on children keeps icons at native size. */
+/* V62: on narrow viewports the topbar action row overflows past the
+   right edge — allow horizontal scroll for the actions, but keep the
+   left identity zone (hamburger + brand) pinned via `position: sticky`
+   so the user never loses orientation. Sticky children need a solid
+   background so scrolled-under content doesn't bleed through. */
 @media (max-width: 840px) {
   .topbar {
     overflow-x: auto;
@@ -47,6 +46,20 @@
   }
   .topbar::-webkit-scrollbar { display: none; }
   .topbar > * { flex-shrink: 0; }
+  .topbar .menu-btn {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--bg-surface);
+  }
+  .topbar .brand {
+    position: sticky;
+    left: 44px; /* approx menu-btn width incl. padding */
+    z-index: 2;
+    background: var(--bg-surface);
+    /* slight right-padding so scrolled content has visual separation */
+    padding-right: var(--space-2);
+  }
 }
 
 .topbar .brand {
