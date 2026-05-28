@@ -1,19 +1,34 @@
 import { Elysia, t } from "elysia";
 import type { SettingsStore } from "../settings/settings";
 import type { Autocommit } from "../git/autocommit";
+import type { RagPipeline } from "../rag/pipeline";
 import { asError } from "./errors";
 
-export function settingsRoutes(settings: SettingsStore, autocommit: Autocommit) {
+export function settingsRoutes(
+  settings: SettingsStore,
+  autocommit: Autocommit,
+  ragPipeline: RagPipeline,
+) {
   return new Elysia({ prefix: "/api/settings" })
     .get("/", () => settings.get())
     .patch(
       "/",
       async ({ body, set }) => {
         try {
+          const prev = settings.get();
           const next = await settings.patch(body);
           // sync to runtime autocommit
           autocommit.setEnabled(next.git.autocommit);
           autocommit.setDebounceMs(next.git.debounceMs);
+          // V58: keep the RAG pipeline in sync with config changes.
+          // - enabled flipped on → ensureRunning() opens store + subscribes
+          // - any rag change → applyConfig() updates embedder if model/provider changed
+          ragPipeline.applyConfig(next.rag);
+          if (!prev.rag.enabled && next.rag.enabled) {
+            void ragPipeline
+              .ensureRunning()
+              .catch((e) => console.warn("[rag] enable failed:", e));
+          }
           return next;
         } catch (e) {
           const { status, body: err } = asError(e);

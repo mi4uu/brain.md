@@ -181,6 +181,15 @@ export class RagStore {
       : await this.db.createEmptyTable(TASKS_TABLE, await this.buildTasksSchema());
   }
 
+  // V58: idempotent — open() only if not already open. Lets callers
+  // (reindex, settings PATCH, mutation hooks) demand-open the store
+  // when the user flips Enable RAG on at runtime, instead of relying
+  // on the startup branch in index.ts.
+  async ensureOpen(): Promise<void> {
+    if (this.notes && this.tasks) return;
+    await this.open();
+  }
+
   private requireNotes(): lancedb.Table {
     if (!this.notes) throw new Error("RagStore not opened (call open() first)");
     return this.notes;

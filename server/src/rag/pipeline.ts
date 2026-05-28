@@ -45,6 +45,15 @@ export class RagPipeline {
     });
   }
 
+  // V58: open the store + subscribe to mutations on demand. Safe to call
+  // repeatedly. Required so toggling Enable RAG at runtime works without
+  // a server restart — without this, settings.PATCH could flip the flag
+  // but the store stayed closed → every indexNote() threw "not opened".
+  async ensureRunning(): Promise<void> {
+    await this.store.ensureOpen();
+    this.start();
+  }
+
   stop(): void {
     this.unsubscribe?.();
     this.unsubscribe = undefined;
@@ -91,6 +100,7 @@ export class RagPipeline {
     // Dedupe concurrent writes of the same path
     const existing = this.indexing.get(rel);
     if (existing) return existing;
+    await this.store.ensureOpen();
     const job = this.indexOne(rel).finally(() => this.indexing.delete(rel));
     this.indexing.set(rel, job);
     return job;
@@ -144,6 +154,7 @@ export class RagPipeline {
   }
 
   async deleteNote(rel: string): Promise<void> {
+    await this.store.ensureOpen();
     await this.store.deleteByPath(rel);
     await this.store.deleteTasksByPath(rel);
   }
@@ -155,16 +166,26 @@ export class RagPipeline {
 
   async reindexAll(): Promise<{ indexed: number; skipped: number; durationMs: number }> {
     const t0 = Date.now();
+    await this.ensureRunning();
     const notes = await this.vault.listAllNotes();
     let indexed = 0;
     let skipped = 0;
+    const errors: string[] = [];
     for (const rel of notes) {
       try {
         await this.indexNote(rel);
         indexed++;
-      } catch {
+      } catch (e) {
         skipped++;
+        // V58: surface skip reasons — silent skips made debugging the
+        // "Indexed 0 / 17 skipped" failure mode impossible.
+        const msg = e instanceof Error ? e.message : String(e);
+        errors.push(`${rel}: ${msg}`);
+        if (errors.length <= 5) console.warn(`[rag] skip ${rel}:`, msg);
       }
+    }
+    if (errors.length > 0) {
+      console.warn(`[rag] reindex skipped ${skipped} of ${notes.length}; first errors:`, errors.slice(0, 5));
     }
     return { indexed, skipped, durationMs: Date.now() - t0 };
   }

@@ -83,7 +83,7 @@ export function createApp(opts: AppOptions = {}) {
     .use(tagRoutes(index))
     .use(gitRoutes(repo, autocommit, settings))
     .use(metaRoutes(vault))
-    .use(settingsRoutes(settings, autocommit))
+    .use(settingsRoutes(settings, autocommit, ragPipeline))
     .use(ragRoutes(ragPipeline, settings, vault, index))
     .use(folderPermsRoutes(vault));
 
