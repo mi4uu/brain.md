@@ -9,7 +9,7 @@
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Runtime: Bun](https://img.shields.io/badge/runtime-Bun-black.svg)](https://bun.com)
 [![MCP: streamable-http](https://img.shields.io/badge/MCP-streamable--http-7c3aed.svg)](docs/mcp.md)
-[![RAG: LanceDB](https://img.shields.io/badge/RAG-LanceDB-ec4899.svg)](#-semantic-search-rag)
+[![RAG: WASM ONNX](https://img.shields.io/badge/RAG-WASM%20ONNX-ec4899.svg)](#-semantic-search-rag)
 [![Glama MCP server](https://glama.ai/mcp/servers/mi4uu/brain.md/badges/score.svg)](https://glama.ai/mcp/servers/mi4uu/brain.md)
 
 </div>
@@ -26,8 +26,8 @@
 |---|---|
 | 📝 &nbsp; **Obsidian-compatible markdown** | Wikilinks, embeds, callouts, math, mermaid, tasks, frontmatter, aliases. Open your existing Obsidian vault — it just works. |
 | ⚡ &nbsp; **Live editor + preview** | CodeMirror 6 with cursor-anchored scroll sync, autosave, instant tooltips, command palette, quick switcher. |
-| 🔍 &nbsp; **Semantic search built in** | Per-vault [LanceDB](https://lancedb.com) vector store. Notes are chunked, embedded and indexed on every save. No external service to set up. |
-| 🤖 &nbsp; **Pluggable embedders** | Default: `bge-small-en-v1.5` running locally via Xenova ONNX. Or point at **Ollama**, **LM Studio**, **OpenAI** — anything with `/v1/embeddings`. |
+| 🔍 &nbsp; **Semantic search built in** | Per-vault embedded vector store (pure JS, no external DB). Notes are chunked, embedded and indexed on every save. |
+| 🤖 &nbsp; **Pluggable embedders** | Default: `bge-small-en-v1.5` running locally via **bundled WASM ONNX** — works in the prebuilt single binary, zero native deps. Or point at **Ollama**, **LM Studio**, **OpenAI** — anything with `/v1/embeddings`. |
 | 🛰️ &nbsp; **MCP server (streamable HTTP)** | 16 tools + 2 resources mounted on the same port. Claude Desktop, Claude Code, Cursor and any MCP-compliant agent can read, search, query and write your notes. |
 | 🔒 &nbsp; **Per-folder agent permissions** | Right-click a folder → set `{read, write}` for the MCP surface. Keep `Journal/Private/` out of agent reach without locking down the vault. |
 | 🔑 &nbsp; **Optional password auth** | argon2id, bearer tokens, 24-hour TTL — gates both HTTP API and MCP. Off by default, on with one click. |
@@ -49,8 +49,9 @@ You write markdown. brain.md gives you:
 - a polished **editor + live preview** with the full
   Obsidian-flavor dialect (wikilinks, embeds, callouts, math, mermaid,
   highlights, tasks, frontmatter, aliases),
-- a per-vault **LanceDB** vector store with a local
-  `bge-small-en-v1.5` embedder by default — switch to **Ollama**,
+- a per-vault embedded vector store (pure JS, ships in the single
+  binary) with a local `bge-small-en-v1.5` embedder by default
+  running via bundled WASM ONNX — switch to **Ollama**,
   **LM Studio**, **OpenAI**, or anything else with a `/v1/embeddings`
   endpoint with one toggle,
 - an **MCP server** (streamable HTTP) mounted on the same port, so
@@ -71,10 +72,10 @@ files you can open in any editor at any time.
 | Local-first vault on disk               | ✓                       | ✓               | ✗ (cloud)          | **✓**                  |
 | Plain `.md` files (no proprietary db)   | ✓                       | ✓ (block model) | ✗                  | **✓**                  |
 | Built-in MCP server                     | ✗ (3rd-party plugin)    | ✗               | ✗                  | **✓ — 16 tools**       |
-| Vector RAG built-in                     | ✗ (paid plugin)         | ✗               | ✓ (cloud only)     | **✓ — LanceDB, local** |
+| Vector RAG built-in                     | ✗ (paid plugin)         | ✗               | ✓ (cloud only)     | **✓ — embedded, local** |
 | Per-folder agent permissions            | n/a                     | n/a             | n/a                | **✓**                  |
 | Single binary, no Electron              | ✗ (Electron)            | ✗ (Electron)    | n/a                | **✓ — `bun --compile`** |
-| Works fully offline (incl. embeddings)  | ✓ (no AI)               | ✓ (no AI)       | ✗                  | **✓ — Xenova ONNX**    |
+| Works fully offline (incl. embeddings)  | ✓ (no AI)               | ✓ (no AI)       | ✗                  | **✓ — bundled WASM ONNX** |
 
 brain.md is *not* trying to replace Obsidian's plugin ecosystem or
 Notion's databases. It's narrower on purpose: a markdown vault
@@ -138,8 +139,9 @@ the equivalent on Windows).
 
 To enable semantic search and the MCP `similar_notes` tool, open
 **Settings → AI / RAG** and flip the switch. Default embedder is
-`bge-small-en-v1.5` running locally via Xenova ONNX (one-time ~133 MB
-model download, then fully offline).
+`bge-small-en-v1.5` running locally via bundled WASM ONNX (one-time
+~34 MB quantized model download, then fully offline — no Ollama, no
+Python, no native deps).
 
 > **Want a tour?** Point brain.md at the demo vault that ships with
 > the repo:
@@ -304,6 +306,23 @@ source line.
 
 ![Tasks view](docs/img/tasks-view.png)
 
+### 📱 Mobile
+
+brain.md is not a desktop-only tool. The same vault, the same
+self-hosted instance, the same editor — usable from your phone over
+WiFi or Tailscale. The layout adapts: editor and preview swap in
+place via a bottom tab, the topbar scrolls horizontally with a
+sticky brand + hamburger, the sidebar slides in as a drawer.
+
+<p align="center">
+  <img src="docs/img/mobile1.jpeg" alt="brain.md mobile — preview" width="30%" />
+  <img src="docs/img/mobile2.jpeg" alt="brain.md mobile — editor" width="30%" />
+  <img src="docs/img/mobile3.jpeg" alt="brain.md mobile — sidebar drawer" width="30%" />
+</p>
+
+Real phone, not a Chrome DevTools emulator. Captures notes on the
+move; the same RAG, tags, backlinks, and tasks you have on desktop.
+
 ---
 
 ## 🤖 AI for agents
@@ -314,26 +333,25 @@ This is what makes brain.md more than another markdown editor.
 
 When a note is saved, brain.md chunks it (≤ 512 tokens, ~64-token
 overlap, paragraph-aligned, frontmatter excluded), embeds each chunk,
-and upserts the vectors into a per-vault **LanceDB** table at
-`<VAULT>/.brain/lance/`.
+and upserts the vectors into a per-vault embedded store at
+`<VAULT>/.brain/vectors.json` (pure JS, brute-force cosine — well
+under 10ms for typical vaults).
 
 | Provider                | Model                       | dim   | Local? | API key |
 |-------------------------|-----------------------------|------:|:------:|:-------:|
-| Xenova *(default)*      | `bge-small-en-v1.5`         |   384 |   ✓    |   —     |
+| Local *(default)*       | `bge-small-en-v1.5` (WASM)  |   384 |   ✓    |   —     |
 | Ollama                  | e.g. `nomic-embed-text`     |   768 |   ✓    |   —     |
 | LM Studio               | any served GGUF embedder    | varies|   ✓    |   —     |
 | OpenAI                  | `text-embedding-3-small`    |  1536 |   —    |   ✓     |
 
-> **Running the prebuilt binary?** The Xenova local embedder pulls in
-> `onnxruntime-node`, which loads a platform-specific native library
-> (`libonnxruntime.so` / `.dll` / `.dylib`) at runtime. `bun --compile`
-> does *not* bundle that, so the embedder will throw
-> `libonnxruntime.so.X: cannot open shared object file` on first use.
-> The smoothest fix: run [Ollama](https://ollama.com) locally and switch
-> the provider in **Settings → AI / RAG** to *OpenAI-compatible*,
-> `baseURL = http://localhost:11434/v1`, `model = nomic-embed-text`
-> (`ollama pull nomic-embed-text` first), `dim = 768`. Local Xenova
-> works out of the box when you run from source (`bun run dev`).
+> **Out of the box, in the prebuilt binary.** The local embedder ships
+> as bundled WASM ONNX with a hand-rolled BERT tokenizer — no
+> `onnxruntime-node`, no `sharp`, no platform-specific `.node`
+> bindings. Toggle **Enable RAG** in Settings → AI / RAG, brain.md
+> fetches the ~34 MB quantized model once and works fully offline
+> after that, on macOS / Linux / Windows alike. Want to keep your
+> existing Ollama or hosted endpoint? Switch to *OpenAI-compatible*
+> in the same panel.
 
 ![Settings — AI / RAG](docs/img/settings-rag.png)
 
@@ -529,7 +547,7 @@ Per-vault state lives under `<VAULT>/.brain/`:
     ├── settings.json       # bookmarks, dailyDir, git autocommit, rag config
     ├── folder-meta.json    # icons, colors, per-folder MCP perms
     ├── auth.json           # argon2id hash — absent when auth is off
-    ├── lance/              # LanceDB tables (RAG), git-ignored
+    ├── vectors.json        # embedded RAG store (vectors + metadata), git-ignored
     └── trash/<ts>/...      # recoverable deletes
 ```
 
@@ -557,17 +575,18 @@ Every env knob:
 +----------------+   /mcp HTTP+SSE      |   - Vault         |  | .brain/     |
 | Claude Desktop | <------------------> |   - VaultIndex    |--|   index     |
 | (or any MCP    |                      |   - GitRepo       |  |   trash     |
-|  client)       |                      |   - SettingsStore |  |   lance/    |
+|  client)       |                      |   - SettingsStore |  |   vectors   |
 +----------------+                      |   - AuthStore     |  |   auth.json |
                                         |   - MCP server    |  +-------------+
                                         |   - RAG pipeline  |
                                         +-------------------+
                                                   |
                                                   v
-                                        +-------------------+
-                                        | LanceDB (vectors) |
-                                        | Xenova / OAI emb. |
-                                        +-------------------+
+                                        +---------------------+
+                                        | Embedded RAG store  |
+                                        | (pure-JS, JSON)     |
+                                        | WASM ONNX / OAI emb.|
+                                        +---------------------+
 ```
 
 - **Runtime**: Bun
@@ -576,7 +595,10 @@ Every env knob:
 - **Frontend**: React 18 + CodeMirror 6 + unified/remark/rehype +
   highlight.js + KaTeX + mermaid (lazy) + Radix UI primitives +
   Tailwind tokens (CSS vars under the hood)
-- **Vector store**: LanceDB (`@lancedb/lancedb`) per vault
+- **Vector store**: embedded pure-JS store (JSON-on-disk, brute-force
+  cosine) — no native binding, ships in the single binary
+- **Embedder**: bundled `onnxruntime-web` (WASM) + hand-rolled BERT
+  WordPiece tokenizer — no `onnxruntime-node`, no `sharp`, no Python
 - **MCP transport**: `@modelcontextprotocol/sdk`
   `WebStandardStreamableHTTPServerTransport`
 - **Auth**: `Bun.password` (argon2id, no native build)
