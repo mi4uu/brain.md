@@ -27,7 +27,7 @@
 | ⚡ &nbsp; **Live editor + preview** | CodeMirror 6 with cursor-anchored scroll sync, autosave, instant tooltips, command palette, quick switcher. |
 | 🔍 &nbsp; **Semantic search built in** | Per-vault [LanceDB](https://lancedb.com) vector store. Notes are chunked, embedded and indexed on every save. No external service to set up. |
 | 🤖 &nbsp; **Pluggable embedders** | Default: `bge-small-en-v1.5` running locally via Xenova ONNX. Or point at **Ollama**, **LM Studio**, **OpenAI** — anything with `/v1/embeddings`. |
-| 🛰️ &nbsp; **MCP server (HTTP + SSE)** | 16 tools + 2 resources mounted on the same port. Claude Desktop and any MCP-compliant agent can read, search, query and write your notes. |
+| 🛰️ &nbsp; **MCP server (streamable HTTP)** | 16 tools + 2 resources mounted on the same port. Claude Desktop, Claude Code, Cursor and any MCP-compliant agent can read, search, query and write your notes. |
 | 🔒 &nbsp; **Per-folder agent permissions** | Right-click a folder → set `{read, write}` for the MCP surface. Keep `Journal/Private/` out of agent reach without locking down the vault. |
 | 🔑 &nbsp; **Optional password auth** | argon2id, bearer tokens, 24-hour TTL — gates both HTTP API and MCP. Off by default, on with one click. |
 | 📜 &nbsp; **Git autocommit** | Every save lands in git. Full history, diff, restore, manual checkpoints. The vault is a real git repo on disk. |
@@ -52,7 +52,7 @@ You write markdown. brain.md gives you:
   `bge-small-en-v1.5` embedder by default — switch to **Ollama**,
   **LM Studio**, **OpenAI**, or anything else with a `/v1/embeddings`
   endpoint with one toggle,
-- an **MCP server** (HTTP + SSE) mounted on the same port, so
+- an **MCP server** (streamable HTTP) mounted on the same port, so
   Claude Desktop (or any MCP client) can read, search and write your
   notes safely — with **per-folder read/write permissions** for the
   agent surface,
@@ -61,6 +61,24 @@ You write markdown. brain.md gives you:
 
 Everything runs on your machine. The vault is a plain folder of `.md`
 files you can open in any editor at any time.
+
+### How it compares
+
+|                                         | Obsidian                | Logseq          | Notion             | **brain.md**           |
+|-----------------------------------------|-------------------------|-----------------|--------------------|------------------------|
+| License                                 | Proprietary             | AGPL-3.0        | Proprietary        | **AGPL-3.0**           |
+| Local-first vault on disk               | ✓                       | ✓               | ✗ (cloud)          | **✓**                  |
+| Plain `.md` files (no proprietary db)   | ✓                       | ✓ (block model) | ✗                  | **✓**                  |
+| Built-in MCP server                     | ✗ (3rd-party plugin)    | ✗               | ✗                  | **✓ — 16 tools**       |
+| Vector RAG built-in                     | ✗ (paid plugin)         | ✗               | ✓ (cloud only)     | **✓ — LanceDB, local** |
+| Per-folder agent permissions            | n/a                     | n/a             | n/a                | **✓**                  |
+| Single binary, no Electron              | ✗ (Electron)            | ✗ (Electron)    | n/a                | **✓ — `bun --compile`** |
+| Works fully offline (incl. embeddings)  | ✓ (no AI)               | ✓ (no AI)       | ✗                  | **✓ — Xenova ONNX**    |
+
+brain.md is *not* trying to replace Obsidian's plugin ecosystem or
+Notion's databases. It's narrower on purpose: a markdown vault
+designed from day one as a memory layer for AI agents over the
+Model Context Protocol.
 
 ---
 
@@ -350,9 +368,12 @@ One click drops the tag into your frontmatter.
 ### 🛰️ MCP server
 
 brain.md mounts a **Model Context Protocol** server on the same Elysia
-app at `/mcp` (POST) and `/mcp/sse` (streaming). Transport is the
-**2024-11-05 streamable HTTP** variant — works with Claude Desktop and
-any MCP-compliant agent out of the box.
+app at `POST /mcp`. Transport is the **2024-11-05 streamable HTTP**
+variant in **stateless JSON-response mode** — one POST returns the
+full JSON-RPC response in a single round trip, no SSE stream, a fresh
+`McpServer` + transport per request. Sounds wasteful, but it's the
+only mode that survives clients that open and close a transport per
+tool call (Claude Desktop and LM Studio both do this).
 
 ![MCP Server page in brain.md](docs/img/mcp-server-page.png)
 
@@ -561,8 +582,18 @@ Contributions welcome.
 1. Open an issue first for anything non-trivial — a quick design
    sketch saves a long PR rewrite.
 2. Write the test before the implementation. Server tests run with
-   `bun test`; the suite is currently **160 green**.
+   `bun test`; the suite is currently **187 green**.
 3. Open a PR. CI runs typecheck (server + web) + `bun test`.
+
+---
+
+## ⭐ Star history
+
+[![Star History Chart](https://api.star-history.com/svg?repos=mi4uu/brain.md&type=Date)](https://star-history.com/#mi4uu/brain.md&Date)
+
+Found brain.md useful? A ⭐ helps other people running local-first
+agent workflows discover it. No newsletter, no tracking, no
+follow-up email — just a signal that this exists.
 
 ---
 
