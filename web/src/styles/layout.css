@@ -334,7 +334,9 @@
 
 @media (max-width: 840px) {
   .shell {
-    grid-template-columns: 1fr;
+    /* V62: same minmax(0, 1fr) fix as .main — keep grid from growing
+       past viewport when an inner element has wide min-content. */
+    grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       "topbar"
       "main";
@@ -352,7 +354,11 @@
     transform: translateX(0);
   }
   .main {
-    grid-template-columns: 1fr;
+    /* V62 mobile fix — round 3. `1fr` resolves to `minmax(auto, 1fr)` by
+       default, and `auto` = max-content. CM6's cm-content reports a wide
+       min-content (longest line), which forces the column to grow past
+       viewport. `minmax(0, 1fr)` lets the column actually shrink. */
+    grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       "ehead"
       "editor";
