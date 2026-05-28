@@ -10,6 +10,7 @@
 [![Runtime: Bun](https://img.shields.io/badge/runtime-Bun-black.svg)](https://bun.com)
 [![MCP: streamable-http](https://img.shields.io/badge/MCP-streamable--http-7c3aed.svg)](docs/mcp.md)
 [![RAG: LanceDB](https://img.shields.io/badge/RAG-LanceDB-ec4899.svg)](#-semantic-search-rag)
+[![Glama MCP server](https://glama.ai/mcp/servers/mi4uu/brain.md/badges/score.svg)](https://glama.ai/mcp/servers/mi4uu/brain.md)
 
 </div>
 
