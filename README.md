@@ -320,6 +320,22 @@ REST surface:
 | POST   | `/api/rag/reindex`            | Walks the vault and rebuilds the index                 |
 | POST   | `/api/rag/test`               | Dry-run an embedder config without saving              |
 
+#### Related notes, in the sidebar
+
+The same engine the agents use also powers a **Related** panel in the
+sidebar. Open any note → the panel lists semantically close neighbours
+with score, line range and a snippet preview. Click jumps you there.
+
+![Related sidebar panel with 8 semantically close notes](docs/img/related-sidebar.png)
+
+#### Tag suggestions on save
+
+After every save, brain.md quietly looks at the closest neighbours'
+frontmatter `tags` and suggests up to three you haven't used yet.
+One click drops the tag into your frontmatter.
+
+![Suggested tags toast appearing after a save — three chip buttons](docs/img/tag-suggest.png)
+
 ### 🛰️ MCP server
 
 brain.md mounts a **Model Context Protocol** server on the same Elysia
