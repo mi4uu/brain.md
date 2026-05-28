@@ -120,11 +120,14 @@
   color: var(--accent);
   text-decoration: none;
 }
-.outline .h-1 { padding-left: 0; font-weight: 500; }
-.outline .h-2 { padding-left: 12px; }
-.outline .h-3 { padding-left: 24px; }
-.outline .h-4 { padding-left: 36px; color: var(--text-3); }
-.outline .h-5 { padding-left: 48px; color: var(--text-3); }
-.outline .h-6 { padding-left: 60px; color: var(--text-3); }
+/* B13: do NOT name these classes `h-N` — collides with Tailwind's
+   height utilities (h-1 = 4px, h-2 = 8px, …) and crushed outline rows
+   to overlap on top of each other. */
+.outline .lvl-1 { padding-left: 0; font-weight: 500; }
+.outline .lvl-2 { padding-left: 12px; }
+.outline .lvl-3 { padding-left: 24px; }
+.outline .lvl-4 { padding-left: 36px; color: var(--text-3); }
+.outline .lvl-5 { padding-left: 48px; color: var(--text-3); }
+.outline .lvl-6 { padding-left: 60px; color: var(--text-3); }
 
 /* .settings-panel + .toast removed in T88 — Settings uses Radix Dialog, toasts use Radix Toast */

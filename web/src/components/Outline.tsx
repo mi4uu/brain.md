@@ -47,7 +47,7 @@ export function Outline({ content, onJump }: { content: string; onJump: (line: n
       {headings.map((h, i) => (
         <a
           key={`${h.line}-${i}`}
-          className={`h-${h.level}`}
+          className={`lvl-${h.level}`}
           href={`#${h.slug}`}
           onClick={(e) => {
             e.preventDefault();
