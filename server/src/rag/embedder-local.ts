@@ -43,12 +43,17 @@ export class LocalEmbedder implements Embedder {
           // binary hit `libonnxruntime.so.X: cannot open shared object file`.
           // Translate to an actionable hint that points at the openai-compat
           // escape hatch (Ollama / LM Studio).
-          if (/onnxruntime|libonnx|\.so\.\d|\.dylib|\.dll/i.test(msg)) {
+          // Match every native-binding failure shape Xenova/transformers can
+          // throw on a prebuilt binary: onnxruntime (.so/.dll/.dylib), sharp
+          // (image preprocessing — pulled in even for text embedders), and
+          // anything ending in `.node` (generic node native).
+          if (/onnxruntime|libonnx|sharp|\.node['"\s]|\.so\.\d|\.dylib|\.dll/i.test(msg)) {
             throw new Error(
-              "Local embedder needs onnxruntime, which the prebuilt binary " +
-                "doesn't ship. Switch the RAG provider to 'OpenAI-compatible' " +
-                "and point it at Ollama (recommended) or LM Studio in Settings " +
-                "→ AI / RAG. Original error: " + msg,
+              "Local embedder needs native libraries (onnxruntime, sharp) " +
+                "that the prebuilt binary can't bundle. Switch the RAG " +
+                "provider to 'OpenAI-compatible' and point it at Ollama " +
+                "(recommended) — `ollama pull nomic-embed-text`, baseURL " +
+                "http://localhost:11434/v1, dim 768. Original error: " + msg,
             );
           }
           throw err;
