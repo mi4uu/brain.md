@@ -306,6 +306,18 @@ source line.
 
 ![Tasks view](docs/img/tasks-view.png)
 
+### 📜 Auto versioning & history
+
+Every save is auto-committed to git in the background (debounced,
+~15 s). Open any note's **History** panel to see every prior
+revision, side-by-side unified diffs, and a one-click **Restore
+this version**. Filter by the current note or by the whole vault.
+No "save as", no daily snapshots cron — the vault is a real git
+repo on disk, so `git log`, `git blame`, `git diff` all work from
+the terminal too.
+
+![Note history with unified diff and one-click restore](docs/img/gitautoversioninghistry.png)
+
 ### 📱 Mobile
 
 brain.md is not a desktop-only tool. The same vault, the same
