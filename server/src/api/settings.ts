@@ -31,6 +31,31 @@ export function settingsRoutes(settings: SettingsStore, autocommit: Autocommit) 
               debounceMs: t.Optional(t.Number()),
             }),
           ),
+          // V47/V49/V51: RAG config — without these fields here, Elysia's
+          // body validator strips the whole `rag` payload before it reaches
+          // settings.patch(), so toggling Enable RAG in the UI did nothing.
+          rag: t.Optional(
+            t.Object({
+              enabled: t.Optional(t.Boolean()),
+              provider: t.Optional(
+                t.Union([t.Literal("local"), t.Literal("openai-compat")]),
+              ),
+              local: t.Optional(
+                t.Object({
+                  model: t.String(),
+                  dim: t.Number(),
+                }),
+              ),
+              openaiCompat: t.Optional(
+                t.Object({
+                  baseURL: t.String(),
+                  model: t.String(),
+                  apiKey: t.Optional(t.String()),
+                  dim: t.Number(),
+                }),
+              ),
+            }),
+          ),
         }),
       },
     );
