@@ -4,7 +4,7 @@ import type { SettingsStore } from "../settings/settings";
 import type { Vault } from "../vault/vault";
 import type { VaultIndex } from "../index/index";
 import { describeProvider } from "../rag/provider";
-import { LocalEmbedder } from "../rag/embedder-local";
+import { LocalEmbedderWasm as LocalEmbedder } from "../rag/embedder-local-wasm";
 import {
   OpenAICompatEmbedder,
   EmbedderHttpError,
