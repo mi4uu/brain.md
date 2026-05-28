@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from "./ui/dialog";
 
-const VERSION = "0.2.4";
+const VERSION = "0.2.5";
 
 interface Props {
   open: boolean;

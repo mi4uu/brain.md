@@ -6,17 +6,17 @@
 }
 
 .preview .doc {
-  max-width: 760px;
+  /* V62 mobile fix: same symptom as the editor — on a 390-px viewport
+     the doc held at 760px wide, leaving a giant strip of empty space
+     on the left and overflowing on the right. width:min() clamps the
+     readable column on wide screens AND lets it shrink below 760 on
+     narrow ones; margin:0 auto keeps it centered when it does cap. */
+  width: min(100%, 760px);
   margin: 0 auto;
   font-family: var(--font-serif);
   font-size: var(--text-md);
   line-height: var(--line-relaxed);
   color: var(--text-1);
-  /* V62: prevent long URLs / inline code / unbroken paths from pushing
-     the doc wider than its parent. Without this the preview overflows
-     the viewport on narrow screens (≤ 540px) — toolbar buttons get
-     pushed off-screen, prose runs past the right edge, the whole page
-     gets a horizontal scroll. */
   overflow-wrap: anywhere;
   word-break: break-word;
   min-width: 0;

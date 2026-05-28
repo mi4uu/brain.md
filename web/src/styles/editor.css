@@ -16,6 +16,17 @@
   font-family: var(--font-mono);
   padding: var(--space-5) var(--space-5) var(--space-7);
 }
+/* V62: on narrow viewports the desktop padding (--space-5 = ~32px each
+   side) ate ~64px out of 390 — long lines clipped on the right because
+   cm-content + 2× padding > viewport. Halve it on mobile. */
+@media (max-width: 540px) {
+  .editor-host .cm-scroller {
+    padding: var(--space-3) var(--space-3) var(--space-5);
+  }
+  .preview {
+    padding: var(--space-3) var(--space-3) var(--space-5);
+  }
+}
 
 .editor-host .cm-content {
   /* V62 mobile fix: CM6's internal sizing ignored `max-width` and held
