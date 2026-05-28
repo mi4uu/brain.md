@@ -322,9 +322,16 @@ the terminal too.
 
 brain.md is not a desktop-only tool. The same vault, the same
 self-hosted instance, the same editor — usable from your phone over
-WiFi or Tailscale. The layout adapts: editor and preview swap in
-place via a bottom tab, the topbar scrolls horizontally with a
-sticky brand + hamburger, the sidebar slides in as a drawer.
+LAN, Tailscale, or a **Cloudflare Tunnel** (Zero Trust, no public
+port, no DDNS). The server itself is tiny — a single Bun binary
+that runs comfortably on the free tier of **Oracle Cloud** or
+**AWS** (ARM micro instances, ≤1 vCPU / ≤1 GB RAM). Drop the binary
+on a $0/month VPS, route a hostname to it through Cloudflare, and
+you have a private second brain reachable from any device, anywhere.
+
+The mobile layout adapts: editor and preview swap in place via a
+bottom tab, the topbar scrolls horizontally with a sticky brand +
+hamburger, the sidebar slides in as a drawer.
 
 <p align="center">
   <img src="docs/img/mobile1.jpeg" alt="brain.md mobile — preview" width="30%" />
