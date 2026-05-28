@@ -3,7 +3,8 @@ import { EditorView, keymap, drawSelection, dropCursor, highlightActiveLine } fr
 import { EditorState, type Extension } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, indentOnInput } from "@codemirror/language";
+import { syntaxHighlighting, HighlightStyle, bracketMatching, indentOnInput } from "@codemirror/language";
+import { tags } from "@lezer/highlight";
 import {
   autocompletion,
   completionKeymap,
@@ -12,6 +13,30 @@ import {
   type CompletionResult,
 } from "@codemirror/autocomplete";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
+
+// V61: brain.md syntax highlight. Reads our `--cm-*` CSS vars so the
+// editor follows the active theme (dark/light). The vars themselves
+// resolve to #ffcc00 for links/url/atoms in dark mode, see tokens.css.
+const brainHighlightStyle = HighlightStyle.define([
+  { tag: tags.heading, color: "var(--cm-heading)", fontWeight: "bold", textDecoration: "underline" },
+  { tag: tags.emphasis, fontStyle: "italic" },
+  { tag: tags.strong, fontWeight: "bold" },
+  { tag: tags.strikethrough, textDecoration: "line-through" },
+  { tag: tags.keyword, color: "var(--cm-keyword)" },
+  { tag: [tags.atom, tags.bool, tags.url, tags.contentSeparator, tags.labelName, tags.link],
+    color: "var(--cm-url)" },
+  { tag: [tags.literal, tags.inserted], color: "var(--cm-literal)" },
+  { tag: [tags.string, tags.deleted], color: "var(--cm-string)" },
+  { tag: [tags.regexp, tags.escape], color: "var(--cm-regexp)" },
+  { tag: tags.variableName, color: "var(--cm-var)" },
+  { tag: [tags.typeName, tags.namespace], color: "var(--cm-type)" },
+  { tag: tags.className, color: "var(--cm-class)" },
+  { tag: tags.macroName, color: "var(--cm-macro)" },
+  { tag: tags.propertyName, color: "var(--cm-prop)" },
+  { tag: tags.comment, color: "var(--cm-comment)", fontStyle: "italic" },
+  { tag: tags.meta, color: "var(--cm-meta)" },
+  { tag: tags.invalid, color: "var(--cm-invalid)" },
+]);
 
 interface EditorProps {
   value: string;
@@ -247,7 +272,13 @@ export function Editor({
       highlightActiveLine(),
       highlightSelectionMatches(),
       markdown({ base: markdownLanguage }),
-      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+      // V61: theme-aware highlight that uses our token CSS vars instead
+      // of `defaultHighlightStyle`'s hardcoded light-theme colors. The
+      // upstream defaults paint URLs `#219` (dark navy) which is unread-
+      // able on the dark `--bg-surface` (#1c1c20). Each tag now points
+      // at a CSS var so the same Editor instance reskins itself when
+      // [data-theme] flips, no rebuild.
+      syntaxHighlighting(brainHighlightStyle, { fallback: true }),
       autocompletion({
         override: [wikilinkCompletion, atMentionCompletion],
         closeOnBlur: false,

@@ -10,7 +10,7 @@
     },
     "server": {
       "name": "@brain/server",
-      "version": "0.1.0",
+      "version": "0.2.1",
       "dependencies": {
         "@elysiajs/cors": "^1.1.1",
         "@lancedb/lancedb": "^0.20.0",
@@ -29,7 +29,7 @@
     },
     "web": {
       "name": "@brain/web",
-      "version": "0.1.0",
+      "version": "0.2.1",
       "dependencies": {
         "@codemirror/autocomplete": "^6.18.3",
         "@codemirror/commands": "^6.7.1",

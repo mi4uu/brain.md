@@ -79,6 +79,21 @@
   --callout-tip: #10b981;
   --callout-info: #06b6d4;
   --callout-quote: #6b7280;
+  /* V61: CodeMirror syntax highlight tokens (light) */
+  --cm-heading: #18181b;
+  --cm-keyword: #7c3aed;
+  --cm-url: #2563eb;
+  --cm-literal: #047857;
+  --cm-string: #b91c1c;
+  --cm-regexp: #c2410c;
+  --cm-var: #1e3a8a;
+  --cm-type: #047857;
+  --cm-class: #0f766e;
+  --cm-macro: #1d4ed8;
+  --cm-prop: #312e81;
+  --cm-comment: #6b7280;
+  --cm-meta: #6b7280;
+  --cm-invalid: #dc2626;
 }
 
 :root[data-theme="dark"] {
@@ -112,6 +127,23 @@
   --callout-danger: #f87171;
   --callout-tip: #34d399;
   --callout-info: #22d3ee;
+  /* V61: CodeMirror syntax highlight tokens (dark). #ffcc00 chosen by
+     owner for URLs/links/atoms — the upstream defaultHighlightStyle
+     paints them #219 which is unreadable on #1c1c20. */
+  --cm-heading: #ecedee;
+  --cm-keyword: #c4b5fd;
+  --cm-url: #ffcc00;
+  --cm-literal: #6ee7b7;
+  --cm-string: #fca5a5;
+  --cm-regexp: #fdba74;
+  --cm-var: #93c5fd;
+  --cm-type: #5eead4;
+  --cm-class: #67e8f9;
+  --cm-macro: #a78bfa;
+  --cm-prop: #d8b4fe;
+  --cm-comment: #6b7280;
+  --cm-meta: #9ca3af;
+  --cm-invalid: #f87171;
   --callout-quote: #94a3b8;
 }
 
@@ -148,5 +180,20 @@
     --callout-tip: #34d399;
     --callout-info: #22d3ee;
     --callout-quote: #94a3b8;
+    /* V61: CodeMirror dark — mirror of the [data-theme="dark"] branch */
+    --cm-heading: #ecedee;
+    --cm-keyword: #c4b5fd;
+    --cm-url: #ffcc00;
+    --cm-literal: #6ee7b7;
+    --cm-string: #fca5a5;
+    --cm-regexp: #fdba74;
+    --cm-var: #93c5fd;
+    --cm-type: #5eead4;
+    --cm-class: #67e8f9;
+    --cm-macro: #a78bfa;
+    --cm-prop: #d8b4fe;
+    --cm-comment: #6b7280;
+    --cm-meta: #9ca3af;
+    --cm-invalid: #f87171;
   }
 }
