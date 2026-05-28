@@ -356,4 +356,4 @@ export const ASSETS: Record<string, string> = {
   "sw.js": f171,
 };
 
-export const ASSETS_GENERATED_AT: number | null = 1779987545542;
+export const ASSETS_GENERATED_AT: number | null = 1779988097913;

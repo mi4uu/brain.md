@@ -1,6 +1,6 @@
 import type { Vault, MutationEvent } from "../vault/vault";
 import { chunkNote, chunkTasks } from "./chunker";
-import { LocalEmbedder } from "./embedder-local";
+import { LocalEmbedderWasm as LocalEmbedder } from "./embedder-local-wasm";
 import { OpenAICompatEmbedder } from "./embedder-openai";
 import type { Embedder } from "./provider";
 import { describeProvider } from "./provider";
