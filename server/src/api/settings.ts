@@ -25,9 +25,15 @@ export function settingsRoutes(
           // - any rag change → applyConfig() updates embedder if model/provider changed
           ragPipeline.applyConfig(next.rag);
           if (!prev.rag.enabled && next.rag.enabled) {
-            void ragPipeline
-              .ensureRunning()
-              .catch((e) => console.warn("[rag] enable failed:", e));
+            // V59: open the store + probe the embedder up-front so the UI
+            // can show a real error banner the moment the user flips Enable
+            // RAG, instead of waiting for the first reindex to fail.
+            try {
+              await ragPipeline.ensureRunning();
+              await ragPipeline.probe();
+            } catch (e) {
+              console.warn("[rag] enable failed:", e);
+            }
           }
           return next;
         } catch (e) {

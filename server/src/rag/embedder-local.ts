@@ -27,13 +27,32 @@ export class LocalEmbedder implements Embedder {
     if (this.pipe) return;
     if (!this.readyPromise) {
       this.readyPromise = (async () => {
-        const mod = await import("@xenova/transformers");
-        // Quiet down progress logs unless debugging.
-        if (typeof mod.env === "object" && mod.env) {
-          (mod.env as { allowLocalModels?: boolean }).allowLocalModels = false;
+        try {
+          const mod = await import("@xenova/transformers");
+          // Quiet down progress logs unless debugging.
+          if (typeof mod.env === "object" && mod.env) {
+            (mod.env as { allowLocalModels?: boolean }).allowLocalModels = false;
+          }
+          const p = await mod.pipeline("feature-extraction", this.modelId);
+          this.pipe = p as unknown as FeatureExtractionPipeline;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          // B14: Xenova/transformers pulls in onnxruntime-node which loads a
+          // platform-specific .so/.dll/.dylib at runtime. `bun --compile`
+          // doesn't bundle those, so users running the prebuilt brainmd
+          // binary hit `libonnxruntime.so.X: cannot open shared object file`.
+          // Translate to an actionable hint that points at the openai-compat
+          // escape hatch (Ollama / LM Studio).
+          if (/onnxruntime|libonnx|\.so\.\d|\.dylib|\.dll/i.test(msg)) {
+            throw new Error(
+              "Local embedder needs onnxruntime, which the prebuilt binary " +
+                "doesn't ship. Switch the RAG provider to 'OpenAI-compatible' " +
+                "and point it at Ollama (recommended) or LM Studio in Settings " +
+                "→ AI / RAG. Original error: " + msg,
+            );
+          }
+          throw err;
         }
-        const p = await mod.pipeline("feature-extraction", this.modelId);
-        this.pipe = p as unknown as FeatureExtractionPipeline;
       })();
     }
     await this.readyPromise;

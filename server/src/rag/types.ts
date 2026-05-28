@@ -67,6 +67,9 @@ export interface RagStatus {
   chunks: number;
   lastIndexedAt: number | null;
   needsReindex: boolean;
+  // V59: most recent embedder failure, if any. Null when probe last succeeded
+  // OR when no probe has ever run. UI surfaces this in a persistent banner.
+  lastError: string | null;
 }
 
 // V49: chunker constants

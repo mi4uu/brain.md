@@ -114,6 +114,7 @@ export function ragRoutes(
         chunks,
         lastIndexedAt: pipeline.lastIndexedAt,
         needsReindex,
+        lastError: pipeline.lastProbeError,
       };
     })
     .post("/api/rag/reindex", async ({ set }) => {

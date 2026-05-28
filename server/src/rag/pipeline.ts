@@ -164,6 +164,23 @@ export class RagPipeline {
     return this.embedder.embed(texts);
   }
 
+  // V59: preflight probe. Used by Settings PATCH on Enable RAG, by
+  // /api/rag/status for the "lastError" banner, and by the Test connection
+  // button. Embedding "ping" is cheap when the model is already loaded and
+  // surfaces native-dep failures (B14 onnxruntime) with one round trip.
+  public lastProbeError: string | null = null;
+  async probe(): Promise<{ ok: boolean; dim?: number; error?: string }> {
+    try {
+      const [v] = await this.embedder.embed(["ping"]);
+      this.lastProbeError = null;
+      return { ok: true, dim: v?.length ?? 0 };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      this.lastProbeError = msg;
+      return { ok: false, error: msg };
+    }
+  }
+
   async reindexAll(): Promise<{ indexed: number; skipped: number; durationMs: number }> {
     const t0 = Date.now();
     await this.ensureRunning();
@@ -182,6 +199,9 @@ export class RagPipeline {
         const msg = e instanceof Error ? e.message : String(e);
         errors.push(`${rel}: ${msg}`);
         if (errors.length <= 5) console.warn(`[rag] skip ${rel}:`, msg);
+        // V59: also bubble into lastProbeError so the UI banner reflects
+        // bulk-reindex failures (most users won't hit "Test connection").
+        this.lastProbeError = msg;
       }
     }
     if (errors.length > 0) {

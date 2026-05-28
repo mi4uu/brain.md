@@ -3,7 +3,7 @@ import { loadConfig } from "./config";
 import { parseArgs, getUsage, CliError } from "./cli";
 import { mkdir } from "node:fs/promises";
 
-const VERSION = "0.2.0";
+const VERSION = "0.2.1";
 
 async function main() {
   let action;

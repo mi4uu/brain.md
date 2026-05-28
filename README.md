@@ -305,6 +305,17 @@ and upserts the vectors into a per-vault **LanceDB** table at
 | LM Studio               | any served GGUF embedder    | varies|   ✓    |   —     |
 | OpenAI                  | `text-embedding-3-small`    |  1536 |   —    |   ✓     |
 
+> **Running the prebuilt binary?** The Xenova local embedder pulls in
+> `onnxruntime-node`, which loads a platform-specific native library
+> (`libonnxruntime.so` / `.dll` / `.dylib`) at runtime. `bun --compile`
+> does *not* bundle that, so the embedder will throw
+> `libonnxruntime.so.X: cannot open shared object file` on first use.
+> The smoothest fix: run [Ollama](https://ollama.com) locally and switch
+> the provider in **Settings → AI / RAG** to *OpenAI-compatible*,
+> `baseURL = http://localhost:11434/v1`, `model = nomic-embed-text`
+> (`ollama pull nomic-embed-text` first), `dim = 768`. Local Xenova
+> works out of the box when you run from source (`bun run dev`).
+
 ![Settings — AI / RAG](docs/img/settings-rag.png)
 
 REST surface:

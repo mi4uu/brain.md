@@ -27,6 +27,7 @@ interface RagStatusUI {
   chunks: number;
   lastIndexedAt: number | null;
   needsReindex: boolean;
+  lastError: string | null;
 }
 
 interface Props {
@@ -178,6 +179,54 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+// V59: persistent error banner shown in the RAG panel when the embedder
+// probe fails. Includes a "Search for help" link with a generically-scrubbed
+// version of the error so users find Stack Overflow / GitHub issue threads.
+function buildSearchQuery(err: string): string {
+  // Strip leading prefixes our own code adds, then keep the part most
+  // likely to be a stable, googleable identifier (lib names, exception
+  // class names, file refs). Cap length so the URL stays small.
+  const cleaned = err
+    .replace(/^.*Original error:\s*/i, "")
+    .replace(/\([^)]*\)/g, "")
+    .replace(/\/Users\/[^\s'"]+|\/home\/[^\s'"]+|C:\\[^\s'"]+/g, "")
+    .replace(/at\s+\S+\.\S+\s*\(.*?\)/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 200);
+  return cleaned || err.slice(0, 200);
+}
+
+function RagErrorBanner({ error }: { error: string }) {
+  const q = buildSearchQuery(error);
+  const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(`brain.md ${q}`)}`;
+  return (
+    <div
+      role="alert"
+      className="rounded-2 border border-callout-danger/40 bg-callout-danger/10 p-3 text-sm text-fg-1"
+    >
+      <div className="font-semibold text-callout-danger">RAG not working</div>
+      <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-xs text-fg-2">
+        {error}
+      </pre>
+      <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
+        <a
+          href={googleUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-link underline hover:text-accent"
+        >
+          Search the error on Google
+        </a>
+        <span className="text-fg-3">
+          Tip: try switching the provider to <em>OpenAI-compatible</em> + Ollama (
+          <code>ollama pull nomic-embed-text</code>).
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // -------- T110 RAG panel --------
 
 function RagPanel() {
@@ -281,6 +330,9 @@ function RagPanel() {
           aria-label="Enable RAG"
         />
       </div>
+      {cfg.enabled && status?.lastError ? (
+        <RagErrorBanner error={status.lastError} />
+      ) : null}
       <Field label="Provider">
         <select
           className="input"
