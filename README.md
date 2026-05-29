@@ -442,8 +442,9 @@ Resources (2):
 - `vault://tree` — JSON `{folders, notes}` filtered by read perms
 - `vault://note/<path>` — markdown body
 
-Drop this into `~/Library/Application Support/Claude/claude_desktop_config.json`
-(macOS) or the equivalent on your OS:
+Drop this into the MCP config of any client that speaks **streamable
+HTTP natively** — Claude Code, Cursor, Continue, Cline, Zed, the
+official `@modelcontextprotocol/inspector`, etc.:
 
 ```json
 {
@@ -456,7 +457,37 @@ Drop this into `~/Library/Application Support/Claude/claude_desktop_config.json`
 }
 ```
 
-That's it — restart Claude Desktop and you'll see the tools appear.
+Restart the client; the tools appear.
+
+#### Claude Desktop — stdio bridge required
+
+The Claude Desktop app (macOS / Windows) only speaks **stdio** —
+streamable HTTP and SSE are not supported as of writing. Bridge it
+through [`mcp-remote`](https://github.com/geelen/mcp-remote), which
+runs as a stdio child of Claude Desktop and forwards every JSON-RPC
+call over HTTP to your brain.md server:
+
+```json
+{
+  "mcpServers": {
+    "brain.md": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "http://localhost:3000/mcp"
+      ]
+    }
+  }
+}
+```
+
+Drop that into `~/Library/Application Support/Claude/claude_desktop_config.json`
+(macOS) or the equivalent on your OS, then restart Claude Desktop.
+
+> **Note**: `mcp-remote` upstream warns that Cursor and Claude Desktop
+> (Windows) have a bug where spaces inside `args` aren't escaped. Keep
+> URL and header values quote-clean, no embedded spaces.
+
 Full reference: [docs/mcp.md](docs/mcp.md).
 
 ### 🔒 Per-folder permissions
@@ -487,7 +518,7 @@ When you turn auth on, every request to `/mcp` needs an
 `Authorization: Bearer <token>` header. Most MCP clients have a
 field for it:
 
-**Claude Desktop / Claude Code / Cursor** (`claude_desktop_config.json`):
+**Claude Code / Cursor / Continue / any streamable-HTTP client**:
 
 ```json
 {
@@ -498,6 +529,24 @@ field for it:
       "headers": {
         "Authorization": "Bearer YOUR_TOKEN_HERE"
       }
+    }
+  }
+}
+```
+
+**Claude Desktop (stdio-only — needs `mcp-remote` bridge)**:
+
+```json
+{
+  "mcpServers": {
+    "brain.md": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://brainmd.example.com/mcp",
+        "--header",
+        "Authorization: Bearer YOUR_TOKEN_HERE"
+      ]
     }
   }
 }

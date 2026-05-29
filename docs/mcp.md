@@ -35,10 +35,11 @@ override wins; default is read+write.
 - `brain` runs the server with MCP mounted by default
 - `brain --mcp-disabled` skips mounting the MCP routes
 
-## Claude Desktop
+## Native streamable-HTTP clients
 
-Open `~/Library/Application Support/Claude/claude_desktop_config.json`
-(macOS) and add:
+Claude Code, Cursor, Continue, Cline, Zed, the official
+`@modelcontextprotocol/inspector` — anything that speaks streamable
+HTTP — wires up directly:
 
 ```jsonc
 {
@@ -55,8 +56,43 @@ Open `~/Library/Application Support/Claude/claude_desktop_config.json`
 }
 ```
 
-Restart Claude Desktop. The 9 tools + 2 resources appear under the
+Restart the client. The 16 tools + 2 resources appear under the
 "brain.md" server.
+
+## Claude Desktop — stdio bridge
+
+The Claude Desktop app (macOS / Windows) only speaks **stdio** at the
+MCP transport layer — streamable HTTP and SSE are not supported. Bridge
+through [`mcp-remote`](https://github.com/geelen/mcp-remote), which
+runs as a stdio child of Claude Desktop and forwards every JSON-RPC
+call over HTTP to brain.md.
+
+Open `~/Library/Application Support/Claude/claude_desktop_config.json`
+(macOS) — equivalent path on Windows / Linux — and add:
+
+```jsonc
+{
+  "mcpServers": {
+    "brain.md": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "http://localhost:3000/mcp"
+        // when auth is enabled, also:
+        // , "--header", "Authorization: Bearer <token-from-login>"
+      ]
+    }
+  }
+}
+```
+
+Restart Claude Desktop. The 16 tools + 2 resources appear under the
+"brain.md" server.
+
+> **Caveat from `mcp-remote`**: Cursor and Claude Desktop on Windows
+> have a known bug where spaces inside `args` aren't escaped. Keep URL
+> and header values quote-clean, no embedded spaces in the `--header`
+> value.
 
 ### Getting a bearer token
 
