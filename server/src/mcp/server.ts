@@ -566,7 +566,7 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
 export function createMcp(deps: McpDeps) {
   return {
     handleRequest: async (request: Request): Promise<Response> => {
-      const server = new McpServer({ name: "brain.md", version: "0.3.0" });
+      const server = new McpServer({ name: "brain.md", version: "0.4.0" });
       registerHandlers(server, deps);
       const transport = new WebStandardStreamableHTTPServerTransport({
         sessionIdGenerator: undefined,

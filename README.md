@@ -574,6 +574,44 @@ above, restart the MCP client, done.
 If you're embedding the URL itself anywhere persistent, prefer a
 secret-manager / `.env` over hard-coding the bearer string.
 
+#### OAuth 2.1 for Claude.ai web Custom Connectors (v0.4+)
+
+Static bearer tokens are rejected by Claude.ai's Custom Connector
+spec (MCP authorization spec 2025-11-25 forbids `?token=` in the URL
+and Claude.ai's UI has no field for a static `Authorization` header).
+You need full OAuth 2.1 with PKCE and Dynamic Client Registration.
+
+brain.md ships all of it as of **v0.4.0**. Set a vault password in
+Settings → Security (this is what gates the consent screen), then
+in the Claude.ai Custom Connector dialog:
+
+| Field | Value |
+|---|---|
+| Name | `brain.md` (or anything you like) |
+| Remote MCP server URL | `https://your-brainmd.example.com/mcp` |
+| OAuth Client ID | leave empty — DCR will mint one |
+| OAuth Client Secret | leave empty — we use PKCE-only public clients |
+
+Claude.ai will:
+1. Hit `GET /.well-known/oauth-protected-resource` and discover the
+   embedded authorization server.
+2. POST `/oauth/register` to obtain a `client_id` (no human input).
+3. Redirect you to `GET /oauth/authorize?...` where brain.md renders
+   the consent page. **Type your vault password and click Allow.**
+4. Redirect back with `?code=...`, exchange at `/oauth/token` with
+   PKCE verifier, get an access token + refresh token.
+5. Use the access token for `/mcp` calls. Tokens are audience-bound
+   (RFC 8707) — a token issued for brain.md cannot be used elsewhere.
+
+Scopes advertised: `vault:read`, `vault:write`. Per-folder permissions
+(set in the web UI) still apply on top — scope grants the surface,
+folder-perms grant the path. The narrower of the two always wins.
+
+Same flow works with any spec-compliant MCP client: Cursor, ChatGPT
+Apps, future Anthropic clients, etc. Claude Code / Claude Desktop
+have shipped before the spec stabilised so they still want a static
+bearer or the `mcp-remote` stdio bridge — both documented above.
+
 ---
 
 ## ⌨️ CLI
