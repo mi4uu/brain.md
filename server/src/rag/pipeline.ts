@@ -60,12 +60,15 @@ export class RagPipeline {
   }
 
   applyConfig(cfg: RagConfig): void {
-    const sameProvider = describeProvider(this.cfg).providerId === describeProvider(cfg).providerId;
-    const sameModel = describeProvider(this.cfg).modelId === describeProvider(cfg).modelId;
+    // B17: always rebuild. Comparing only providerId+modelId missed baseURL,
+    // apiKey, and dim changes — e.g. switching Ollama→OpenRouter on the same
+    // openai-compat provider+model kept the old localhost:11434 URL and
+    // every embed() failed with "Unable to connect". Embedder constructor
+    // is cheap; the real warm-up cost is lazy in .ready() / first .embed().
     this.cfg = cfg;
-    if (!sameProvider || !sameModel) {
-      this.embedder = makeEmbedder(cfg);
-    }
+    this.embedder = makeEmbedder(cfg);
+    // Reset the cached probe error — old failures don't reflect new config.
+    this.lastProbeError = null;
   }
 
   private async handleEvent(e: MutationEvent): Promise<void> {
