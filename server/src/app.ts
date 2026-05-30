@@ -28,6 +28,8 @@ import { ragRoutes } from "./api/rag";
 import { authRoutes } from "./api/auth";
 import { authMiddleware } from "./api/auth-middleware";
 import { oauthDiscoveryRoutes } from "./api/oauth-discovery";
+import { oauthFlowRoutes } from "./api/oauth-flow";
+import { OAuthStore } from "./auth/oauth-store";
 import { folderPermsRoutes } from "./api/folder-perms";
 import { AuthStore } from "./auth/store";
 import { TokenStore } from "./auth/tokens";
@@ -65,14 +67,18 @@ export function createApp(opts: AppOptions = {}) {
 
   const authStore = new AuthStore(vault);
   const tokenStore = new TokenStore();
+  const oauthStore = new OAuthStore();
+  oauthStore.startSweeper();
 
   const app = new Elysia()
     .use(cors())
-    .use(authMiddleware(authStore, tokenStore))
+    .use(authMiddleware(authStore, tokenStore, oauthStore))
     .get("/health", () => ({ ok: true, vaultDir: vault.root }))
     // V64: OAuth discovery surface, served before everything else so it's
     // reachable even when auth.json gates the rest of the API.
     .use(oauthDiscoveryRoutes())
+    // V63 step 2: authorize + token endpoints (PKCE flow).
+    .use(oauthFlowRoutes(authStore, oauthStore))
     .use(authRoutes(authStore, tokenStore))
     .use(treeRoutes(vault))
     .use(noteRoutes(vault, index))

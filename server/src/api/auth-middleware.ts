@@ -1,6 +1,7 @@
 import { Elysia } from "elysia";
 import type { AuthStore } from "../auth/store";
 import type { TokenStore } from "../auth/tokens";
+import type { OAuthStore } from "../auth/oauth-store";
 
 // V53: protect every /api/* (except /api/auth/{status,login}) + /mcp/*
 // (including /mcp itself, not just /mcp/sub-paths) once auth.json exists.
@@ -38,7 +39,7 @@ function originOf(req: Request): string {
   return `${u.protocol}//${u.host}`;
 }
 
-export function authMiddleware(auth: AuthStore, tokens: TokenStore) {
+export function authMiddleware(auth: AuthStore, tokens: TokenStore, oauth?: OAuthStore) {
   return new Elysia().onRequest(({ request, set }) => {
     if (!auth.isConfigured()) return; // no auth required
     const url = new URL(request.url);
@@ -49,20 +50,35 @@ export function authMiddleware(auth: AuthStore, tokens: TokenStore) {
     if (OPEN_PATHS.has(path)) return;
     if (OPEN_PREFIXES.some((p) => path.startsWith(p))) return;
     const tok = bearer(request);
-    if (!tokens.validate(tok)) {
-      set.status = 401;
-      const resourceMetadata = `${originOf(request)}/.well-known/oauth-protected-resource`;
-      return new Response(
-        JSON.stringify({ error: "unauthorized", code: "AUTH_REQUIRED" }),
-        {
-          status: 401,
-          headers: {
-            "content-type": "application/json",
-            "www-authenticate": `Bearer resource_metadata="${resourceMetadata}", scope="vault:read vault:write"`,
-          },
-        },
-      );
+
+    // V53: classic password-issued bearer first (web Settings UI uses this).
+    if (tokens.validate(tok)) return;
+
+    // V63: fall back to OAuth access token validation when an OAuth store
+    // is wired up. Audience-bound: the token must have been issued for the
+    // exact MCP resource URI (RFC 8707). For /mcp paths we require an OAuth
+    // scope; /api paths stay password-only for now (Settings UI).
+    if (oauth && tok && (path === "/mcp" || path.startsWith("/mcp/"))) {
+      const resource = `${originOf(request)}/mcp`;
+      const v = oauth.validateAccess(tok, resource);
+      if (v.ok) {
+        const scopes = v.scope.split(/\s+/).filter(Boolean);
+        // Minimum scope to touch /mcp at all: at least vault:read.
+        if (scopes.includes("vault:read") || scopes.includes("vault:write")) return;
+      }
     }
-    return;
+
+    set.status = 401;
+    const resourceMetadata = `${originOf(request)}/.well-known/oauth-protected-resource`;
+    return new Response(
+      JSON.stringify({ error: "unauthorized", code: "AUTH_REQUIRED" }),
+      {
+        status: 401,
+        headers: {
+          "content-type": "application/json",
+          "www-authenticate": `Bearer resource_metadata="${resourceMetadata}", scope="vault:read vault:write"`,
+        },
+      },
+    );
   });
 }
