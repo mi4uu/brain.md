@@ -357,12 +357,13 @@ and upserts the vectors into a per-vault embedded store at
 `<VAULT>/.brain/vectors.json` (pure JS, brute-force cosine — well
 under 10ms for typical vaults).
 
-| Provider                | Model                       | dim   | Local? | API key |
-|-------------------------|-----------------------------|------:|:------:|:-------:|
-| Local *(default)*       | `bge-small-en-v1.5` (WASM)  |   384 |   ✓    |   —     |
-| Ollama                  | e.g. `nomic-embed-text`     |   768 |   ✓    |   —     |
-| LM Studio               | any served GGUF embedder    | varies|   ✓    |   —     |
-| OpenAI                  | `text-embedding-3-small`    |  1536 |   —    |   ✓     |
+| Provider                | Model                                       | dim   | Local? | API key |
+|-------------------------|---------------------------------------------|------:|:------:|:-------:|
+| Local *(default)*       | `bge-small-en-v1.5` (WASM)                  |   384 |   ✓    |   —     |
+| Ollama                  | e.g. `nomic-embed-text`                     |   768 |   ✓    |   —     |
+| LM Studio               | any served GGUF embedder                    | varies|   ✓    |   —     |
+| OpenRouter *(free tier)*| `nvidia/llama-nemotron-embed-vl-1b-v2:free` |  2048 |   —    |   ✓     |
+| OpenAI                  | `text-embedding-3-small`                    |  1536 |   —    |   ✓     |
 
 > **Out of the box, in the prebuilt binary.** The local embedder ships
 > as bundled WASM ONNX with a hand-rolled BERT tokenizer — no
@@ -372,6 +373,34 @@ under 10ms for typical vaults).
 > after that, on macOS / Linux / Windows alike. Want to keep your
 > existing Ollama or hosted endpoint? Switch to *OpenAI-compatible*
 > in the same panel.
+
+#### OpenRouter — free embeddings, zero local deps
+
+If the WASM model doesn't fit your machine (constrained RAM / no
+disk space for the cache) and you don't want to run Ollama either,
+**OpenRouter** ships a free OpenAI-compatible embeddings endpoint
+that requires no local model, no GPU, no setup beyond an API key.
+
+In **Settings → AI / RAG**:
+
+| Field      | Value                                       |
+|------------|---------------------------------------------|
+| Provider   | OpenAI-compatible                           |
+| Base URL   | `https://openrouter.ai/api/v1/`             |
+| Model      | `nvidia/llama-nemotron-embed-vl-1b-v2:free` |
+| DIM        | `2048`                                      |
+| API Key    | from [openrouter.ai/keys](https://openrouter.ai/keys) — no credit card required for `:free` models |
+
+Click **Test connection**, then **Reindex vault**. Indexes the whole
+vault in seconds, multilingual, multimodal-aware (works on notes
+mixing languages). Trade-offs: data leaves your machine on every
+embed call; free tier has rate limits; works only when online.
+
+> **Heads-up — same applies to Ollama / OpenAI / any HTTP embedder.**
+> Switching `Base URL`, `API Key`, or `DIM` while staying on the same
+> provider+model takes effect immediately as of v0.3.1 / v0.4.0
+> ([B17](https://github.com/mi4uu/brain.md/commit/511cc69)). Older
+> binaries needed a server restart for those fields to apply.
 
 ![Settings — AI / RAG](docs/img/settings-rag.png)
 
