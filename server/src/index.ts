@@ -3,7 +3,7 @@ import { loadConfig } from "./config";
 import { parseArgs, getUsage, CliError } from "./cli";
 import { mkdir } from "node:fs/promises";
 
-const VERSION = "0.4.1";
+const VERSION = "0.4.2";
 
 async function main() {
   let action;
@@ -32,6 +32,7 @@ async function main() {
 
   const {
     app,
+    vault,
     index,
     repo,
     autocommit,
@@ -39,6 +40,8 @@ async function main() {
     ragStore,
     ragPipeline,
     authStore,
+    tokenStore,
+    apiKeys,
   } = createApp({
     vaultDir: config.vaultDir,
     gitAutocommit: config.gitAutocommit,
@@ -47,6 +50,9 @@ async function main() {
   });
 
   await authStore.load();
+  // B19 + V66: persist session tokens + named API keys to vault.
+  await tokenStore.bindVault(vault);
+  await apiKeys.bindVault(vault);
   const loaded = await settings.load();
   // settings.json overrides env defaults
   autocommit.setEnabled(loaded.git.autocommit);

@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import type { AuthStore } from "../auth/store";
 import type { TokenStore } from "../auth/tokens";
 import type { OAuthStore } from "../auth/oauth-store";
+import type { APIKeyStore } from "../auth/api-keys";
 
 // V53: protect every /api/* (except /api/auth/{status,login}) + /mcp/*
 // (including /mcp itself, not just /mcp/sub-paths) once auth.json exists.
@@ -64,11 +65,33 @@ function originOf(req: Request): string {
   return `${proto}://${host}`;
 }
 
-export function authMiddleware(auth: AuthStore, tokens: TokenStore, oauth?: OAuthStore) {
+export function authMiddleware(
+  auth: AuthStore,
+  tokens: TokenStore,
+  oauth?: OAuthStore,
+  keys?: APIKeyStore,
+) {
   return new Elysia().onRequest(({ request, set }) => {
-    if (!auth.isConfigured()) return; // no auth required
     const url = new URL(request.url);
     const path = url.pathname;
+
+    // BRAINMD_LOG_OAUTH=1 enables verbose tracing of every /oauth/* and
+    // /.well-known/* request so we can diagnose what spec-incompliant
+    // MCP clients (looking at you, current Claude.ai connector) actually
+    // send. Off by default — log volume would be silly otherwise.
+    if (
+      process.env.BRAINMD_LOG_OAUTH === "1" &&
+      (path.startsWith("/oauth/") || path.startsWith("/.well-known/"))
+    ) {
+      const ct = request.headers.get("content-type") ?? "-";
+      const ua = (request.headers.get("user-agent") ?? "-").slice(0, 80);
+      // eslint-disable-next-line no-console
+      console.error(
+        `[oauth-trace] ${request.method} ${path}${url.search} ct=${ct} ua=${ua}`,
+      );
+    }
+
+    if (!auth.isConfigured()) return; // no auth required
     const isProtected =
       path.startsWith("/api/") || path === "/mcp" || path.startsWith("/mcp/");
     if (!isProtected) return;
@@ -76,19 +99,22 @@ export function authMiddleware(auth: AuthStore, tokens: TokenStore, oauth?: OAut
     if (OPEN_PREFIXES.some((p) => path.startsWith(p))) return;
     const tok = bearer(request);
 
-    // V53: classic password-issued bearer first (web Settings UI uses this).
+    // V53: session token from POST /api/auth/login (web UI).
     if (tokens.validate(tok)) return;
 
-    // V63: fall back to OAuth access token validation when an OAuth store
-    // is wired up. Audience-bound: the token must have been issued for the
-    // exact MCP resource URI (RFC 8707). For /mcp paths we require an OAuth
-    // scope; /api paths stay password-only for now (Settings UI).
+    // V66: long-lived named API key (Settings → Security → API Keys).
+    // Works on EVERY protected path (both /api/* and /mcp/*) so a single
+    // key can drive the HTTP API and the MCP transport from the same
+    // Claude Desktop / curl config.
+    if (keys && keys.validate(tok)) return;
+
+    // V63: OAuth access token — audience-bound to this MCP resource.
+    // Only valid for /mcp paths; /api/* stays session-or-API-key.
     if (oauth && tok && (path === "/mcp" || path.startsWith("/mcp/"))) {
       const resource = `${originOf(request)}/mcp`;
       const v = oauth.validateAccess(tok, resource);
       if (v.ok) {
         const scopes = v.scope.split(/\s+/).filter(Boolean);
-        // Minimum scope to touch /mcp at all: at least vault:read.
         if (scopes.includes("vault:read") || scopes.includes("vault:write")) return;
       }
     }

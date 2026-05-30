@@ -542,6 +542,176 @@ function SecurityPanel() {
         </div>
       </form>
       {msg ? <p className="text-sm text-fg-3">{msg}</p> : null}
+
+      <APIKeysPanel />
+    </div>
+  );
+}
+
+// -------- V66 API Keys panel --------
+
+interface PublicAPIKey {
+  id: string;
+  name: string;
+  createdAt: number;
+  lastUsedAt: number | null;
+  expiresAt: number | null;
+  prefix: string;
+}
+
+function APIKeysPanel() {
+  const [keys, setKeys] = useState<PublicAPIKey[]>([]);
+  const [name, setName] = useState("");
+  const [expiresInDays, setExpiresInDays] = useState<string>("");
+  const [justCreated, setJustCreated] = useState<{ name: string; token: string } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const reload = async () => {
+    try {
+      const r = await fetch("/api/auth/keys");
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = (await r.json()) as { keys: PublicAPIKey[] };
+      setKeys(data.keys);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  useEffect(() => {
+    void reload();
+  }, []);
+
+  const generate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErr(null);
+    try {
+      const body: { name: string; expiresInDays?: number } = { name };
+      const days = Number(expiresInDays);
+      if (Number.isFinite(days) && days > 0) body.expiresInDays = days;
+      const r = await fetch("/api/auth/keys", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const created = (await r.json()) as { name: string; token: string };
+      setJustCreated({ name: created.name, token: created.token });
+      setName("");
+      setExpiresInDays("");
+      await reload();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const revoke = async (id: string) => {
+    if (!confirm("Revoke this API key? Any client using it will start getting 401.")) return;
+    setErr(null);
+    try {
+      const r = await fetch(`/api/auth/keys/${id}`, { method: "DELETE" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      await reload();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  return (
+    <div className="mt-6 space-y-3 border-t border-divider pt-4">
+      <div>
+        <h3 className="text-sm font-semibold">API Keys</h3>
+        <p className="mt-1 text-xs text-fg-3">
+          Long-lived bearer tokens for MCP clients (Claude Code, Cursor, curl scripts).
+          Each key has a name and can be revoked individually. Tokens survive server restarts.
+        </p>
+      </div>
+
+      <form onSubmit={generate} className="flex flex-wrap items-end gap-2">
+        <Field label="Name">
+          <input
+            className="input"
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Claude Code laptop"
+            required
+            minLength={1}
+            maxLength={200}
+          />
+        </Field>
+        <Field label="Expires in days (optional)">
+          <input
+            className="input w-32"
+            type="number"
+            min={1}
+            value={expiresInDays}
+            onChange={(e) => setExpiresInDays(e.target.value)}
+            placeholder="never"
+          />
+        </Field>
+        <button
+          type="submit"
+          disabled={!name}
+          className="rounded-1 bg-accent px-3 py-1 text-sm font-medium text-white hover:bg-accent-strong disabled:opacity-50"
+        >
+          Generate
+        </button>
+      </form>
+
+      {justCreated ? (
+        <div className="space-y-2 rounded-1 border border-accent/40 bg-accent/10 p-3">
+          <p className="text-xs font-medium text-fg-1">
+            Key <strong>{justCreated.name}</strong> created. Copy it now — the full
+            token is shown ONCE and never again.
+          </p>
+          <code className="block w-full select-all break-all rounded-1 bg-app px-2 py-1 font-mono text-xs">
+            {justCreated.token}
+          </code>
+          <button
+            type="button"
+            className="text-xs text-fg-3 underline"
+            onClick={() => setJustCreated(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
+
+      {keys.length === 0 ? (
+        <p className="text-xs text-fg-3">No API keys yet.</p>
+      ) : (
+        <ul className="space-y-1">
+          {keys.map((k) => (
+            <li
+              key={k.id}
+              className="flex items-center justify-between gap-3 rounded-1 border border-divider px-3 py-2 text-xs"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-medium text-fg-1">{k.name}</div>
+                <div className="mt-0.5 text-fg-3">
+                  <code className="font-mono">{k.prefix}…</code> · created{" "}
+                  {new Date(k.createdAt).toLocaleString()}{" "}
+                  {k.lastUsedAt
+                    ? `· last used ${new Date(k.lastUsedAt).toLocaleString()}`
+                    : "· never used"}
+                  {k.expiresAt
+                    ? ` · expires ${new Date(k.expiresAt).toLocaleString()}`
+                    : ""}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => revoke(k.id)}
+                className="rounded-1 border border-callout-danger/40 px-2 py-1 text-callout-danger hover:bg-callout-danger/10"
+              >
+                Revoke
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {err ? <p className="text-xs text-callout-danger">{err}</p> : null}
     </div>
   );
 }
