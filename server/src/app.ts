@@ -27,6 +27,7 @@ import { settingsRoutes } from "./api/settings";
 import { ragRoutes } from "./api/rag";
 import { authRoutes } from "./api/auth";
 import { authMiddleware } from "./api/auth-middleware";
+import { oauthDiscoveryRoutes } from "./api/oauth-discovery";
 import { folderPermsRoutes } from "./api/folder-perms";
 import { AuthStore } from "./auth/store";
 import { TokenStore } from "./auth/tokens";
@@ -69,6 +70,9 @@ export function createApp(opts: AppOptions = {}) {
     .use(cors())
     .use(authMiddleware(authStore, tokenStore))
     .get("/health", () => ({ ok: true, vaultDir: vault.root }))
+    // V64: OAuth discovery surface, served before everything else so it's
+    // reachable even when auth.json gates the rest of the API.
+    .use(oauthDiscoveryRoutes())
     .use(authRoutes(authStore, tokenStore))
     .use(treeRoutes(vault))
     .use(noteRoutes(vault, index))
