@@ -30,6 +30,7 @@ import { authMiddleware } from "./api/auth-middleware";
 import { oauthDiscoveryRoutes } from "./api/oauth-discovery";
 import { oauthFlowRoutes } from "./api/oauth-flow";
 import { OAuthStore } from "./auth/oauth-store";
+import { OAuthClientStore } from "./auth/oauth-clients";
 import { folderPermsRoutes } from "./api/folder-perms";
 import { AuthStore } from "./auth/store";
 import { TokenStore } from "./auth/tokens";
@@ -69,6 +70,7 @@ export function createApp(opts: AppOptions = {}) {
   const tokenStore = new TokenStore();
   const oauthStore = new OAuthStore();
   oauthStore.startSweeper();
+  const oauthClients = new OAuthClientStore();
 
   const app = new Elysia()
     .use(cors())
@@ -77,8 +79,8 @@ export function createApp(opts: AppOptions = {}) {
     // V64: OAuth discovery surface, served before everything else so it's
     // reachable even when auth.json gates the rest of the API.
     .use(oauthDiscoveryRoutes())
-    // V63 step 2: authorize + token endpoints (PKCE flow).
-    .use(oauthFlowRoutes(authStore, oauthStore))
+    // V63 step 2+3: authorize + token + register endpoints (PKCE + DCR).
+    .use(oauthFlowRoutes(authStore, oauthStore, oauthClients))
     .use(authRoutes(authStore, tokenStore))
     .use(treeRoutes(vault))
     .use(noteRoutes(vault, index))

@@ -1,6 +1,7 @@
 import { Elysia, t } from "elysia";
 import type { AuthStore } from "../auth/store";
 import type { OAuthStore } from "../auth/oauth-store";
+import type { OAuthClientStore, ClientRegistrationRequest } from "../auth/oauth-clients";
 
 // V63 step 2: /oauth/authorize + /oauth/token endpoints.
 //
@@ -134,9 +135,47 @@ function redirectWithError(redirectUri: string, state: string, error: string, de
 
 const SUPPORTED_SCOPES = new Set(["vault:read", "vault:write"]);
 
-export function oauthFlowRoutes(authStore: AuthStore, oauth: OAuthStore) {
+export function oauthFlowRoutes(
+  authStore: AuthStore,
+  oauth: OAuthStore,
+  clients: OAuthClientStore,
+) {
   return (
     new Elysia()
+
+      // ----- POST /oauth/register (RFC 7591 Dynamic Client Registration) -----
+      .post(
+        "/oauth/register",
+        ({ body, set }) => {
+          const req = body as ClientRegistrationRequest;
+          const r = clients.register(req);
+          if (!r.ok) {
+            set.status = 400;
+            return { error: r.error, error_description: r.error_description };
+          }
+          set.status = 201;
+          set.headers["cache-control"] = "no-store";
+          set.headers["pragma"] = "no-cache";
+          return r.client;
+        },
+        {
+          body: t.Object({
+            client_name: t.Optional(t.String()),
+            redirect_uris: t.Array(t.String()),
+            grant_types: t.Optional(t.Array(t.String())),
+            response_types: t.Optional(t.Array(t.String())),
+            token_endpoint_auth_method: t.Optional(t.String()),
+            // Anthropic-style metadata fields we accept but ignore.
+            scope: t.Optional(t.String()),
+            client_uri: t.Optional(t.String()),
+            logo_uri: t.Optional(t.String()),
+            tos_uri: t.Optional(t.String()),
+            policy_uri: t.Optional(t.String()),
+            software_id: t.Optional(t.String()),
+            software_version: t.Optional(t.String()),
+          }),
+        },
+      )
 
       // ----- GET /oauth/authorize (render consent) -----
       .get(
@@ -169,6 +208,25 @@ export function oauthFlowRoutes(authStore: AuthStore, oauth: OAuthStore) {
           if (!redirOk.ok) {
             set.status = 400;
             return { error: "invalid_request", error_description: redirOk.reason };
+          }
+          // V63 step 3: client_id must match a registered client and the
+          // redirect_uri must be in that client's allow-list. Without this
+          // check, an attacker who learns a client_id can swap in their own
+          // redirect_uri and capture the auth code.
+          const knownClient = clients.get(clientId);
+          if (!knownClient) {
+            set.status = 400;
+            return {
+              error: "invalid_client",
+              error_description: "unknown client_id — register via POST /oauth/register first",
+            };
+          }
+          if (!clients.validateRedirectUri(clientId, redirectUri)) {
+            set.status = 400;
+            return {
+              error: "invalid_request",
+              error_description: "redirect_uri not registered for this client",
+            };
           }
 
           // From here on, errors redirect.
