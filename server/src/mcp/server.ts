@@ -233,6 +233,41 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
   );
 
   server.registerTool(
+    "current_datetime",
+    {
+      description:
+        "Server's current date, time, and timezone. Use this when you need absolute time orientation — many agents lose track of the date across long sessions or when invoked from a stale system prompt.",
+      inputSchema: {},
+    },
+    async () => {
+      const now = new Date();
+      const iso = now.toISOString();
+      const tz =
+        Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+      const human = now.toLocaleString("en-GB", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        timeZone: tz,
+        timeZoneName: "short",
+      });
+      const payload = {
+        iso,
+        unix_ms: now.getTime(),
+        unix_s: Math.floor(now.getTime() / 1000),
+        timezone: tz,
+        human,
+      };
+      logCall("current_datetime", {}, true);
+      return { content: [{ type: "text", text: JSON.stringify(payload) }] };
+    },
+  );
+
+  server.registerTool(
     "get_tasks",
     {
       description: "Aggregate tasks vault-wide.",

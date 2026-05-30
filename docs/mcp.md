@@ -56,7 +56,7 @@ HTTP — wires up directly:
 }
 ```
 
-Restart the client. The 16 tools + 2 resources appear under the
+Restart the client. The 17 tools + 2 resources appear under the
 "brain.md" server.
 
 ## Claude Desktop — stdio bridge
@@ -86,7 +86,7 @@ Open `~/Library/Application Support/Claude/claude_desktop_config.json`
 }
 ```
 
-Restart Claude Desktop. The 16 tools + 2 resources appear under the
+Restart Claude Desktop. The 17 tools + 2 resources appear under the
 "brain.md" server.
 
 > **Caveat from `mcp-remote`**: Cursor and Claude Desktop on Windows
