@@ -1,7 +1,7 @@
 {
   "name": "brain.md",
   "private": true,
-  "version": "0.4.3",
+  "version": "0.4.4",
   "license": "AGPL-3.0-or-later",
   "description": "A local-first second brain for you — and for your AI agents. Markdown vault, live editor, semantic search (RAG via WASM ONNX), and an MCP server with OAuth 2.1.",
   "author": {
