@@ -2,6 +2,7 @@ import { Elysia, t } from "elysia";
 import type { AuthStore } from "../auth/store";
 import type { OAuthStore } from "../auth/oauth-store";
 import type { OAuthClientStore, ClientRegistrationRequest } from "../auth/oauth-clients";
+import { CimdResolver, isCimdClientId, type ClientMetadata } from "../auth/cimd";
 
 // V63 step 2: /oauth/authorize + /oauth/token endpoints.
 //
@@ -51,6 +52,7 @@ function escapeHtml(s: string): string {
 
 function consentPage(params: {
   clientId: string;
+  clientName?: string;
   redirectUri: string;
   scope: string;
   state: string;
@@ -58,7 +60,8 @@ function consentPage(params: {
   resource: string;
   error?: string;
 }): string {
-  const { clientId, redirectUri, scope, state, codeChallenge, resource, error } = params;
+  const { clientId, clientName, redirectUri, scope, state, codeChallenge, resource, error } = params;
+  const displayName = clientName || clientId;
   const safe = (s: string) => escapeHtml(s);
   const scopes = scope.split(/\s+/).filter(Boolean);
   return `<!doctype html>
@@ -98,7 +101,7 @@ function consentPage(params: {
     ${error ? `<div class="error">${safe(error)}</div>` : ""}
     <div class="meta">
       <dl>
-        <dt>Client</dt><dd>${safe(clientId)}</dd>
+        <dt>Client</dt><dd>${safe(displayName)}${clientName && clientName !== clientId ? ` <span style="color:#9b9ba0">(${safe(clientId)})</span>` : ""}</dd>
         <dt>Redirect to</dt><dd>${safe(redirectUri)}</dd>
         <dt>Resource</dt><dd>${safe(resource)}</dd>
         <dt>Scopes requested</dt>
@@ -139,7 +142,32 @@ export function oauthFlowRoutes(
   authStore: AuthStore,
   oauth: OAuthStore,
   clients: OAuthClientStore,
+  cimd: CimdResolver,
 ) {
+  // V67: resolve client_id to a (displayName, redirect_uris) pair. Two paths:
+  //   - HTTPS URL → fetch CIMD document, validate, cache
+  //   - opaque string → look up in DCR store
+  async function resolveClient(
+    clientId: string,
+  ): Promise<{ ok: true; name: string; redirectUris: string[] } | { ok: false; reason: string }> {
+    if (isCimdClientId(clientId)) {
+      try {
+        const m: ClientMetadata = await cimd.resolve(clientId);
+        return { ok: true, name: m.client_name, redirectUris: m.redirect_uris };
+      } catch (e) {
+        return {
+          ok: false,
+          reason: `CIMD fetch failed: ${e instanceof Error ? e.message : String(e)}`,
+        };
+      }
+    }
+    const c = clients.get(clientId);
+    if (!c) {
+      return { ok: false, reason: "unknown client_id — register via POST /oauth/register first" };
+    }
+    return { ok: true, name: c.client_name, redirectUris: c.redirect_uris };
+  }
+
   return (
     new Elysia()
 
@@ -180,7 +208,7 @@ export function oauthFlowRoutes(
       // ----- GET /oauth/authorize (render consent) -----
       .get(
         "/oauth/authorize",
-        ({ query, set }) => {
+        async ({ query, set }) => {
           const responseType = String(query.response_type ?? "");
           const clientId = String(query.client_id ?? "");
           const redirectUri = String(query.redirect_uri ?? "");
@@ -209,19 +237,20 @@ export function oauthFlowRoutes(
             set.status = 400;
             return { error: "invalid_request", error_description: redirOk.reason };
           }
-          // V63 step 3: client_id must match a registered client and the
-          // redirect_uri must be in that client's allow-list. Without this
-          // check, an attacker who learns a client_id can swap in their own
-          // redirect_uri and capture the auth code.
-          const knownClient = clients.get(clientId);
-          if (!knownClient) {
+          // V63 + V67: resolve client_id (DCR store OR CIMD URL fetch) and
+          // validate redirect_uri against the client's allow-list. Without
+          // this check, an attacker who learns a client_id could swap in
+          // their own redirect_uri and capture the auth code.
+          //
+          // NOTE: this is a synchronous-looking await inside the Elysia
+          // handler — CIMD fetches once per client_id then caches 1h, so
+          // the cost only hits the first /authorize from a new client.
+          const resolved = await resolveClient(clientId);
+          if (!resolved.ok) {
             set.status = 400;
-            return {
-              error: "invalid_client",
-              error_description: "unknown client_id — register via POST /oauth/register first",
-            };
+            return { error: "invalid_client", error_description: resolved.reason };
           }
-          if (!clients.validateRedirectUri(clientId, redirectUri)) {
+          if (!resolved.redirectUris.some((r) => r === redirectUri)) {
             set.status = 400;
             return {
               error: "invalid_request",
@@ -264,6 +293,7 @@ export function oauthFlowRoutes(
           set.headers["content-type"] = "text/html; charset=utf-8";
           return consentPage({
             clientId,
+            clientName: resolved.name,
             redirectUri,
             scope: requested.join(" "),
             state,
@@ -293,6 +323,20 @@ export function oauthFlowRoutes(
             return { error: "invalid_request", error_description: redirOk.reason };
           }
 
+          // Defence in depth: re-validate client + redirect_uri against
+          // the resolved client metadata. Hidden form fields are
+          // user-tamperable; without this check an attacker who got the
+          // consent page rendered for client A could POST with client B's
+          // client_id and harvest a code for B's redirect_uri.
+          const resolved = await resolveClient(clientId);
+          if (!resolved.ok) {
+            set.status = 400;
+            return { error: "invalid_client", error_description: resolved.reason };
+          }
+          if (!resolved.redirectUris.some((r) => r === redirectUri)) {
+            return redirectWithError(redirectUri, state, "invalid_request", "redirect_uri not registered for this client");
+          }
+
           if (decision === "deny") {
             return redirectWithError(redirectUri, state, "access_denied", "user denied");
           }
@@ -306,7 +350,7 @@ export function oauthFlowRoutes(
           if (!ok) {
             set.headers["content-type"] = "text/html; charset=utf-8";
             return consentPage({
-              clientId, redirectUri, scope, state, codeChallenge, resource,
+              clientId, clientName: resolved.name, redirectUri, scope, state, codeChallenge, resource,
               error: "Incorrect password. Try again.",
             });
           }

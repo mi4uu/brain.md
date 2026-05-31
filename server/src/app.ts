@@ -31,6 +31,7 @@ import { oauthDiscoveryRoutes } from "./api/oauth-discovery";
 import { oauthFlowRoutes } from "./api/oauth-flow";
 import { OAuthStore } from "./auth/oauth-store";
 import { OAuthClientStore } from "./auth/oauth-clients";
+import { CimdResolver } from "./auth/cimd";
 import { APIKeyStore } from "./auth/api-keys";
 import { apiKeyRoutes } from "./api/api-keys";
 import { folderPermsRoutes } from "./api/folder-perms";
@@ -73,6 +74,7 @@ export function createApp(opts: AppOptions = {}) {
   const oauthStore = new OAuthStore();
   oauthStore.startSweeper();
   const oauthClients = new OAuthClientStore();
+  const cimdResolver = new CimdResolver();
   const apiKeys = new APIKeyStore();
 
   const app = new Elysia()
@@ -82,8 +84,9 @@ export function createApp(opts: AppOptions = {}) {
     // V64: OAuth discovery surface, served before everything else so it's
     // reachable even when auth.json gates the rest of the API.
     .use(oauthDiscoveryRoutes())
-    // V63 step 2+3: authorize + token + register endpoints (PKCE + DCR).
-    .use(oauthFlowRoutes(authStore, oauthStore, oauthClients))
+    // V63 step 2+3 + V67: authorize + token + register endpoints
+    // (PKCE + DCR + CIMD).
+    .use(oauthFlowRoutes(authStore, oauthStore, oauthClients, cimdResolver))
     .use(authRoutes(authStore, tokenStore))
     .use(apiKeyRoutes(apiKeys))
     .use(treeRoutes(vault))
