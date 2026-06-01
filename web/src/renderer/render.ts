@@ -94,8 +94,56 @@ const remarkWikilinkToHast: Plugin<[RenderOptions], Root> = function (opts) {
       };
       const display = n.alias ?? n.target;
       const isMedia = opts.isMediaTarget(n.target);
-      const resolved = isMedia ? null : opts.resolveWikilink(n.target);
+      const isAttach = !isMedia && isAttachmentName(n.target);
+      const resolved = isMedia || isAttach ? null : opts.resolveWikilink(n.target);
       const data = (n.data ??= {});
+
+      if (isAttach) {
+        const url = opts.buildMediaUrl(n.target);
+        const name = n.target.split("/").pop() ?? n.target;
+        const ext = name.split(".").pop()?.toLowerCase() ?? "";
+        if (n.embed) {
+          data.hName = "a";
+          data.hProperties = {
+            class: "attachment",
+            href: url,
+            download: name,
+            "data-attachment": n.target,
+            "data-attachment-ext": ext,
+          };
+          data.hChildren = [
+            {
+              type: "element",
+              tagName: "span",
+              properties: { class: "attachment-icon", "aria-hidden": "true" },
+              children: [{ type: "text", value: iconForExt(ext) }],
+            },
+            {
+              type: "element",
+              tagName: "span",
+              properties: { class: "attachment-name" },
+              children: [{ type: "text", value: display }],
+            },
+            {
+              type: "element",
+              tagName: "span",
+              properties: { class: "attachment-action", "aria-hidden": "true" },
+              children: [{ type: "text", value: "↓" }],
+            },
+          ];
+        } else {
+          data.hName = "a";
+          data.hProperties = {
+            class: "attachment-link",
+            href: url,
+            download: name,
+            "data-attachment": n.target,
+            "data-attachment-ext": ext,
+          };
+          data.hChildren = [{ type: "text", value: display }];
+        }
+        return;
+      }
 
       if (n.embed && isMedia) {
         const url = opts.buildMediaUrl(n.target);
@@ -268,4 +316,24 @@ const MEDIA_EXT = new Set([
 export function isMediaName(name: string): boolean {
   const ext = name.split(".").pop()?.toLowerCase();
   return !!ext && MEDIA_EXT.has(ext);
+}
+
+export function isAttachmentName(name: string): boolean {
+  const last = name.split("/").pop() ?? name;
+  const dot = last.lastIndexOf(".");
+  if (dot <= 0) return false;
+  const ext = last.slice(dot + 1).toLowerCase();
+  if (!ext || ext === "md") return false;
+  return !MEDIA_EXT.has(ext);
+}
+
+function iconForExt(ext: string): string {
+  if (["json", "yaml", "yml", "toml", "xml"].includes(ext)) return "{ }";
+  if (["zip", "tar", "gz", "tgz", "7z", "rar", "bz2"].includes(ext)) return "▤";
+  if (["csv", "tsv", "xls", "xlsx", "ods"].includes(ext)) return "▦";
+  if (["js", "ts", "tsx", "jsx", "py", "rs", "go", "java", "c", "cpp", "h", "hpp", "rb", "php", "sh", "lua"].includes(ext)) return "</>";
+  if (["txt", "log", "md"].includes(ext)) return "≡";
+  if (["doc", "docx", "rtf", "odt"].includes(ext)) return "¶";
+  if (["ppt", "pptx", "odp", "key"].includes(ext)) return "▶";
+  return "📄";
 }

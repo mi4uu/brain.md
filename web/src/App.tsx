@@ -20,6 +20,7 @@ import { IconPicker } from "./components/IconPicker";
 import { SyncConnector } from "./components/SyncConnector";
 import { gitApi, type GitStatus } from "./api/git";
 import { metaApi, type FolderMeta } from "./api/meta";
+import { isMediaName } from "./renderer/render";
 import {
   MenuIcon,
   MoonIcon,
@@ -716,7 +717,8 @@ export function App() {
       for (const f of Array.from(files)) {
         try {
           await uploadMediaForCurrent(f);
-          setContent((c) => `${c}${c.endsWith("\n") ? "" : "\n"}![[${f.name}]]\n`);
+          const wikilink = isMediaName(f.name) ? `![[${f.name}]]` : `[[${f.name}]]`;
+          setContent((c) => `${c}${c.endsWith("\n") ? "" : "\n"}${wikilink}\n`);
         } catch (err) {
           setToast(`Upload failed: ${err instanceof Error ? err.message : String(err)}`);
         }
@@ -1010,7 +1012,7 @@ export function App() {
               <input
                 ref={uploadInputRef}
                 type="file"
-                accept="image/*,video/*,audio/*,application/pdf"
+                accept="*/*"
                 multiple
                 hidden
                 onChange={onFileInputChange}

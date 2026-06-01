@@ -13,6 +13,11 @@ import {
   type CompletionResult,
 } from "@codemirror/autocomplete";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
+import { isMediaName } from "../renderer/render";
+
+function wikilinkFor(name: string): string {
+  return isMediaName(name) ? `![[${name}]]` : `[[${name}]]`;
+}
 
 // V61: brain.md syntax highlight. Reads our `--cm-*` CSS vars so the
 // editor follows the active theme (dark/light). The vars themselves
@@ -227,7 +232,7 @@ export function Editor({
           for (const f of files) {
             try {
               const name = await onUploadRef.current(f);
-              inserts.push(`![[${name}]]`);
+              inserts.push(wikilinkFor(name));
             } catch {
               inserts.push(`<!-- upload failed: ${f.name} -->`);
             }
@@ -251,7 +256,7 @@ export function Editor({
             e.preventDefault();
             void onUploadRef.current(file).then((name) => {
               const pos = view.state.selection.main.head;
-              const insert = `![[${name}]]`;
+              const insert = wikilinkFor(name);
               view.dispatch({
                 changes: { from: pos, insert },
                 selection: { anchor: pos + insert.length },
