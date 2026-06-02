@@ -1,7 +1,7 @@
 {
   "name": "@brain/web",
   "private": true,
-  "version": "0.4.5",
+  "version": "0.4.6",
   "license": "AGPL-3.0-or-later",
   "description": "brain.md web client — React 18 + CodeMirror 6 + unified renderer + Radix UI + Tailwind tokens.",
   "author": {

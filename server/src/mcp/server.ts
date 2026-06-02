@@ -18,6 +18,7 @@ import {
   resolveFolderPerms,
   type McpFolderPerms,
 } from "../api/folder-perms";
+import { loadMcpInstructions } from "./instructions";
 import {
   related as qRelated,
   contextForQuery as qContext,
@@ -566,7 +567,14 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
 export function createMcp(deps: McpDeps) {
   return {
     handleRequest: async (request: Request): Promise<Response> => {
-      const server = new McpServer({ name: "brain.md", version: "0.4.3" });
+      // V68: owner-editable, vault-scoped instructions surfaced to the model
+      // via the MCP initialize response. Read per request so edits to
+      // <VAULT>/.brain/mcp-prompt.md take effect without a server restart.
+      const instructions = await loadMcpInstructions(deps.vault);
+      const server = new McpServer(
+        { name: "brain.md", version: "0.4.3" },
+        instructions ? { instructions } : undefined,
+      );
       registerHandlers(server, deps);
       const transport = new WebStandardStreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
