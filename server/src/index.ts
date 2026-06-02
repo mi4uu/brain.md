@@ -2,8 +2,7 @@ import { createApp } from "./app";
 import { loadConfig } from "./config";
 import { parseArgs, getUsage, CliError } from "./cli";
 import { mkdir } from "node:fs/promises";
-
-const VERSION = "0.4.3";
+import { VERSION } from "./version";
 
 async function main() {
   let action;

@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, extname, join } from "node:path";
 import { ASSETS } from "./assets";
+import { VERSION } from "../version";
 
 // Three-tier web client resolver:
 //   1. **Embedded**     — ASSETS map populated by scripts/gen-web-assets.ts
@@ -14,8 +15,6 @@ import { ASSETS } from "./assets";
 //                         `$XDG_CACHE_HOME/brain.md/web/<version>/`. Lets
 //                         someone clone the repo, run `bun start` and have
 //                         the UI work without building the frontend first.
-
-const VERSION = "0.4.3";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",

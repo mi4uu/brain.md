@@ -19,6 +19,7 @@ import {
   type McpFolderPerms,
 } from "../api/folder-perms";
 import { loadMcpInstructions } from "./instructions";
+import { VERSION } from "../version";
 import {
   related as qRelated,
   contextForQuery as qContext,
@@ -572,7 +573,7 @@ export function createMcp(deps: McpDeps) {
       // <VAULT>/.brain/mcp-prompt.md take effect without a server restart.
       const instructions = await loadMcpInstructions(deps.vault);
       const server = new McpServer(
-        { name: "brain.md", version: "0.4.3" },
+        { name: "brain.md", version: VERSION },
         instructions ? { instructions } : undefined,
       );
       registerHandlers(server, deps);
