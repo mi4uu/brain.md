@@ -82,9 +82,15 @@ function buildTree(data: TreeData): Node {
     owner.children.push({ name: base, path: note, type: "note", children: [] });
   }
 
+  // Journal/daily notes are named YYYY-MM-DD.md. Plain alpha sort buries the
+  // newest entry at the bottom; sort dated notes descending so newest is on top.
+  const datePrefix = /^\d{4}-\d{2}-\d{2}/;
   const sortRec = (n: Node) => {
     n.children.sort((a, b) => {
       if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
+      const aDated = a.type === "note" && datePrefix.test(a.name);
+      const bDated = b.type === "note" && datePrefix.test(b.name);
+      if (aDated && bDated) return b.name.localeCompare(a.name);
       return a.name.localeCompare(b.name);
     });
     for (const c of n.children) sortRec(c);
