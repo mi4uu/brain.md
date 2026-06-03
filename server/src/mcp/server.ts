@@ -28,11 +28,22 @@ import {
   weeklyDigest as qDigest,
   compareNotes as qCompare,
   similarTasks as qSimilarTasks,
+  normalizeScope,
+  inScope,
   RagDisabledError,
   type RagDeps,
 } from "../rag/queries";
 
 const TASK_RE = /^(\s*[-*+])\s+\[([ xX])\]\s+(.*)$/;
+
+// V69: shared schema for the optional folder scope every search/RAG tool accepts.
+// A scope is one or more folder prefixes; matches that folder and its subfolders.
+const scopeSchema = z
+  .union([z.string(), z.array(z.string())])
+  .optional()
+  .describe(
+    "Optional folder scope: limit results to one folder path or an array of folder paths (prefix match, subfolders included). e.g. \"work\" or [\"work\",\"private/Journal\"]. Omit for the whole vault.",
+  );
 
 function collectTasks(index: VaultIndex): Array<{
   path: string;
@@ -103,12 +114,13 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
   server.registerTool(
     "search_notes",
     {
-      description: "Full-text search across the vault. Returns top 50 hits.",
-      inputSchema: { query: z.string().min(1) },
+      description:
+        "Full-text search across the vault. Returns top 50 hits. Optional `scope` confines the search to one or more folders.",
+      inputSchema: { query: z.string().min(1), scope: scopeSchema },
     },
-    async ({ query }) => {
-      const hits = fullTextSearch(index, query);
-      logCall("search_notes", { query }, true);
+    async ({ query, scope }) => {
+      const hits = fullTextSearch(index, query, scope);
+      logCall("search_notes", { query, scope }, true);
       return { content: [{ type: "text", text: JSON.stringify(hits) }] };
     },
   );
@@ -117,15 +129,16 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
     "similar_notes",
     {
       description:
-        "Semantic (vector) search via RAG. Returns top-k chunks with paths and snippets.",
+        "Semantic (vector) search via RAG. Returns top-k chunks with paths and snippets. Optional `scope` confines results to one or more folders.",
       inputSchema: {
         query: z.string().min(1),
         k: z.number().int().min(1).max(50).optional(),
+        scope: scopeSchema,
       },
     },
-    async ({ query, k }) => {
+    async ({ query, k, scope }) => {
       if (!ragEnabled()) {
-        logCall("similar_notes", { query, k }, false);
+        logCall("similar_notes", { query, k, scope }, false);
         return {
           isError: true,
           content: [
@@ -151,9 +164,19 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
           ],
         };
       }
+      const prefixes = normalizeScope(scope);
+      const limit = k ?? 5;
       const [vec] = await pipeline.embed([query]);
-      const hits = await pipeline.store.search(vec!, k ?? 5);
-      logCall("similar_notes", { query, k }, true);
+      // Over-fetch under a scope so enough in-scope hits survive the filter.
+      const raw = await pipeline.store.search(
+        vec!,
+        prefixes.length > 0 ? limit + 50 : limit,
+      );
+      const hits =
+        prefixes.length > 0
+          ? raw.filter((h) => inScope(h.path, prefixes)).slice(0, limit)
+          : raw;
+      logCall("similar_notes", { query, k, scope }, true);
       return { content: [{ type: "text", text: JSON.stringify(hits) }] };
     },
   );
@@ -365,15 +388,16 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
         query: z.string().min(1),
         k: z.number().int().min(1).max(50).optional(),
         filter: z.enum(["open", "done", "all"]).optional(),
+        scope: scopeSchema,
       },
     },
-    async ({ query, k, filter }) => {
+    async ({ query, k, filter, scope }) => {
       try {
-        const hits = await qSimilarTasks(ragDeps, query, k ?? 10, filter ?? "open");
-        logCall("find_similar_tasks", { query, k, filter }, true);
+        const hits = await qSimilarTasks(ragDeps, query, k ?? 10, filter ?? "open", scope);
+        logCall("find_similar_tasks", { query, k, filter, scope }, true);
         return { content: [{ type: "text", text: JSON.stringify(hits) }] };
       } catch (err) {
-        return ragError("find_similar_tasks", { query, k, filter }, err);
+        return ragError("find_similar_tasks", { query, k, filter, scope }, err);
       }
     },
   );
@@ -381,21 +405,23 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
   server.registerTool(
     "find_related",
     {
-      description: "Notes semantically close to a given note path (excludes self).",
+      description:
+        "Notes semantically close to a given note path (excludes self). Optional `scope` confines results to one or more folders.",
       inputSchema: {
         path: z.string().min(1),
         k: z.number().int().min(1).max(20).optional(),
+        scope: scopeSchema,
       },
     },
-    async ({ path, k }) => {
+    async ({ path, k, scope }) => {
       try {
         const perms = resolveFolderPerms(path, await readPerms(vault));
         if (!perms.read) denied("read", path);
-        const hits = await qRelated(ragDeps, path, k ?? 5);
-        logCall("find_related", { path, k }, true);
+        const hits = await qRelated(ragDeps, path, k ?? 5, scope);
+        logCall("find_related", { path, k, scope }, true);
         return { content: [{ type: "text", text: JSON.stringify(hits) }] };
       } catch (err) {
-        return ragError("find_related", { path, k }, err);
+        return ragError("find_related", { path, k, scope }, err);
       }
     },
   );
@@ -429,15 +455,16 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
       inputSchema: {
         query: z.string().min(1),
         budget_tokens: z.number().int().min(64).max(16000).optional(),
+        scope: scopeSchema,
       },
     },
-    async ({ query, budget_tokens }) => {
+    async ({ query, budget_tokens, scope }) => {
       try {
-        const out = await qContext(ragDeps, query, budget_tokens ?? 2000);
-        logCall("context_for_query", { query, budget_tokens }, true);
+        const out = await qContext(ragDeps, query, budget_tokens ?? 2000, scope);
+        logCall("context_for_query", { query, budget_tokens, scope }, true);
         return { content: [{ type: "text", text: JSON.stringify(out) }] };
       } catch (err) {
-        return ragError("context_for_query", { query, budget_tokens }, err);
+        return ragError("context_for_query", { query, budget_tokens, scope }, err);
       }
     },
   );
@@ -450,15 +477,16 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
       inputSchema: {
         limit: z.number().int().min(1).max(50).optional(),
         min_isolation: z.number().min(0).max(1).optional(),
+        scope: scopeSchema,
       },
     },
-    async ({ limit, min_isolation }) => {
+    async ({ limit, min_isolation, scope }) => {
       try {
-        const out = await qOrphans(ragDeps, limit ?? 10, min_isolation ?? 0.35);
-        logCall("find_orphans", { limit, min_isolation }, true);
+        const out = await qOrphans(ragDeps, limit ?? 10, min_isolation ?? 0.35, scope);
+        logCall("find_orphans", { limit, min_isolation, scope }, true);
         return { content: [{ type: "text", text: JSON.stringify(out) }] };
       } catch (err) {
-        return ragError("find_orphans", { limit, min_isolation }, err);
+        return ragError("find_orphans", { limit, min_isolation, scope }, err);
       }
     },
   );
@@ -471,15 +499,16 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
       inputSchema: {
         since: z.string().optional(),
         threshold: z.number().min(0).max(1).optional(),
+        scope: scopeSchema,
       },
     },
-    async ({ since, threshold }) => {
+    async ({ since, threshold, scope }) => {
       try {
-        const out = await qDigest(ragDeps, since ?? "7d", threshold ?? 0.6);
-        logCall("weekly_digest", { since, threshold }, true);
+        const out = await qDigest(ragDeps, since ?? "7d", threshold ?? 0.6, scope);
+        logCall("weekly_digest", { since, threshold, scope }, true);
         return { content: [{ type: "text", text: JSON.stringify(out) }] };
       } catch (err) {
-        return ragError("weekly_digest", { since, threshold }, err);
+        return ragError("weekly_digest", { since, threshold, scope }, err);
       }
     },
   );

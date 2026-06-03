@@ -11,14 +11,35 @@ export interface SearchHit {
 const MAX_RESULTS = 50;
 const SNIPPET_PAD = 40;
 
-export function search(idx: VaultIndex, q: string): SearchHit[] {
+// V69: optional folder scope — restrict full-text search to one or more folder
+// prefixes (subfolders included). Empty = whole vault.
+function normalizeScope(scope: string | string[] | undefined): string[] {
+  if (!scope) return [];
+  const arr = Array.isArray(scope) ? scope : [scope];
+  return arr
+    .map((s) => s.trim().replace(/^\/+|\/+$/g, ""))
+    .filter((s) => s.length > 0);
+}
+
+function inScope(path: string, prefixes: string[]): boolean {
+  if (prefixes.length === 0) return true;
+  return prefixes.some((p) => path === p || path.startsWith(`${p}/`));
+}
+
+export function search(
+  idx: VaultIndex,
+  q: string,
+  scope?: string | string[],
+): SearchHit[] {
   const query = q.trim();
   if (query === "") return [];
   const qLower = query.toLowerCase();
   const terms = qLower.split(/\s+/).filter(Boolean);
+  const prefixes = normalizeScope(scope);
   const hits: SearchHit[] = [];
 
   for (const e of idx.entries()) {
+    if (!inScope(e.path, prefixes)) continue;
     let score = 0;
     let matches = 0;
     const titleLower = e.title.toLowerCase();

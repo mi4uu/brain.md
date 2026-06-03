@@ -38,13 +38,37 @@ async function permsMap(vault: Vault): Promise<Record<string, McpFolderPerms>> {
   return (await loadFolderMeta(vault)).mcp;
 }
 
+// V69: optional folder scope. A scope is one or more folder prefixes; a path is
+// in scope if it sits under any of them (prefix match → subfolders included).
+// Empty/undefined scope = whole vault (no restriction). Agents pass this to
+// confine RAG/search to e.g. ["work", "private/Journal"].
+export type Scope = string | string[] | undefined;
+
+export function normalizeScope(scope: Scope): string[] {
+  if (!scope) return [];
+  const arr = Array.isArray(scope) ? scope : [scope];
+  return arr
+    .map((s) => s.trim().replace(/^\/+|\/+$/g, ""))
+    .filter((s) => s.length > 0);
+}
+
+export function inScope(path: string, prefixes: string[]): boolean {
+  if (prefixes.length === 0) return true;
+  return prefixes.some((p) => path === p || path.startsWith(`${p}/`));
+}
+
 // V54: drop result rows whose path is NOT read-allowed by MCP folder perms.
+// V69: also drop rows outside the requested folder scope (if any).
 async function filterReadable<T extends { path: string }>(
   vault: Vault,
   rows: T[],
+  scope?: string[],
 ): Promise<T[]> {
   const map = await permsMap(vault);
-  return rows.filter((r) => resolveFolderPerms(r.path, map).read);
+  const prefixes = scope ?? [];
+  return rows.filter(
+    (r) => resolveFolderPerms(r.path, map).read && inScope(r.path, prefixes),
+  );
 }
 
 // ---------------- related ----------------
@@ -55,6 +79,7 @@ export async function related(
   deps: RagDeps,
   path: string,
   k = 5,
+  scope?: Scope,
 ): Promise<RelatedHit[]> {
   assertEnabled(deps);
   let body = "";
@@ -68,9 +93,12 @@ export async function related(
   // Use the first chunk as the seed — usually the headline + intro paragraph.
   // Cheaper than averaging across all chunks and good enough for "what is
   // this note about".
+  const prefixes = normalizeScope(scope);
   const [vec] = await deps.pipeline.embed([chunks[0]!.text]);
-  const hits = await deps.pipeline.store.search(vec!, k + 5);
-  const filtered = await filterReadable(deps.vault, hits);
+  // Over-fetch so the scope/perm filter still leaves ~k hits.
+  const fetchK = prefixes.length > 0 ? k + 50 : k + 5;
+  const hits = await deps.pipeline.store.search(vec!, fetchK);
+  const filtered = await filterReadable(deps.vault, hits, prefixes);
   return filtered.filter((h) => h.path !== path).slice(0, k);
 }
 
@@ -91,13 +119,19 @@ export async function contextForQuery(
   deps: RagDeps,
   q: string,
   budgetTokens = 2000,
+  scope?: Scope,
 ): Promise<ContextResult> {
   assertEnabled(deps);
   if (q.trim() === "") return { text: "", sources: [], truncated: false };
 
+  const prefixes = normalizeScope(scope);
   const [vec] = await deps.pipeline.embed([q]);
-  const candidates = await deps.pipeline.store.search(vec!, 20);
-  const readable = await filterReadable(deps.vault, candidates);
+  // Over-fetch under a scope so enough in-scope candidates survive the filter.
+  const candidates = await deps.pipeline.store.search(
+    vec!,
+    prefixes.length > 0 ? 80 : 20,
+  );
+  const readable = await filterReadable(deps.vault, candidates, prefixes);
 
   // Greedy pack ordered by score, dedupe by path (highest-score per path).
   const bestByPath = new Map<string, SearchHit>();
@@ -255,9 +289,11 @@ export async function orphans(
   deps: RagDeps,
   limit = 10,
   minIsolation = 0.35,
+  scope?: Scope,
 ): Promise<OrphanNote[]> {
   assertEnabled(deps);
   const map = await permsMap(deps.vault);
+  const prefixes = normalizeScope(scope);
   const entries = deps.index.entries();
   const allPaths = entries.map((e) => e.path);
 
@@ -267,7 +303,10 @@ export async function orphans(
     inbound.set(p, deps.index.backlinks(p).length);
   }
   const noBacklinks = allPaths.filter(
-    (p) => (inbound.get(p) ?? 0) === 0 && resolveFolderPerms(p, map).read,
+    (p) =>
+      (inbound.get(p) ?? 0) === 0 &&
+      resolveFolderPerms(p, map).read &&
+      inScope(p, prefixes),
   );
   if (noBacklinks.length === 0) return [];
 
@@ -331,12 +370,15 @@ export async function weeklyDigest(
   deps: RagDeps,
   since = "7d",
   threshold = 0.6,
+  scope?: Scope,
 ): Promise<DigestCluster[]> {
   assertEnabled(deps);
   const cutoff = parseSince(since);
   const map = await permsMap(deps.vault);
+  const prefixes = normalizeScope(scope);
   const entries = deps.index.entries().filter((e) => {
     if (!resolveFolderPerms(e.path, map).read) return false;
+    if (!inScope(e.path, prefixes)) return false;
     return (e.mtime ?? 0) >= cutoff;
   });
   if (entries.length === 0) return [];
@@ -472,11 +514,14 @@ export async function similarTasks(
   query: string,
   k = 10,
   filter: TaskDoneFilter = "open",
+  scope?: Scope,
 ): Promise<TaskHit[]> {
   assertEnabled(deps);
   if (query.trim() === "") return [];
+  const prefixes = normalizeScope(scope);
   const [vec] = await deps.pipeline.embed([query]);
-  const hits = await deps.pipeline.store.searchTasks(vec!, k + 5, filter);
-  const filtered = await filterReadable(deps.vault, hits);
+  const fetchK = prefixes.length > 0 ? k + 50 : k + 5;
+  const hits = await deps.pipeline.store.searchTasks(vec!, fetchK, filter);
+  const filtered = await filterReadable(deps.vault, hits, prefixes);
   return filtered.slice(0, k);
 }
