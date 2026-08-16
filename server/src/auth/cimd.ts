@@ -95,7 +95,7 @@ async function assertSafeURL(url: string): Promise<URL> {
   return u;
 }
 
-function validateMetadata(raw: unknown, expectedClientId: string): ClientMetadata {
+export function validateMetadata(raw: unknown, expectedClientId: string): ClientMetadata {
   if (!raw || typeof raw !== "object") {
     throw new Error("metadata is not a JSON object");
   }
@@ -126,11 +126,14 @@ function validateMetadata(raw: unknown, expectedClientId: string): ClientMetadat
     }
     throw new Error(`unsupported redirect_uri scheme: ${parsed.protocol}`);
   }
-  const grants = Array.isArray(m.grant_types) ? m.grant_types : ["authorization_code"];
-  for (const g of grants) {
-    if (g !== "authorization_code" && g !== "refresh_token") {
-      throw new Error(`grant_type not supported: ${String(g)}`);
-    }
+  // Ignore grant_types we don't support (e.g. jwt-bearer from Claude.ai)
+  // rather than rejecting the whole client. We only require that the client
+  // can use authorization_code — that's the flow we run. Extra grants the AS
+  // doesn't implement are simply dropped, per CIMD/OAuth guidance.
+  const declaredGrants = Array.isArray(m.grant_types) ? m.grant_types : ["authorization_code"];
+  const grants = declaredGrants.filter((g) => g === "authorization_code" || g === "refresh_token");
+  if (!grants.includes("authorization_code")) {
+    throw new Error("client must support authorization_code grant");
   }
   const responses = Array.isArray(m.response_types) ? m.response_types : ["code"];
   for (const r of responses) {

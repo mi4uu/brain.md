@@ -1,7 +1,7 @@
 {
   "name": "@brain/server",
   "private": true,
-  "version": "0.4.9",
+  "version": "0.4.10",
   "license": "AGPL-3.0-or-later",
   "description": "brain.md backend — Elysia + Bun. Vault FS, search index, git autocommit, RAG pipeline (LanceDB), MCP server, optional auth.",
   "author": {

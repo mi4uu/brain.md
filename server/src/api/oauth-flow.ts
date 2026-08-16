@@ -85,7 +85,7 @@ function consentPage(params: {
   label { display: block; margin-top: 12px; font-size: 13px; color: #9b9ba0; }
   input[type="password"] { width: 100%; padding: 9px 11px; background: #1c1c20; border: 1px solid #2d2d33; border-radius: 6px; color: #e6e6e6; font-size: 14px; box-sizing: border-box; }
   input[type="password"]:focus { outline: none; border-color: #7c3aed; }
-  .actions { display: flex; gap: 10px; margin-top: 20px; }
+  .actions { display: flex; flex-direction: row-reverse; gap: 10px; margin-top: 20px; }
   button { flex: 1; padding: 10px 14px; border-radius: 6px; border: 1px solid transparent; font-size: 14px; cursor: pointer; font-weight: 500; }
   button.allow { background: #7c3aed; color: white; }
   button.allow:hover { background: #6d28d9; }
@@ -119,8 +119,8 @@ function consentPage(params: {
       <label for="password">Vault password</label>
       <input type="password" id="password" name="password" autocomplete="current-password" autofocus required />
       <div class="actions">
-        <button type="submit" name="decision" value="deny" class="deny">Deny</button>
         <button type="submit" name="decision" value="allow" class="allow">Allow</button>
+        <button type="submit" name="decision" value="deny" class="deny">Deny</button>
       </div>
     </form>
   </div>

@@ -76,16 +76,17 @@ export class OAuthClientStore {
         };
       }
     }
-    const grantTypes = req.grant_types ?? ["authorization_code", "refresh_token"];
+    // Drop grants we don't support (e.g. jwt-bearer) instead of rejecting the
+    // registration. Only authorization_code is required for the flow we run.
+    const declaredGrants = req.grant_types ?? ["authorization_code", "refresh_token"];
     const allowedGrants = new Set(["authorization_code", "refresh_token"]);
-    for (const g of grantTypes) {
-      if (!allowedGrants.has(g)) {
-        return {
-          ok: false,
-          error: "invalid_client_metadata",
-          error_description: `grant_type not supported: ${g}`,
-        };
-      }
+    const grantTypes = declaredGrants.filter((g) => allowedGrants.has(g));
+    if (!grantTypes.includes("authorization_code")) {
+      return {
+        ok: false,
+        error: "invalid_client_metadata",
+        error_description: "client must support authorization_code grant",
+      };
     }
     const responseTypes = req.response_types ?? ["code"];
     for (const r of responseTypes) {
