@@ -298,6 +298,43 @@
 .main .editor-pane { grid-area: editor; border-right: 1px solid var(--border); }
 .main .preview-pane { grid-area: preview; }
 
+/* Desktop single-pane layouts (toggled from the pane header / ⌘\). The hidden
+   pane stays mounted so editor state and scroll survive a switch back. */
+.main.view-edit,
+.main.view-preview {
+  grid-template-columns: minmax(0, 1fr);
+}
+.main.view-edit {
+  grid-template-areas:
+    "ehead"
+    "editor";
+}
+.main.view-edit.has-toolbar {
+  grid-template-areas:
+    "ehead"
+    "tools"
+    "editor";
+}
+/* The toolbar drives the editor, so preview-only drops its row too. */
+.main.view-preview,
+.main.view-preview.has-toolbar {
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    "phead"
+    "preview";
+}
+.main.view-edit .pane-head.editor-head,
+.main.view-edit .editor-pane {
+  border-right: none;
+}
+.main.view-edit .pane-head.preview-head,
+.main.view-edit .preview-pane,
+.main.view-preview .pane-head.editor-head,
+.main.view-preview .editor-pane,
+.main.view-preview .toolbar-row {
+  display: none;
+}
+
 .pane {
   background: var(--bg-app);
   display: flex;
@@ -329,6 +366,11 @@
   letter-spacing: 0.06em;
   border-bottom: 1px solid var(--border);
   background: var(--bg-surface);
+}
+.pane-head .btn.icon {
+  margin-left: auto;
+  min-width: 0;
+  padding: 4px;
 }
 
 .drawer-backdrop {

@@ -177,6 +177,15 @@ export function EyeIcon(p: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function ColumnsIcon(p: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...baseProps} {...p}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <line x1="12" y1="4" x2="12" y2="20" />
+    </svg>
+  );
+}
+
 export function PenIcon(p: SVGProps<SVGSVGElement>) {
   return <PencilIcon {...p} />;
 }
