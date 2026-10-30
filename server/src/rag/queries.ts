@@ -10,6 +10,11 @@ import {
   resolveFolderPerms,
   type McpFolderPerms,
 } from "../api/folder-perms";
+import {
+  principalCanRead,
+  bypassesFolderPermsForMcp,
+  type Principal,
+} from "../api/principal";
 
 // V54: shared query layer for every RAG-derived MCP tool + HTTP route.
 // One place for ranking, dedupe, token budgets, folder-perm filtering.
@@ -20,6 +25,11 @@ export interface RagDeps {
   index: VaultIndex;
   pipeline: RagPipeline;
   ragEnabled: () => boolean;
+  // Set only by mcp/server.ts. REST callers (api/rag.ts) leave this unset
+  // and fall back to the raw folder-perm map below, same as before —
+  // OAuth tokens never reach REST (auth-middleware restricts them to
+  // /mcp), so there's no scope to enforce there.
+  principal?: Principal;
 }
 
 export class RagDisabledError extends Error {
@@ -57,18 +67,39 @@ export function inScope(path: string, prefixes: string[]): boolean {
   return prefixes.some((p) => path === p || path.startsWith(`${p}/`));
 }
 
+// True if this request may read anything at all. For MCP, that's the
+// token's own OAuth scope (an API key or owner session always can);
+// undefined (REST) always may — REST's own caller checks its scope
+// before reaching these functions.
+function principalMayReadAtAll(deps: RagDeps): boolean {
+  return !deps.principal || principalCanRead(deps.principal);
+}
+
+// Combines the per-folder MCP permission for `path` with the calling
+// principal's own OAuth scope and owner bypass (MCP only — see RagDeps.
+// principal). Without this, a vault:write-only OAuth token could read
+// full note content through semantic_outline, context_for_query, and
+// every other derived tool, none of which called read_note's own scope
+// check.
+function mayReadPath(deps: RagDeps, path: string, map: Record<string, McpFolderPerms>): boolean {
+  if (deps.principal) {
+    if (!principalCanRead(deps.principal)) return false;
+    if (bypassesFolderPermsForMcp(deps.principal)) return true;
+  }
+  return resolveFolderPerms(path, map).read;
+}
+
 // V54: drop result rows whose path is NOT read-allowed by MCP folder perms.
 // V69: also drop rows outside the requested folder scope (if any).
 async function filterReadable<T extends { path: string }>(
-  vault: Vault,
+  deps: RagDeps,
   rows: T[],
   scope?: string[],
 ): Promise<T[]> {
-  const map = await permsMap(vault);
+  if (!principalMayReadAtAll(deps)) return [];
+  const map = await permsMap(deps.vault);
   const prefixes = scope ?? [];
-  return rows.filter(
-    (r) => resolveFolderPerms(r.path, map).read && inScope(r.path, prefixes),
-  );
+  return rows.filter((r) => mayReadPath(deps, r.path, map) && inScope(r.path, prefixes));
 }
 
 // ---------------- related ----------------
@@ -98,7 +129,7 @@ export async function related(
   // Over-fetch so the scope/perm filter still leaves ~k hits.
   const fetchK = prefixes.length > 0 ? k + 50 : k + 5;
   const hits = await deps.pipeline.store.search(vec!, fetchK);
-  const filtered = await filterReadable(deps.vault, hits, prefixes);
+  const filtered = await filterReadable(deps, hits, prefixes);
   return filtered.filter((h) => h.path !== path).slice(0, k);
 }
 
@@ -131,7 +162,7 @@ export async function contextForQuery(
     vec!,
     prefixes.length > 0 ? 80 : 20,
   );
-  const readable = await filterReadable(deps.vault, candidates, prefixes);
+  const readable = await filterReadable(deps, candidates, prefixes);
 
   // Greedy pack ordered by score, dedupe by path (highest-score per path).
   const bestByPath = new Map<string, SearchHit>();
@@ -180,9 +211,11 @@ export async function semanticOutline(
   threshold = 0.7,
 ): Promise<OutlineCluster[]> {
   assertEnabled(deps);
-  // Folder-perm guard: outlining a note we can't read is meaningless.
+  // Folder-perm + OAuth-scope guard: outlining a note we can't read is
+  // meaningless, and a write-only token must not get content this way.
+  if (!principalMayReadAtAll(deps)) return [];
   const map = await permsMap(deps.vault);
-  if (!resolveFolderPerms(path, map).read) return [];
+  if (!mayReadPath(deps, path, map)) return [];
 
   let body = "";
   try {
@@ -292,6 +325,7 @@ export async function orphans(
   scope?: Scope,
 ): Promise<OrphanNote[]> {
   assertEnabled(deps);
+  if (!principalMayReadAtAll(deps)) return [];
   const map = await permsMap(deps.vault);
   const prefixes = normalizeScope(scope);
   const entries = deps.index.entries();
@@ -305,7 +339,7 @@ export async function orphans(
   const noBacklinks = allPaths.filter(
     (p) =>
       (inbound.get(p) ?? 0) === 0 &&
-      resolveFolderPerms(p, map).read &&
+      mayReadPath(deps, p, map) &&
       inScope(p, prefixes),
   );
   if (noBacklinks.length === 0) return [];
@@ -373,11 +407,12 @@ export async function weeklyDigest(
   scope?: Scope,
 ): Promise<DigestCluster[]> {
   assertEnabled(deps);
+  if (!principalMayReadAtAll(deps)) return [];
   const cutoff = parseSince(since);
   const map = await permsMap(deps.vault);
   const prefixes = normalizeScope(scope);
   const entries = deps.index.entries().filter((e) => {
-    if (!resolveFolderPerms(e.path, map).read) return false;
+    if (!mayReadPath(deps, e.path, map)) return false;
     if (!inScope(e.path, prefixes)) return false;
     return (e.mtime ?? 0) >= cutoff;
   });
@@ -476,8 +511,9 @@ export async function compareNotes(
   b: string,
 ): Promise<CompareResult> {
   assertEnabled(deps);
+  if (!principalMayReadAtAll(deps)) throw new Error(`read denied for ${a} or ${b}`);
   const map = await permsMap(deps.vault);
-  if (!resolveFolderPerms(a, map).read || !resolveFolderPerms(b, map).read) {
+  if (!mayReadPath(deps, a, map) || !mayReadPath(deps, b, map)) {
     throw new Error(`read denied for ${a} or ${b}`);
   }
   const [na, nb] = await Promise.all([
@@ -522,6 +558,6 @@ export async function similarTasks(
   const [vec] = await deps.pipeline.embed([query]);
   const fetchK = prefixes.length > 0 ? k + 50 : k + 5;
   const hits = await deps.pipeline.store.searchTasks(vec!, fetchK, filter);
-  const filtered = await filterReadable(deps.vault, hits, prefixes);
+  const filtered = await filterReadable(deps, hits, prefixes);
   return filtered.slice(0, k);
 }

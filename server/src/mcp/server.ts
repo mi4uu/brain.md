@@ -21,7 +21,7 @@ import {
 import {
   principalCanRead,
   principalCanWrite,
-  bypassesFolderPerms,
+  bypassesFolderPermsForMcp,
   type Principal,
 } from "../api/principal";
 import { principalFor } from "../api/auth-middleware";
@@ -118,14 +118,14 @@ function scopeDenied(perm: "read" | "write"): never {
 // agents.
 async function checkRead(vault: Vault, principal: Principal, path: string): Promise<void> {
   if (!principalCanRead(principal)) scopeDenied("read");
-  if (bypassesFolderPerms(principal)) return;
+  if (bypassesFolderPermsForMcp(principal)) return;
   const perms = resolveFolderPerms(path, await readPerms(vault));
   if (!perms.read) denied("read", path);
 }
 
 async function checkWrite(vault: Vault, principal: Principal, path: string): Promise<void> {
   if (!principalCanWrite(principal)) scopeDenied("write");
-  if (bypassesFolderPerms(principal)) return;
+  if (bypassesFolderPermsForMcp(principal)) return;
   const perms = resolveFolderPerms(path, await readPerms(vault));
   if (!perms.write) denied("write", path);
 }
@@ -137,7 +137,7 @@ async function mayRead(
   map: Record<string, McpFolderPerms>,
 ): Promise<boolean> {
   if (!principalCanRead(principal)) return false;
-  if (bypassesFolderPerms(principal)) return true;
+  if (bypassesFolderPermsForMcp(principal)) return true;
   return resolveFolderPerms(path, map).read;
 }
 
@@ -158,7 +158,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
   // may see `path`, combining its own scope with per-folder MCP perms.
   const readFilter = async (): Promise<(path: string) => boolean> => {
     if (!principalCanRead(principal)) return () => false;
-    if (bypassesFolderPerms(principal)) return () => true;
+    if (bypassesFolderPermsForMcp(principal)) return () => true;
     const map = await readPerms(vault);
     return (path: string) => resolveFolderPerms(path, map).read;
   };
@@ -224,7 +224,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
       const [vec] = await pipeline.embed([query]);
       const allowed = await readFilter();
       // Over-fetch so enough in-scope, permitted hits survive both filters.
-      const needsOverfetch = prefixes.length > 0 || !bypassesFolderPerms(principal);
+      const needsOverfetch = prefixes.length > 0 || !bypassesFolderPermsForMcp(principal);
       const raw = await pipeline.store.search(
         vec!,
         needsOverfetch ? limit + 50 : limit,
@@ -417,7 +417,11 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
 
   // ---------------- V54: RAG-derived tools ----------------
 
-  const ragDeps: RagDeps = { vault, index, pipeline, ragEnabled };
+  // Carrying the principal lets queries.ts enforce this token's own
+  // OAuth scope on every derived tool, not just the ones that happen to
+  // call checkRead() themselves (semantic_outline, context_for_query,
+  // find_orphans, weekly_digest, compare_notes previously didn't).
+  const ragDeps: RagDeps = { vault, index, pipeline, ragEnabled, principal };
 
   const ragError = (name: string, args: unknown, err: unknown) => {
     logCall(name, args, false);
