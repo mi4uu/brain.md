@@ -1,70 +1,48 @@
 import { Elysia, t } from "elysia";
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
 import type { Vault } from "../vault/vault";
 import { normalizeRel } from "../vault/paths";
 import { asError } from "./errors";
+import { loadFolderMeta, saveFolderMeta, withFolderMetaLock } from "./folder-perms";
+import { VaultError } from "../vault/types";
 
-interface FolderMeta {
-  version: 1;
-  icons: Record<string, string>;
-  colors: Record<string, string>;
-}
-
-const META_REL = ".brain/folder-meta.json";
-
-async function load(vault: Vault): Promise<FolderMeta> {
-  try {
-    const raw = await readFile(vault.abs(META_REL), "utf8");
-    const parsed = JSON.parse(raw) as FolderMeta;
-    return {
-      version: 1,
-      icons: parsed.icons ?? {},
-      colors: parsed.colors ?? {},
-    };
-  } catch {
-    return { version: 1, icons: {}, colors: {} };
-  }
-}
-
-async function save(vault: Vault, meta: FolderMeta): Promise<void> {
-  const abs = vault.abs(META_REL);
-  await mkdir(dirname(abs), { recursive: true });
-  const tmp = `${abs}.tmp-${process.pid}-${Date.now()}`;
-  await writeFile(tmp, JSON.stringify(meta, null, 2));
-  try {
-    await rename(tmp, abs);
-  } catch (e) {
-    await unlink(tmp).catch(() => {});
-    throw e;
-  }
-}
+// Icons/colors share folder-meta.json with the MCP folder permissions
+// (api/folder-perms.ts). Both go through loadFolderMeta/saveFolderMeta so
+// a save here never drops the `mcp` key, and through withFolderMetaLock so
+// a concurrent save from either module can't clobber the other's change.
 
 export function metaRoutes(vault: Vault) {
   return new Elysia({ prefix: "/api/folder-meta" })
-    .get("/", async () => load(vault))
+    .get("/", async () => {
+      const meta = await loadFolderMeta(vault);
+      return { version: meta.version, icons: meta.icons, colors: meta.colors };
+    })
     .post(
       "/",
       async ({ body, set }) => {
         try {
-          const meta = await load(vault);
-          const norm = normalizeRel(body.path);
-          if (norm === "") {
-            set.status = 400;
-            return { error: "root folder cannot be customised" };
-          }
-          if (body.icon === null || body.icon === undefined) {
-            delete meta.icons[norm];
-          } else {
-            meta.icons[norm] = body.icon;
-          }
-          if (body.color === null) {
-            delete meta.colors[norm];
-          } else if (body.color !== undefined) {
-            meta.colors[norm] = body.color;
-          }
-          await save(vault, meta);
-          return { ok: true, meta };
+          const meta = await withFolderMetaLock(async () => {
+            const m = await loadFolderMeta(vault);
+            const norm = normalizeRel(body.path);
+            if (norm === "") {
+              throw new VaultError("root folder cannot be customised", "INVALID_PATH");
+            }
+            if (body.icon === null || body.icon === undefined) {
+              delete m.icons[norm];
+            } else {
+              m.icons[norm] = body.icon;
+            }
+            if (body.color === null) {
+              delete m.colors[norm];
+            } else if (body.color !== undefined) {
+              m.colors[norm] = body.color;
+            }
+            await saveFolderMeta(vault, m);
+            return m;
+          });
+          return {
+            ok: true,
+            meta: { version: meta.version, icons: meta.icons, colors: meta.colors },
+          };
         } catch (e) {
           const { status, body: err } = asError(e);
           set.status = status;

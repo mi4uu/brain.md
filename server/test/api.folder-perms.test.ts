@@ -112,4 +112,35 @@ describe("folder-perms HTTP — T118 / V52", () => {
     expect(d.status).toBe(200);
     expect(d.json.mcp.Tags).toBeUndefined();
   });
+
+  // Regression: api/meta.ts (icons/colors) and api/folder-perms.ts (mcp
+  // perms) used to read-modify-write folder-meta.json independently, so
+  // saving an icon wiped out any mcp permission the user had set.
+  test("saving a folder icon does not drop mcp perms", async () => {
+    await call("POST", "/api/folder-mcp-perms", {
+      path: "Private",
+      read: false,
+      write: false,
+    });
+    const iconSave = await call("POST", "/api/folder-meta", {
+      path: "Private",
+      icon: "lock",
+    });
+    expect(iconSave.status).toBe(200);
+    expect(iconSave.json.meta.icons.Private).toBe("lock");
+    const perms = await call("GET", "/api/folder-mcp-perms");
+    expect(perms.json.Private).toEqual({ read: false, write: false });
+  });
+
+  // And the other direction: setting a perm must not drop an existing icon.
+  test("setting an mcp perm does not drop a folder icon", async () => {
+    await call("POST", "/api/folder-meta", { path: "Private", icon: "lock" });
+    await call("POST", "/api/folder-mcp-perms", {
+      path: "Private",
+      read: false,
+      write: false,
+    });
+    const meta = await call("GET", "/api/folder-meta");
+    expect(meta.json.icons.Private).toBe("lock");
+  });
 });

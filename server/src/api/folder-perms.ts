@@ -57,7 +57,7 @@ function normalizeMcpMap(
   return out;
 }
 
-async function saveFolderMeta(
+export async function saveFolderMeta(
   vault: Vault,
   meta: FolderMetaWithMcp,
 ): Promise<void> {
@@ -71,6 +71,18 @@ async function saveFolderMeta(
     await unlink(tmp).catch(() => {});
     throw e;
   }
+}
+
+// api/meta.ts (icons/colors) and this module (mcp perms) both read-modify-
+// write the same folder-meta.json. Without serialising, a save from one
+// can clobber a concurrent save from the other (last writer drops the
+// first writer's section). Every mutator in both modules goes through
+// this queue so a load+modify+save round trip never overlaps another.
+let writeQueue: Promise<unknown> = Promise.resolve();
+export function withFolderMetaLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = writeQueue.then(fn, fn);
+  writeQueue = run.catch(() => {});
+  return run;
 }
 
 // V52: walk ancestors from note's parent folder up to root, return the
@@ -99,16 +111,16 @@ export function folderPermsRoutes(vault: Vault) {
       "/api/folder-mcp-perms",
       async ({ body, set }) => {
         try {
-          const meta = await loadFolderMeta(vault);
-          const norm = normalizeRel(body.path);
-          if (norm === "") {
-            // root override allowed — useful for "deny all by default"
-          }
-          meta.mcp[norm] = {
-            read: !!body.read,
-            write: !!body.write,
-          };
-          await saveFolderMeta(vault, meta);
+          const meta = await withFolderMetaLock(async () => {
+            const m = await loadFolderMeta(vault);
+            const norm = normalizeRel(body.path);
+            m.mcp[norm] = {
+              read: !!body.read,
+              write: !!body.write,
+            };
+            await saveFolderMeta(vault, m);
+            return m;
+          });
           return { ok: true, mcp: meta.mcp };
         } catch (e) {
           const { status, body: err } = asError(e);
@@ -127,10 +139,13 @@ export function folderPermsRoutes(vault: Vault) {
     .delete("/api/folder-mcp-perms/*", async ({ params, set }) => {
       try {
         const rel = decodeWildcard((params as { "*": string })["*"]);
-        const meta = await loadFolderMeta(vault);
-        const norm = normalizeRel(rel);
-        delete meta.mcp[norm];
-        await saveFolderMeta(vault, meta);
+        const meta = await withFolderMetaLock(async () => {
+          const m = await loadFolderMeta(vault);
+          const norm = normalizeRel(rel);
+          delete m.mcp[norm];
+          await saveFolderMeta(vault, m);
+          return m;
+        });
         return { ok: true, mcp: meta.mcp };
       } catch (e) {
         const { status, body } = asError(e);
