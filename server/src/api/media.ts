@@ -3,6 +3,8 @@ import type { Vault } from "../vault/vault";
 import { asError } from "./errors";
 import { decodeWildcard } from "./wildcard";
 import { requireRead, requireWrite } from "./perm-guard";
+import { normalizeRel } from "../vault/paths";
+import { VaultError } from "../vault/types";
 
 const MIME: Record<string, string> = {
   png: "image/png",
@@ -26,6 +28,24 @@ const MIME: Record<string, string> = {
 function mimeFor(name: string): string {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
   return MIME[ext] ?? "application/octet-stream";
+}
+
+// /api/media-raw is for actual media files (writeMedia always stores them
+// under a note's sibling .media/ dir), never vault control files. Without
+// this, a path like .brain/settings.json or .brain/trash/... passed folder
+// permissions trivially (they resolve against the ".brain" folder, which
+// has no override) and disclosed its embedder apiKey despite the /api/
+// settings redaction, plus anything else sitting in .brain or .git.
+function assertMediaPath(rel: string): void {
+  const norm = normalizeRel(rel);
+  const segments = norm.split("/").filter(Boolean);
+  if (segments.some((s) => s.startsWith(".") && s !== ".media")) {
+    throw new VaultError("not a media path", "FORBIDDEN");
+  }
+  const ext = segments[segments.length - 1]?.split(".").pop()?.toLowerCase() ?? "";
+  if (!(ext in MIME)) {
+    throw new VaultError("not a media path", "FORBIDDEN");
+  }
 }
 
 export function mediaRoutes(vault: Vault) {
@@ -57,6 +77,7 @@ export function mediaRoutes(vault: Vault) {
     .get("/api/media-raw/*", async ({ params, set, request }) => {
       const rel = decodeWildcard((params as { "*": string })["*"]);
       try {
+        assertMediaPath(rel);
         await requireRead(vault, request, rel);
         const bytes = await vault.readMedia(rel);
         set.headers["content-type"] = mimeFor(rel);

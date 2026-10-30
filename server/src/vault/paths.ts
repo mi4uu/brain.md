@@ -1,5 +1,5 @@
-import { resolve, sep, posix, isAbsolute, normalize, dirname, basename as pathBasename, join } from "node:path";
-import { realpath } from "node:fs/promises";
+import { resolve, sep, posix, isAbsolute, relative, join } from "node:path";
+import { lstat } from "node:fs/promises";
 import { VaultError } from "./types";
 
 export function normalizeRel(rel: string): string {
@@ -73,41 +73,36 @@ export function safeJoin(vaultDir: string, rel: string): string {
 }
 
 // safeJoin only checks the path lexically: `vault/public/link/secret.md`
-// passes containment even when `public/link` is a symlink pointing outside
-// the vault (or into a folder the caller has no permission for), because
-// the string never leaves `vault/...`. The OS resolves symlinks when it
-// actually opens the file, which is the escape. This walks up from the
-// target to the nearest ancestor that exists, realpath()s that ancestor
-// (fully resolving any symlink chain), and re-joins the remaining
-// non-existent suffix, then checks the result is still inside the vault.
-// Call this right before the actual read/write, after safeJoin/assertSafePath.
+// passes containment even when `public/link` is a symlink, because the
+// string never leaves `vault/...`. The OS resolves symlinks when it
+// actually opens the file, which is the escape — and it's an escape even
+// when the symlink's target is also inside the vault: a symlink can alias
+// a path a caller may read into a path they may not (folder permissions,
+// git restore targets, …), which no amount of resolving-and-recomparing
+// against the vault root catches. Obsidian vaults don't rely on symlinks,
+// so the simplest safe rule is to reject any symlink anywhere on the path,
+// full stop, rather than try to authorise one. Call this right before the
+// actual read/write, after safeJoin/assertSafePath.
 export async function assertRealContainment(vaultDir: string, abs: string): Promise<void> {
   const base = resolve(vaultDir);
-  const baseReal = await realpath(base).catch(() => base);
-  let cur = abs;
-  const suffix: string[] = [];
-  for (;;) {
+  const rel = relative(base, abs);
+  if (rel === "") return;
+  if (rel.startsWith("..") || isAbsolute(rel)) {
+    throw new VaultError("path escapes vault", "TRAVERSAL");
+  }
+  let cur = base;
+  for (const part of rel.split(sep)) {
+    if (part === "") continue;
+    cur = join(cur, part);
+    let st;
     try {
-      const real = await realpath(cur);
-      const resolved = suffix.length > 0 ? join(real, ...suffix) : real;
-      if (resolved !== baseReal && !resolved.startsWith(baseReal + sep)) {
-        throw new VaultError("path escapes vault (symlink)", "TRAVERSAL");
-      }
-      return;
+      st = await lstat(cur);
     } catch (e) {
-      if (e instanceof VaultError) throw e;
-      if ((e as { code?: string }).code !== "ENOENT") {
-        // Any other I/O error (EACCES, ELOOP, …), don't mask it as a pass.
-        throw e;
-      }
-      const parent = dirname(cur);
-      if (parent === cur) {
-        // Walked off the filesystem root without finding an existing
-        // ancestor, treat as escaped rather than looping forever.
-        throw new VaultError("path escapes vault (symlink)", "TRAVERSAL");
-      }
-      suffix.unshift(pathBasename(cur));
-      cur = parent;
+      if ((e as { code?: string }).code === "ENOENT") break; // rest doesn't exist yet (new file/dir)
+      throw e;
+    }
+    if (st.isSymbolicLink()) {
+      throw new VaultError("path escapes vault (symlink)", "TRAVERSAL");
     }
   }
 }
