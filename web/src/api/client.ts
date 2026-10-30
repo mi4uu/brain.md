@@ -6,9 +6,22 @@ import type {
   ResolveResult,
   SearchHit,
   TreeData,
+  WriteNoteResult,
 } from "./types";
 
 const BASE = "";
+
+// Thrown by writeNote on a 409 from the server: someone else (another tab,
+// an MCP client) saved the note since we last read/wrote it. `revision` is
+// the server's current revision, for a follow-up reload or forced write.
+export class ConflictError extends Error {
+  revision: string;
+  constructor(revision: string) {
+    super("note changed on disk since last save");
+    this.name = "ConflictError";
+    this.revision = revision;
+  }
+}
 
 function encodePath(rel: string): string {
   return rel
@@ -32,14 +45,17 @@ export const api = {
   async readNote(path: string): Promise<NoteData> {
     return jsonOrThrow(await fetch(`${BASE}/api/note/${encodePath(path)}`));
   },
-  async writeNote(path: string, content: string): Promise<{ path: string; mtime: number }> {
-    return jsonOrThrow(
-      await fetch(`${BASE}/api/note/${encodePath(path)}`, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ content }),
-      }),
-    );
+  async writeNote(path: string, content: string, baseRevision?: string): Promise<WriteNoteResult> {
+    const res = await fetch(`${BASE}/api/note/${encodePath(path)}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(baseRevision === undefined ? { content } : { content, baseRevision }),
+    });
+    if (res.status === 409) {
+      const body = await res.json().catch(() => ({}) as Record<string, unknown>);
+      throw new ConflictError(typeof body.revision === "string" ? body.revision : "");
+    }
+    return jsonOrThrow(res);
   },
   async deleteNote(path: string): Promise<{ ok: true; trashed: string }> {
     return jsonOrThrow(
