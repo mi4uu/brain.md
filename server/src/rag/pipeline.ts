@@ -88,15 +88,15 @@ export class RagPipeline {
     try {
       switch (e.kind) {
         case "write":
-          if (e.path.endsWith(".md")) await this.indexNote(e.path);
+          if (e.path.toLowerCase().endsWith(".md")) await this.indexNote(e.path);
           break;
         case "delete":
-          if (e.path.endsWith(".md")) await this.deleteNote(e.path);
+          if (e.path.toLowerCase().endsWith(".md")) await this.deleteNote(e.path);
           break;
         case "rename":
           // notify("rename", to, from) — extra holds the old path
-          if (e.extra && e.extra.endsWith(".md")) await this.deleteNote(e.extra);
-          if (e.path.endsWith(".md")) await this.indexNote(e.path);
+          if (e.extra && e.extra.toLowerCase().endsWith(".md")) await this.deleteNote(e.extra);
+          if (e.path.toLowerCase().endsWith(".md")) await this.indexNote(e.path);
           break;
         case "folder-delete":
           // The folder's notes are already in trash by the time this

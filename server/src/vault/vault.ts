@@ -173,7 +173,11 @@ export class Vault {
     return this.withPathLock([path], async () => {
       const existing = await safeReadFile(abs);
       const currentRevision = existing === null ? null : sha256Hex(existing);
-      if (baseRevision !== undefined && currentRevision !== null && currentRevision !== baseRevision) {
+      // A caller that supplied baseRevision read the file at some point and
+      // expects to be updating it, not creating it fresh. If it's gone
+      // (deleted, or trashed, concurrently) that's a conflict, same as any
+      // other revision mismatch — not licence to silently recreate it.
+      if (baseRevision !== undefined && currentRevision !== baseRevision) {
         return { ok: false, revision: currentRevision };
       }
       await mkdir(dirname(abs), { recursive: true });
@@ -368,7 +372,18 @@ export class Vault {
     if (destStat) throw new VaultError(`target exists: ${original}`, "EXISTS");
     await mkdir(dirname(destAbs), { recursive: true });
     await rename(srcAbs, destAbs);
-    await this.notify("write", original, "restore");
+    const restoredStat = await stat(destAbs);
+    if (restoredStat.isDirectory()) {
+      // A single "write" on the folder's own path means nothing to the
+      // index/RAG listeners (neither ends in .md), so every note the
+      // restored folder contains stayed invisible to full-text and RAG
+      // search until the next full rebuild. Emit one per note instead.
+      const notes: string[] = [];
+      await collectNoteFiles(destAbs, original, notes);
+      await Promise.all(notes.map((p) => this.notify("write", p, "restore")));
+    } else {
+      await this.notify("write", original, "restore");
+    }
     return original;
   }
 
@@ -419,6 +434,20 @@ async function collectTrash(
       await collectTrash(childAbs, childRel, out);
     } else if (ent.isFile()) {
       out.push({ path: childRel, mtime: s.mtimeMs, isDir: false });
+    }
+  }
+}
+
+// Same shape as walk(), but rooted at an arbitrary directory (a restored
+// trash subtree) rather than the vault root, and only cares about notes.
+async function collectNoteFiles(absDir: string, relPrefix: string, out: string[]): Promise<void> {
+  const entries = await readdir(absDir, { withFileTypes: true });
+  for (const ent of entries) {
+    if (ent.isDirectory()) {
+      if (SKIP_DIRS.has(ent.name) || ent.name === MEDIA_DIR) continue;
+      await collectNoteFiles(join(absDir, ent.name), `${relPrefix}/${ent.name}`, out);
+    } else if (ent.isFile() && ent.name.toLowerCase().endsWith(".md")) {
+      out.push(`${relPrefix}/${ent.name}`);
     }
   }
 }

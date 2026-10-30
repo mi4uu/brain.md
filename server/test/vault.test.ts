@@ -181,9 +181,28 @@ describe("V-concurrency: revision / optimistic concurrency (#9)", () => {
     expect(current.content).toBe("v1");
   });
 
-  test("baseRevision against an absent file is not a conflict", async () => {
+  // Codex r2 #11: a caller that supplies baseRevision has previously read
+  // the file and expects to be updating it. If it's gone (deleted or
+  // trashed concurrently), that must be a conflict, not licence to
+  // silently recreate it under the old caller's content.
+  test("baseRevision against an absent file is a conflict, not a create", async () => {
     const r = await vault.writeNoteChecked("brand-new.md", "x", "irrelevant-hash");
+    expect(r.ok).toBe(false);
+    expect((await vault.stat("brand-new.md")).exists).toBe(false);
+  });
+
+  test("a genuinely new note (no baseRevision at all) still creates fine", async () => {
+    const r = await vault.writeNoteChecked("another-new.md", "x");
     expect(r.ok).toBe(true);
+  });
+
+  test("baseRevision conflict surfaces after a concurrent delete", async () => {
+    const first = await vault.writeNoteChecked("deleted-under-us.md", "v1");
+    expect(first.ok).toBe(true);
+    if (!first.ok) throw new Error("unreachable");
+    await vault.deleteNote("deleted-under-us.md");
+    const second = await vault.writeNoteChecked("deleted-under-us.md", "v2", first.data.revision);
+    expect(second.ok).toBe(false);
   });
 });
 

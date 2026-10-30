@@ -61,16 +61,16 @@ export class VaultIndex {
     try {
       switch (e.kind) {
         case "write":
-          if (e.path.endsWith(".md")) await this.updatePath(e.path);
+          if (e.path.toLowerCase().endsWith(".md")) await this.updatePath(e.path);
           break;
         case "delete":
-          if (e.path.endsWith(".md")) {
+          if (e.path.toLowerCase().endsWith(".md")) {
             this.remove(e.path);
             this.schedulePersist();
           }
           break;
         case "rename":
-          if (e.path.endsWith(".md")) {
+          if (e.path.toLowerCase().endsWith(".md")) {
             this.rename(e.extra ?? e.path, e.path);
             this.schedulePersist();
           }

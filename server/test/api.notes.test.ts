@@ -134,9 +134,23 @@ describe("notes API: optimistic concurrency", () => {
     expect(got.content).toBe("v2 (winner)");
   });
 
-  test("creating a new note with a baseRevision doesn't conflict against an absent file", async () => {
+  // Codex r2 #11: baseRevision implies "I previously read this file", so
+  // a missing file under a supplied baseRevision is a conflict, not a
+  // create. A genuinely new note just omits baseRevision.
+  test("PUT with a baseRevision against an absent file → 409 CONFLICT, no create", async () => {
     const res = await handle.app.handle(
       req("PUT", "/api/note/brand-new.md", { content: "hello", baseRevision: "deadbeef" }),
+    );
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("CONFLICT");
+    const get = await handle.app.handle(req("GET", "/api/note/brand-new.md"));
+    expect(get.status).toBe(404);
+  });
+
+  test("PUT with no baseRevision still creates a brand-new note", async () => {
+    const res = await handle.app.handle(
+      req("PUT", "/api/note/another-new.md", { content: "hello" }),
     );
     expect(res.status).toBe(200);
   });
