@@ -1,4 +1,5 @@
 import { lookup as dnsLookup } from "node:dns/promises";
+import { request as httpsRequest } from "node:https";
 
 // V67: OAuth Client ID Metadata Documents (CIMD,
 // draft-ietf-oauth-client-id-metadata-document-00). Used by Claude.ai,
@@ -63,7 +64,16 @@ function isPrivateV6(ip: string): boolean {
   return false;
 }
 
-async function assertSafeURL(url: string): Promise<URL> {
+interface SafeURL {
+  url: URL;
+  // Every address the hostname resolved to, already checked against the
+  // private/loopback blocklist. The caller connects to one of these
+  // directly instead of letting fetch() re-resolve the hostname — that
+  // second resolution is the DNS-rebinding TOCTOU window (V67 follow-up).
+  addresses: Array<{ address: string; family: number }>;
+}
+
+async function assertSafeURL(url: string): Promise<SafeURL> {
   let u: URL;
   try {
     u = new URL(url);
@@ -84,6 +94,9 @@ async function assertSafeURL(url: string): Promise<URL> {
   } catch {
     throw new Error(`client_id URL host did not resolve: ${u.hostname}`);
   }
+  if (addrs.length === 0) {
+    throw new Error(`client_id URL host did not resolve: ${u.hostname}`);
+  }
   for (const a of addrs) {
     const blocked = a.family === 4 ? isPrivateV4(a.address) : isPrivateV6(a.address);
     if (blocked) {
@@ -92,7 +105,7 @@ async function assertSafeURL(url: string): Promise<URL> {
       );
     }
   }
-  return u;
+  return { url: u, addresses: addrs };
 }
 
 export function validateMetadata(raw: unknown, expectedClientId: string): ClientMetadata {
@@ -157,51 +170,68 @@ export function validateMetadata(raw: unknown, expectedClientId: string): Client
   };
 }
 
-async function fetchWithLimit(url: URL): Promise<unknown> {
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
-  try {
-    const res = await fetch(url.toString(), {
-      method: "GET",
-      headers: { accept: "application/json" },
-      signal: ac.signal,
-      // Don't follow redirects across hosts — that would re-open the SSRF
-      // window after we DNS-checked the original. `manual` returns a
-      // Response with status 0/3xx; we just refuse on any redirect.
-      redirect: "manual",
-    });
-    if (res.status >= 300 && res.status < 400) {
-      throw new Error(`refusing to follow redirect from client_id URL (status ${res.status})`);
-    }
-    if (!res.ok) {
-      throw new Error(`client_id URL returned HTTP ${res.status}`);
-    }
-    const reader = res.body?.getReader();
-    if (!reader) throw new Error("client_id URL response had no body");
-    let total = 0;
-    const chunks: Uint8Array[] = [];
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) {
-        total += value.byteLength;
-        if (total > MAX_RESPONSE_BYTES) {
-          throw new Error(`client_id URL response exceeded ${MAX_RESPONSE_BYTES} bytes`);
+// Fetches the metadata document over a connection pinned to one of the
+// addresses `assertSafeURL` already validated. We use node:https directly
+// (rather than fetch()) because fetch would re-resolve the hostname itself
+// right before connecting — the classic DNS-rebinding TOCTOU: the name
+// could point at a public IP during our check and a private one moments
+// later. Pinning the socket to the validated address closes that window
+// while `servername` keeps TLS hostname verification against the real
+// client_id hostname, so a forged/mismatched cert is still rejected.
+function fetchWithLimit(safe: SafeURL): Promise<unknown> {
+  const { url, addresses } = safe;
+  const pinned = addresses[0];
+  if (!pinned) throw new Error("client_id URL host did not resolve");
+  return new Promise((resolvePromise, rejectPromise) => {
+    const req = httpsRequest(
+      {
+        host: pinned.address,
+        port: url.port ? Number(url.port) : 443,
+        path: url.pathname + url.search,
+        method: "GET",
+        servername: url.hostname, // SNI + cert hostname check stay on the real name
+        headers: { accept: "application/json", host: url.hostname },
+        timeout: FETCH_TIMEOUT_MS,
+        // Never follow redirects — a redirect target would need its own
+        // SSRF check, and the CIMD draft doesn't require following them.
+      },
+      (res) => {
+        const status = res.statusCode ?? 0;
+        if (status >= 300 && status < 400) {
+          res.resume();
+          rejectPromise(new Error(`refusing to follow redirect from client_id URL (status ${status})`));
+          return;
         }
-        chunks.push(value);
-      }
-    }
-    const buf = new Uint8Array(total);
-    let offset = 0;
-    for (const c of chunks) {
-      buf.set(c, offset);
-      offset += c.byteLength;
-    }
-    const text = new TextDecoder("utf-8").decode(buf);
-    return JSON.parse(text);
-  } finally {
-    clearTimeout(timer);
-  }
+        if (status < 200 || status >= 300) {
+          res.resume();
+          rejectPromise(new Error(`client_id URL returned HTTP ${status}`));
+          return;
+        }
+        let total = 0;
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => {
+          total += chunk.length;
+          if (total > MAX_RESPONSE_BYTES) {
+            req.destroy();
+            rejectPromise(new Error(`client_id URL response exceeded ${MAX_RESPONSE_BYTES} bytes`));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        res.on("end", () => {
+          try {
+            resolvePromise(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+          } catch (e) {
+            rejectPromise(e instanceof Error ? e : new Error(String(e)));
+          }
+        });
+        res.on("error", rejectPromise);
+      },
+    );
+    req.on("timeout", () => req.destroy(new Error("client_id URL request timed out")));
+    req.on("error", rejectPromise);
+    req.end();
+  });
 }
 
 export class CimdResolver {
