@@ -20,6 +20,7 @@ export function describeProvider(cfg: RagConfig): {
   providerId: ProviderId;
   modelId: string;
   dim: number;
+  endpoint?: string;
 } {
   if (cfg.provider === "local") {
     return {
@@ -32,5 +33,9 @@ export function describeProvider(cfg: RagConfig): {
     providerId: "openai-compat",
     modelId: cfg.openaiCompat.model,
     dim: cfg.openaiCompat.dim,
+    // Same model name + dim against a different host is not the same
+    // embedder; fold the endpoint into the fingerprint used to decide
+    // whether existing rows are still comparable.
+    endpoint: cfg.openaiCompat.baseURL,
   };
 }

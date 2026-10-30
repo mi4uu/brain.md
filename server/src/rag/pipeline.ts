@@ -257,16 +257,28 @@ export class RagPipeline {
     // single delete, or a whole folder deleted in one go) were never
     // compared against the current vault and lingered forever. Diff the
     // store's paths against what's on disk now and drop the rest.
-    const noteSet = new Set(notes);
+    //
+    // Codex r2 #15: re-list the vault here rather than reusing `notes`
+    // (captured before the loop above ran). A note written and indexed
+    // concurrently with this reindex would be in the store but not in
+    // that stale snapshot, and would get deleted right back out by this
+    // very reconciliation.
+    const currentNotes = await this.vault.listAllNotes();
+    const noteSet = new Set(currentNotes);
     const storedPaths = await this.store.distinctPaths();
     await Promise.all(
       storedPaths
         .filter((p) => !noteSet.has(p))
         .map((p) => this.run(p, "delete")),
     );
-    // Every surviving row was just rewritten under the active embedder, so
-    // the store is self-consistent again, queries can resume.
-    this.store.markRebuilt(describeProvider(this.cfg));
+    // Codex r2 #14: only declare the store compatible with the active
+    // embedder once every note was actually rewritten under it. A
+    // partial rebuild (any skip) means some rows may still be stale or
+    // missing; leave `incompatible` as it was rather than waving queries
+    // through against an index that isn't fully rebuilt.
+    if (skipped === 0) {
+      this.store.markRebuilt(describeProvider(this.cfg));
+    }
     return { indexed, skipped, durationMs: Date.now() - t0 };
   }
 }

@@ -54,6 +54,7 @@ interface StoreFile {
   dim: number;
   providerId?: ProviderId;
   modelId?: string;
+  endpoint?: string;
   notes: NoteRowDisk[];
   tasks: TaskRowDisk[];
 }
@@ -62,6 +63,12 @@ export interface EmbeddingConfig {
   providerId: ProviderId;
   modelId: string;
   dim: number;
+  // openai-compat only: the base URL rows were embedded against. Without
+  // this, switching endpoints (e.g. Ollama → another host) while keeping
+  // the same model name and dim isn't detected as a config change, so
+  // queries compare vectors from two different embedders as if they were
+  // compatible.
+  endpoint?: string;
 }
 
 function chunkToDisk(r: EmbeddedChunk): NoteRowDisk {
@@ -120,9 +127,12 @@ export class RagStore {
   private expectedConfig: EmbeddingConfig | null = null;
   private incompatible = false;
 
+  // `dim` starts as the caller's best guess (the currently configured
+  // provider's dim at construction time) but gets corrected from whatever
+  // vectors.json actually contains once open() reads it, see open() below.
   constructor(
     public readonly dir: string,
-    public readonly dim: number,
+    public dim: number,
   ) {}
 
   // Called by RagPipeline whenever the active embedder config is set
@@ -135,7 +145,10 @@ export class RagStore {
     this.expectedConfig = cfg;
     if (
       prev &&
-      (prev.providerId !== cfg.providerId || prev.modelId !== cfg.modelId || prev.dim !== cfg.dim)
+      (prev.providerId !== cfg.providerId ||
+        prev.modelId !== cfg.modelId ||
+        prev.dim !== cfg.dim ||
+        prev.endpoint !== cfg.endpoint)
     ) {
       this.incompatible = true;
     }
@@ -148,7 +161,9 @@ export class RagStore {
   // Called once reindexAll has rewritten every row under `cfg`.
   markRebuilt(cfg: EmbeddingConfig): void {
     this.expectedConfig = cfg;
+    this.dim = cfg.dim;
     this.incompatible = false;
+    this.scheduleWrite();
   }
 
   // Refuses vector queries against a store whose rows no longer match the
@@ -172,17 +187,26 @@ export class RagStore {
     if (existsSync(file)) {
       try {
         const raw = JSON.parse(readFileSync(file, "utf8")) as StoreFile;
-        if (raw.version === 1 && raw.dim === this.dim) {
+        if (raw.version === 1) {
+          // The constructor's `dim` is only a guess (the default provider's
+          // dim at app startup, before settings.load() has run). Trust what
+          // the file actually holds instead of wiping on a mismatch against
+          // that guess, otherwise a vault whose configured embedder uses a
+          // non-default dim loses its whole index on every restart. A real
+          // mismatch against the *currently selected* embedder is caught
+          // separately by setExpectedConfig()/checkQueryable() below, once
+          // the pipeline applies the loaded settings.
+          this.dim = raw.dim;
           for (const n of raw.notes) this.notes.set(n.id, n);
           for (const t of raw.tasks) this.tasks.set(t.id, t);
           if (raw.providerId && raw.modelId) {
-            this.expectedConfig = { providerId: raw.providerId, modelId: raw.modelId, dim: raw.dim };
+            this.expectedConfig = {
+              providerId: raw.providerId,
+              modelId: raw.modelId,
+              dim: raw.dim,
+              endpoint: raw.endpoint,
+            };
           }
-        } else {
-          // Different dim → embeddings can't be reused. Wipe.
-          console.warn(
-            `[rag] vectors.json dim ${raw.dim} ≠ current ${this.dim} — wiping (reindex required).`,
-          );
         }
       } catch (e) {
         console.warn(
@@ -216,6 +240,7 @@ export class RagStore {
       dim: this.dim,
       providerId: this.expectedConfig?.providerId,
       modelId: this.expectedConfig?.modelId,
+      endpoint: this.expectedConfig?.endpoint,
       notes: [...this.notes.values()],
       tasks: [...this.tasks.values()],
     };
