@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, extname, join } from "node:path";
 import { ASSETS } from "./assets";
@@ -52,11 +52,15 @@ function mimeFor(path: string): string {
 // hijacked. style-src allows 'unsafe-inline' because KaTeX and
 // highlight.js generate inline styles; img-src allows data:/blob: for
 // the same (KaTeX glyphs, pasted/rendered images).
-const CSP =
+export const CSP =
   "default-src 'self'; " +
   "script-src 'self'; " +
   "style-src 'self' 'unsafe-inline'; " +
-  "img-src 'self' data: blob:; " +
+  // Markdown can embed remote https:// images; https: keeps those
+  // rendering. media-src covers protected audio/video served as blob
+  // URLs (web/src loads them that way when auth is on).
+  "img-src 'self' data: blob: https:; " +
+  "media-src 'self' blob:; " +
   "font-src 'self' data:; " +
   "connect-src 'self'; " +
   "worker-src 'self' blob:; " +
@@ -125,8 +129,39 @@ export function isSafeTarEntry(entryPath: string): boolean {
   return normalized.split("/").every((seg) => seg !== "..");
 }
 
-async function listTarEntries(tarPath: string): Promise<string[] | null> {
-  const proc = Bun.spawn(["tar", "-tzf", tarPath], { stderr: "pipe" });
+interface TarEntryInfo {
+  typeChar: string;
+  name: string;
+  raw: string;
+}
+
+// Parses one line of `tar -tv` output (works for both GNU tar and
+// macOS/bsdtar): a permission string whose first character is the entry
+// type ('-' regular, 'd' directory, 'l' symlink, …), then owner/size/date
+// columns, then the path — "-> target" for a symlink, "link to target"
+// for a hardlink.
+export function parseTarVerboseLine(line: string): TarEntryInfo {
+  const typeChar = line[0] ?? "?";
+  const arrowIdx = line.indexOf(" -> ");
+  const linkIdx = line.indexOf(" link to ");
+  const namePart = arrowIdx >= 0 ? line.slice(0, arrowIdx) : linkIdx >= 0 ? line.slice(0, linkIdx) : line;
+  const fields = namePart.trim().split(/\s+/);
+  return { typeChar, name: fields[fields.length - 1] ?? "", raw: line };
+}
+
+// Only plain files and directories are safe to extract. Symlinks and
+// hardlinks (shown as "-> target" / "link to target" in verbose output,
+// regardless of typeChar) could point outside the extraction directory
+// or alias a file this process reads later; device/fifo/socket entries
+// have no business in a web asset bundle at all.
+export function isSafeTarEntryType(e: TarEntryInfo): boolean {
+  if (e.typeChar !== "-" && e.typeChar !== "d") return false;
+  if (e.raw.includes(" -> ") || e.raw.includes(" link to ")) return false;
+  return true;
+}
+
+async function listTarEntriesVerbose(tarPath: string): Promise<TarEntryInfo[] | null> {
+  const proc = Bun.spawn(["tar", "-tvzf", tarPath], { stderr: "pipe" });
   const out = await new Response(proc.stdout).text();
   const code = await proc.exited;
   if (code !== 0) {
@@ -134,11 +169,19 @@ async function listTarEntries(tarPath: string): Promise<string[] | null> {
     console.warn(`[web] tar listing failed (exit ${code}): ${err}`);
     return null;
   }
-  return out.split("\n").filter((l) => l.length > 0);
+  return out
+    .split("\n")
+    .filter((l) => l.trim().length > 0)
+    .map(parseTarVerboseLine);
 }
 
 async function downloadAndExtract(target: string): Promise<boolean> {
-  await mkdir(target, { recursive: true });
+  // Extract into an isolated staging directory first, and only move it
+  // into `target` once everything has checked out. Extracting straight
+  // into `target` would leave a half-extracted (or unsafely extracted)
+  // tree in place on any failure partway through.
+  const staging = `${target}.staging-${process.pid}-${Date.now()}`;
+  await mkdir(staging, { recursive: true });
   const base = `https://github.com/mi4uu/brain.md/releases/download/v${VERSION}`;
   const archiveName = "web-dist.tar.gz";
   const url = `${base}/${archiveName}`;
@@ -177,21 +220,28 @@ async function downloadAndExtract(target: string): Promise<boolean> {
       return false;
     }
 
-    const tarPath = join(target, archiveName);
+    const tarPath = join(staging, archiveName);
     await writeFile(tarPath, buf);
 
-    const entries = await listTarEntries(tarPath);
+    const entries = await listTarEntriesVerbose(tarPath);
     if (!entries) return false;
-    const unsafe = entries.filter((e) => !isSafeTarEntry(e));
-    if (unsafe.length > 0) {
+    const unsafeNames = entries.filter((e) => !isSafeTarEntry(e.name));
+    if (unsafeNames.length > 0) {
       console.warn(
-        `[web] refusing to extract ${archiveName}: unsafe entries ${unsafe.join(", ")}`,
+        `[web] refusing to extract ${archiveName}: unsafe paths ${unsafeNames.map((e) => e.name).join(", ")}`,
+      );
+      return false;
+    }
+    const unsafeTypes = entries.filter((e) => !isSafeTarEntryType(e));
+    if (unsafeTypes.length > 0) {
+      console.warn(
+        `[web] refusing to extract ${archiveName}: non-regular entries ${unsafeTypes.map((e) => e.name).join(", ")}`,
       );
       return false;
     }
 
     // Use system tar (POSIX + Windows 10+).
-    const proc = Bun.spawn(["tar", "-xzf", tarPath, "-C", target], {
+    const proc = Bun.spawn(["tar", "-xzf", tarPath, "-C", staging], {
       stderr: "pipe",
     });
     const code = await proc.exited;
@@ -200,10 +250,19 @@ async function downloadAndExtract(target: string): Promise<boolean> {
       console.warn(`[web] tar extract failed (exit ${code}): ${err}`);
       return false;
     }
-    return existsSync(join(target, "index.html"));
+    if (!existsSync(join(staging, "index.html"))) return false;
+
+    await rm(tarPath, { force: true });
+    await rm(target, { recursive: true, force: true });
+    await rename(staging, target);
+    return true;
   } catch (e) {
     console.warn("[web] download fallback failed:", e);
     return false;
+  } finally {
+    // Only still around on a failure path above (success already moved
+    // it to `target`).
+    await rm(staging, { recursive: true, force: true }).catch(() => {});
   }
 }
 

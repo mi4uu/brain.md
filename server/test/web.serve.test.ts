@@ -1,5 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import { expectedSha256, isSafeTarEntry } from "../src/web/serve";
+import { CSP, expectedSha256, isSafeTarEntry } from "../src/web/serve";
+
+// Codex r2 #17: img-src used to only allow self/data/blob, breaking
+// markdown-rendered remote https:// images; and there was no media-src
+// at all for the blob-URL audio/video playback path.
+describe("CSP", () => {
+  test("img-src keeps remote https images working", () => {
+    expect(CSP).toMatch(/img-src [^;]*\bhttps:/);
+  });
+
+  test("media-src allows blob URLs for protected audio/video", () => {
+    expect(CSP).toMatch(/media-src 'self' blob:/);
+  });
+});
 
 describe("expectedSha256", () => {
   const sums = [
