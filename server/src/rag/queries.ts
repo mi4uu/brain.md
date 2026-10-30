@@ -26,7 +26,7 @@ export interface RagDeps {
   pipeline: RagPipeline;
   ragEnabled: () => boolean;
   // Set only by mcp/server.ts. REST callers (api/rag.ts) leave this unset
-  // and fall back to the raw folder-perm map below, same as before —
+  // and fall back to the raw folder-perm map below, same as before.
   // OAuth tokens never reach REST (auth-middleware restricts them to
   // /mcp), so there's no scope to enforce there.
   principal?: Principal;
@@ -69,14 +69,14 @@ export function inScope(path: string, prefixes: string[]): boolean {
 
 // True if this request may read anything at all. For MCP, that's the
 // token's own OAuth scope (an API key or owner session always can);
-// undefined (REST) always may — REST's own caller checks its scope
+// undefined (REST) always may, REST's own caller checks its scope
 // before reaching these functions.
 function principalMayReadAtAll(deps: RagDeps): boolean {
   return !deps.principal || principalCanRead(deps.principal);
 }
 
 // Combines the per-folder MCP permission for `path` with the calling
-// principal's own OAuth scope and owner bypass (MCP only — see RagDeps.
+// principal's own OAuth scope and owner bypass (MCP only, see RagDeps.
 // principal). Without this, a vault:write-only OAuth token could read
 // full note content through semantic_outline, context_for_query, and
 // every other derived tool, none of which called read_note's own scope

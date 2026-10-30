@@ -75,7 +75,7 @@ export function safeJoin(vaultDir: string, rel: string): string {
 // safeJoin only checks the path lexically: `vault/public/link/secret.md`
 // passes containment even when `public/link` is a symlink, because the
 // string never leaves `vault/...`. The OS resolves symlinks when it
-// actually opens the file, which is the escape — and it's an escape even
+// actually opens the file, which is the escape, and it's an escape even
 // when the symlink's target is also inside the vault: a symlink can alias
 // a path a caller may read into a path they may not (folder permissions,
 // git restore targets, …), which no amount of resolving-and-recomparing

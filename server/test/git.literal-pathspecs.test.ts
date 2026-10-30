@@ -44,7 +44,7 @@ describe("git pathspecs are literal", () => {
     await repo.commitAll("edit a");
 
     // "*.md" as a literal pathspec matches no file on disk (there's no
-    // file literally named "*.md"), so git refuses it outright — not a
+    // file literally named "*.md"), so git refuses it outright, not a
     // restore of every .md file to its state at `sha`.
     await expect(repo.restore("*.md", sha!)).rejects.toThrow(/pathspec/);
     const content = await Bun.file(join(dir, "a.md")).text();

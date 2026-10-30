@@ -135,7 +135,7 @@ describe("owner-only administration endpoints", () => {
   });
 });
 
-describe("owner-only administration endpoints — passwordless mode", () => {
+describe("owner-only administration endpoints, passwordless mode", () => {
   test("unauthenticated (open principal) can still administer when no password is set", async () => {
     const r = await call("POST", "/api/folder-mcp-perms", { path: "x", read: true, write: true });
     expect(r.status).toBe(200);

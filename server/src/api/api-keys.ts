@@ -5,7 +5,7 @@ import { requireOwner } from "./perm-guard";
 
 // V66 routes: GET / POST / DELETE on /api/auth/keys.
 // Only the owner (V53 session bearer, or the back-compat no-password
-// principal) can manage keys — an API key must never be able to mint or
+// principal) can manage keys, an API key must never be able to mint or
 // revoke API keys, including itself a replacement with wider scope.
 
 export function apiKeyRoutes(keys: APIKeyStore) {

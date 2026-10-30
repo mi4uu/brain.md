@@ -7,7 +7,7 @@ import { VaultError } from "../src/vault/types";
 
 // Regression for Codex r2 #3: a symlink inside the vault used to let a
 // caller read through an alias into content the real (authorised) path
-// would deny — `public/link -> secret` resolved to the same real file as
+// would deny: `public/link -> secret` resolved to the same real file as
 // `secret`, and the direct path's permission check never saw the alias.
 // The fix rejects any symlink anywhere on the path, unconditionally.
 

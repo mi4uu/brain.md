@@ -65,7 +65,7 @@ export async function renameAndPatch(
   toPath: string,
   // Per-path write predicate for the calling principal. When given, the
   // rename is refused outright (no move, no patch) if it would rewrite a
-  // backlink inside a note the principal cannot write — silently skipping
+  // backlink inside a note the principal cannot write, silently skipping
   // those files would let an agent see that its own rename broke links it
   // can't see or fix, a confusing half-applied state. Refusing with a
   // clear reason is simpler to reason about.

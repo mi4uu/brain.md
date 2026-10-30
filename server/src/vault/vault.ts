@@ -176,7 +176,7 @@ export class Vault {
       // A caller that supplied baseRevision read the file at some point and
       // expects to be updating it, not creating it fresh. If it's gone
       // (deleted, or trashed, concurrently) that's a conflict, same as any
-      // other revision mismatch — not licence to silently recreate it.
+      // other revision mismatch, not licence to silently recreate it.
       if (baseRevision !== undefined && currentRevision !== baseRevision) {
         return { ok: false, revision: currentRevision };
       }

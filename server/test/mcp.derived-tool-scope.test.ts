@@ -153,7 +153,7 @@ describe("MCP respects folder perms in passwordless mode (Codex r2 #8 regression
   test("read_note on a denied folder is refused over MCP even with no password set", async () => {
     await handle.vault.writeNote("secret/a.md", "top secret\n");
     await handle.index.updatePath("secret/a.md");
-    // No password configured — set a folder restriction anyway (the
+    // No password configured, set a folder restriction anyway (the
     // folder-mcp-perms route is reachable in this mode by design).
     await call("POST", "/api/folder-mcp-perms", { path: "secret", read: false, write: true });
 

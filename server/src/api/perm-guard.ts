@@ -72,7 +72,7 @@ export async function writeFilterFor(
 // Endpoints that administer the server (folder MCP permissions, settings,
 // API keys, the password, OAuth client admin) require the owner: a
 // password-login session, or the back-compat "no password configured"
-// principal. API keys and OAuth tokens — agent credentials — get 403,
+// principal. API keys and OAuth tokens, agent credentials, get 403,
 // even though they're otherwise allowed on /api/*.
 export function requireOwner(request: Request): void {
   const principal = principalFor(request);
@@ -102,7 +102,7 @@ export async function requireWriteSubtree(
   const norm = normalizeRel(rel);
   const canWriteUnder = (path: string) => resolveFolderPerms(path, meta.mcp).write;
   // resolveFolderPerms expects a note-shaped path (it walks up from the
-  // path's *parent*), so a folder is checked via a synthetic child path —
+  // path's *parent*), so a folder is checked via a synthetic child path,
   // same trick mcp/server.ts's list_notes uses for folder visibility.
   if (!canWriteUnder(`${norm}/.probe`)) {
     throw new VaultError(`write denied for ${norm} by folder permissions`, "FORBIDDEN");

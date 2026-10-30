@@ -81,7 +81,7 @@ export function ragRoutes(
           const allowed = await readFilterFor(vault, request);
           const vec = (await pipeline.embed([q]))[0]!;
           // Over-fetch so enough permitted hits survive the folder-perm
-          // filter below — the store has no notion of permissions itself.
+          // filter below, the store has no notion of permissions itself.
           const raw = await pipeline.store.search(vec, k + 50);
           const hits = raw.filter((h) => allowed(h.path)).slice(0, k);
           return hits;

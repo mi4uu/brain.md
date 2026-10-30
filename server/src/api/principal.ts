@@ -48,7 +48,7 @@ export function bypassesFolderPermsForMcp(p: Principal): boolean {
 // settings, API keys, the password) require someone who's either proved
 // they know the owner's password, or is using the vault with no password
 // configured at all (there's nobody else to protect it from in that mode).
-// API keys and OAuth tokens — agent credentials — never qualify.
+// API keys and OAuth tokens, agent credentials, never qualify.
 export function isOwnerPrincipal(p: Principal): boolean {
   return p.kind === "owner" || p.kind === "open";
 }

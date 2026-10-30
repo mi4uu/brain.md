@@ -61,7 +61,7 @@ describe("Origin check on state-changing requests", () => {
 
   // Codex r2 #9: with no password configured, a GET also returns real
   // content (any /api/* route), so a foreign Origin must be rejected on
-  // reads too, not just on writes — otherwise a page on an attacker's
+  // reads too, not just on writes, otherwise a page on an attacker's
   // origin that rebinds its own hostname to this server can read the
   // vault same-origin.
   test("GET with a foreign Origin is rejected", async () => {
