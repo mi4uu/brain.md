@@ -3,12 +3,14 @@ import type { Vault } from "../vault/vault";
 import type { VaultIndex } from "../index/index";
 import { asError } from "./errors";
 import { decodeWildcard } from "./wildcard";
+import { requireRead, requireWrite } from "./perm-guard";
 
 export function noteRoutes(vault: Vault, index: VaultIndex) {
   return new Elysia({ prefix: "/api/note" })
-    .get("/*", async ({ params, set }) => {
+    .get("/*", async ({ params, set, request }) => {
       const rel = decodeWildcard((params as { "*": string })["*"]);
       try {
+        await requireRead(vault, request, rel);
         return await vault.readNote(rel);
       } catch (e) {
         const { status, body } = asError(e);
@@ -18,9 +20,10 @@ export function noteRoutes(vault: Vault, index: VaultIndex) {
     })
     .put(
       "/*",
-      async ({ params, body, set }) => {
+      async ({ params, body, set, request }) => {
         const rel = decodeWildcard((params as { "*": string })["*"]);
         try {
+          await requireWrite(vault, request, rel);
           const data = await vault.writeNote(rel, body.content);
           await index.updatePath(rel);
           return { path: data.path, mtime: data.mtime };
@@ -32,9 +35,10 @@ export function noteRoutes(vault: Vault, index: VaultIndex) {
       },
       { body: t.Object({ content: t.String() }) },
     )
-    .delete("/*", async ({ params, set }) => {
+    .delete("/*", async ({ params, set, request }) => {
       const rel = decodeWildcard((params as { "*": string })["*"]);
       try {
+        await requireWrite(vault, request, rel);
         const trashed = await vault.deleteNote(rel);
         index.remove(rel);
         return { ok: true, trashed };

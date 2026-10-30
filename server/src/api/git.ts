@@ -2,10 +2,17 @@ import { Elysia, t } from "elysia";
 import type { GitRepo } from "../git/git";
 import type { Autocommit } from "../git/autocommit";
 import type { SettingsStore } from "../settings/settings";
+import type { Vault } from "../vault/vault";
 import { asError } from "./errors";
 import { assertSafePath, assertMarkdown } from "../vault/paths";
+import { requireRead, requireWrite } from "./perm-guard";
 
-export function gitRoutes(repo: GitRepo, autocommit: Autocommit, settings: SettingsStore) {
+export function gitRoutes(
+  vault: Vault,
+  repo: GitRepo,
+  autocommit: Autocommit,
+  settings: SettingsStore,
+) {
   return new Elysia({ prefix: "/api/git" })
     .get("/status", async () => {
       const status = await repo.status();
@@ -19,16 +26,28 @@ export function gitRoutes(repo: GitRepo, autocommit: Autocommit, settings: Setti
     })
     .get(
       "/log",
-      async ({ query }) => {
-        const limit = query.limit ? Math.max(1, Math.min(500, Number(query.limit))) : 50;
-        return repo.log({ path: query.path, limit });
+      async ({ query, set, request }) => {
+        try {
+          // A path-scoped log is a read of that note's history; gate it
+          // the same as reading the note itself. An unscoped (vault-wide)
+          // log isn't filtered per-commit here — a known gap for agent
+          // credentials, see README/handoff notes.
+          if (query.path) await requireRead(vault, request, query.path);
+          const limit = query.limit ? Math.max(1, Math.min(500, Number(query.limit))) : 50;
+          return repo.log({ path: query.path, limit });
+        } catch (e) {
+          const { status, body } = asError(e);
+          set.status = status;
+          return body;
+        }
       },
       { query: t.Object({ path: t.Optional(t.String()), limit: t.Optional(t.String()) }) },
     )
     .get(
       "/show",
-      async ({ query, set }) => {
+      async ({ query, set, request }) => {
         try {
+          await requireRead(vault, request, query.path);
           const content = await repo.show(query.sha, query.path);
           return { content };
         } catch (e) {
@@ -41,8 +60,9 @@ export function gitRoutes(repo: GitRepo, autocommit: Autocommit, settings: Setti
     )
     .get(
       "/diff",
-      async ({ query, set }) => {
+      async ({ query, set, request }) => {
         try {
+          await requireRead(vault, request, query.path);
           const patch = await repo.diff(query.sha, query.path);
           return { patch };
         } catch (e) {
@@ -74,7 +94,7 @@ export function gitRoutes(repo: GitRepo, autocommit: Autocommit, settings: Setti
     })
     .post(
       "/restore",
-      async ({ body, set }) => {
+      async ({ body, set, request }) => {
         try {
           // `git checkout <sha> -- <path>` writes to the real working tree
           // at <path> — unlike show/diff, which only look inside git's
@@ -84,6 +104,7 @@ export function gitRoutes(repo: GitRepo, autocommit: Autocommit, settings: Setti
           // (auth.json, tokens.json, …) over the live one.
           assertSafePath(body.path);
           assertMarkdown(body.path);
+          await requireWrite(vault, request, body.path);
           await repo.restore(body.path, body.sha);
           const sha = await repo.commitAll(
             `restore ${body.path} → ${body.sha.slice(0, 7)}`,

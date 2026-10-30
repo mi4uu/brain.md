@@ -11,6 +11,8 @@ export function vaultErrorToStatus(e: VaultError): number {
       return 404;
     case "EXISTS":
       return 409;
+    case "FORBIDDEN":
+      return 403;
     case "IO":
     default:
       return 500;

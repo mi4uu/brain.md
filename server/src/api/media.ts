@@ -2,6 +2,7 @@ import { Elysia, t } from "elysia";
 import type { Vault } from "../vault/vault";
 import { asError } from "./errors";
 import { decodeWildcard } from "./wildcard";
+import { requireRead, requireWrite } from "./perm-guard";
 
 const MIME: Record<string, string> = {
   png: "image/png",
@@ -31,9 +32,10 @@ export function mediaRoutes(vault: Vault) {
   return new Elysia()
     .post(
       "/api/media/*",
-      async ({ params, body, set }) => {
+      async ({ params, body, set, request }) => {
         const noteRel = decodeWildcard((params as { "*": string })["*"]);
         try {
+          await requireWrite(vault, request, noteRel);
           const file = body.file;
           if (!(file instanceof File)) {
             set.status = 400;
@@ -52,9 +54,10 @@ export function mediaRoutes(vault: Vault) {
         body: t.Object({ file: t.File() }),
       },
     )
-    .get("/api/media-raw/*", async ({ params, set }) => {
+    .get("/api/media-raw/*", async ({ params, set, request }) => {
       const rel = decodeWildcard((params as { "*": string })["*"]);
       try {
+        await requireRead(vault, request, rel);
         const bytes = await vault.readMedia(rel);
         set.headers["content-type"] = mimeFor(rel);
         set.headers["cache-control"] = "private, max-age=3600";

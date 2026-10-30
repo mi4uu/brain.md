@@ -105,10 +105,11 @@ export class VaultIndex {
     return m;
   }
 
-  byTag(tag: string): string[] {
+  byTag(tag: string, allowed?: (path: string) => boolean): string[] {
     const t = tag.toLowerCase();
     return this.entries()
       .filter((e) => e.tags.includes(t))
+      .filter((e) => !allowed || allowed(e.path))
       .map((e) => e.path)
       .sort();
   }
