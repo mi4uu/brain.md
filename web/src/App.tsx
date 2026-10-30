@@ -427,9 +427,18 @@ export function App() {
         }
         if (p) openNote(p, { headingSlug: slug });
       } else if (h.startsWith("#/tag/")) {
-        setTagFilter(decodeURIComponent(h.slice("#/tag/".length)));
-        setPath(null);
-        setContent("");
+        const tag = decodeURIComponent(h.slice("#/tag/".length));
+        // The sidebar tag list is a real <a href>, so the browser has
+        // already moved the hash by the time this runs.
+        void (async () => {
+          if (!(await leaveNote())) {
+            revertHash();
+            return;
+          }
+          setTagFilter(tag);
+          setPath(null);
+          setContent("");
+        })();
       }
     }
     window.addEventListener("hashchange", onHash);
@@ -438,14 +447,33 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Single gate for every way of leaving the active note: tag nav, home,
+  // rename, delete, opening another note, anything else. Flushes a dirty
+  // buffer first; on failure onSave has already surfaced the error (or
+  // conflict) toast, so the caller keeps the old buffer and stays put
+  // instead of navigating away from an edit that didn't make it to disk.
+  const leaveNote = useCallback(async (): Promise<boolean> => {
+    try {
+      await flushSaveRef.current();
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  // The hash can move before this runs (a wikilink sets it directly, a
+  // real `<a href="#/...">` navigates on click before React sees it). Put
+  // it back to match what's still on screen when a navigation is aborted.
+  const revertHash = useCallback(() => {
+    const cur = pathRef.current;
+    const want = cur ? `#/note/${encodeURI(cur)}` : "";
+    if (window.location.hash !== want) window.location.hash = want;
+  }, []);
+
   const openNote = useCallback(
     async (p: string, opts?: { headingSlug?: string }) => {
-      try {
-        await flushSaveRef.current();
-      } catch {
-        // onSave already surfaced the error (or conflict) toast. Keep the
-        // old buffer instead of navigating away from an edit that didn't
-        // actually make it to disk.
+      if (!(await leaveNote())) {
+        revertHash();
         return;
       }
       try {
@@ -476,7 +504,7 @@ export function App() {
         setToast(`Open failed: ${e instanceof Error ? e.message : String(e)}`);
       }
     },
-    [],
+    [leaveNote, revertHash],
   );
 
   const jumpToHeadingSlug = useCallback((slug: string, body: string) => {
@@ -703,6 +731,9 @@ export function App() {
           setToast("Folder rename not yet supported");
           return;
         }
+        // Flush a dirty buffer before renaming, or the debounced save
+        // fires later and writes to a path that no longer exists.
+        if (path === p && !(await leaveNote())) return;
         const res = await api.rename(p, target);
         setToast(`Renamed (${res.totalReplacements} link${res.totalReplacements === 1 ? "" : "s"} patched)`);
         await refreshTree();
@@ -711,13 +742,17 @@ export function App() {
         setToast(`Rename failed: ${e instanceof Error ? e.message : String(e)}`);
       }
     },
-    [openNote, path, refreshTree],
+    [leaveNote, openNote, path, refreshTree],
   );
 
   const deleteItem = useCallback(
     async (p: string, isFolder: boolean) => {
       if (!confirm(`Move ${isFolder ? "folder" : "note"} "${p}" to trash?`)) return;
       try {
+        // Flush first: deleting the open note shouldn't race its autosave,
+        // and a failed flush means we stay rather than delete out from
+        // under an edit that never made it to disk.
+        if (path === p && !(await leaveNote())) return;
         if (isFolder) await api.deleteFolder(p);
         else await api.deleteNote(p);
         if (path === p) {
@@ -729,7 +764,7 @@ export function App() {
         setToast(`Delete failed: ${e instanceof Error ? e.message : String(e)}`);
       }
     },
-    [path, refreshTree],
+    [leaveNote, path, refreshTree],
   );
 
   const uploadMediaForCurrent = useCallback(
@@ -901,7 +936,13 @@ export function App() {
           className="brand"
           onClick={(e) => {
             e.preventDefault();
-            setPath(null);
+            void (async () => {
+              if (!(await leaveNote())) return;
+              setPath(null);
+              setContent("");
+              setTagFilter(null);
+              if (window.location.hash !== "") window.location.hash = "";
+            })();
           }}
         >
           <img src="/brainmdlogo.png" alt="" width={22} height={22} />
@@ -1174,10 +1215,13 @@ export function App() {
             resolveByBasename={resolveWikilink}
             onOpenNote={openNote}
             onOpenTag={(tag) => {
-              setTagFilter(tag);
-              setPath(null);
-              setContent("");
-              window.location.hash = `#/tag/${encodeURIComponent(tag)}`;
+              void (async () => {
+                if (!(await leaveNote())) return;
+                setTagFilter(tag);
+                setPath(null);
+                setContent("");
+                window.location.hash = `#/tag/${encodeURIComponent(tag)}`;
+              })();
             }}
             onScrollLine={onPreviewScrollLine}
             onSelectLine={onPreviewSelectLine}
