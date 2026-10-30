@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat, symlink, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Vault } from "../src/vault/vault";
@@ -156,5 +156,49 @@ describe("mkdir folder", () => {
     await vault.mkdirFolder("a/b/c");
     const s = await stat(join(dir, "a/b/c"));
     expect(s.isDirectory()).toBe(true);
+  });
+});
+
+describe("symlink escape (V52/V67 follow-up)", () => {
+  test("readNote refuses a symlinked directory pointing outside the vault", async () => {
+    const outside = await mkdtemp(join(tmpdir(), "brain-outside-"));
+    try {
+      await writeFile(join(outside, "secret.md"), "top secret", "utf8");
+      await mkdir(join(dir, "public"), { recursive: true });
+      await symlink(outside, join(dir, "public", "link"));
+      await expect(vault.readNote("public/link/secret.md")).rejects.toMatchObject({
+        code: "TRAVERSAL",
+      });
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  test("writeNote refuses to follow a symlinked directory outside the vault", async () => {
+    const outside = await mkdtemp(join(tmpdir(), "brain-outside-"));
+    try {
+      await mkdir(join(dir, "public"), { recursive: true });
+      await symlink(outside, join(dir, "public", "link"));
+      await expect(vault.writeNote("public/link/new.md", "x")).rejects.toMatchObject({
+        code: "TRAVERSAL",
+      });
+      await expect(stat(join(outside, "new.md"))).rejects.toBeDefined();
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  test("readMedia refuses a symlinked file pointing outside the vault", async () => {
+    const outside = await mkdtemp(join(tmpdir(), "brain-outside-"));
+    try {
+      await writeFile(join(outside, "secret.bin"), "top secret", "utf8");
+      await mkdir(join(dir, "note", ".media"), { recursive: true });
+      await symlink(join(outside, "secret.bin"), join(dir, "note", ".media", "link.bin"));
+      await expect(vault.readMedia("note/.media/link.bin")).rejects.toMatchObject({
+        code: "TRAVERSAL",
+      });
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 });

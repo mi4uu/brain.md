@@ -1,4 +1,5 @@
-import { resolve, sep, posix, isAbsolute, normalize } from "node:path";
+import { resolve, sep, posix, isAbsolute, normalize, dirname, basename as pathBasename, join } from "node:path";
+import { realpath } from "node:fs/promises";
 import { VaultError } from "./types";
 
 export function normalizeRel(rel: string): string {
@@ -69,6 +70,46 @@ export function safeJoin(vaultDir: string, rel: string): string {
     throw new VaultError("path escapes vault", "TRAVERSAL");
   }
   return full;
+}
+
+// safeJoin only checks the path lexically: `vault/public/link/secret.md`
+// passes containment even when `public/link` is a symlink pointing outside
+// the vault (or into a folder the caller has no permission for), because
+// the string never leaves `vault/...`. The OS resolves symlinks when it
+// actually opens the file, which is the escape. This walks up from the
+// target to the nearest ancestor that exists, realpath()s that ancestor
+// (fully resolving any symlink chain), and re-joins the remaining
+// non-existent suffix — then checks the result is still inside the vault.
+// Call this right before the actual read/write, after safeJoin/assertSafePath.
+export async function assertRealContainment(vaultDir: string, abs: string): Promise<void> {
+  const base = resolve(vaultDir);
+  const baseReal = await realpath(base).catch(() => base);
+  let cur = abs;
+  const suffix: string[] = [];
+  for (;;) {
+    try {
+      const real = await realpath(cur);
+      const resolved = suffix.length > 0 ? join(real, ...suffix) : real;
+      if (resolved !== baseReal && !resolved.startsWith(baseReal + sep)) {
+        throw new VaultError("path escapes vault (symlink)", "TRAVERSAL");
+      }
+      return;
+    } catch (e) {
+      if (e instanceof VaultError) throw e;
+      if ((e as { code?: string }).code !== "ENOENT") {
+        // Any other I/O error (EACCES, ELOOP, …) — don't mask it as a pass.
+        throw e;
+      }
+      const parent = dirname(cur);
+      if (parent === cur) {
+        // Walked off the filesystem root without finding an existing
+        // ancestor — treat as escaped rather than looping forever.
+        throw new VaultError("path escapes vault (symlink)", "TRAVERSAL");
+      }
+      suffix.unshift(pathBasename(cur));
+      cur = parent;
+    }
+  }
 }
 
 export function assertMarkdown(rel: string): void {

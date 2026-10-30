@@ -13,6 +13,7 @@ import {
   assertMarkdown,
   assertSafePath,
   assertSafeBasename,
+  assertRealContainment,
   basename,
   normalizeRel,
   parentDir,
@@ -78,6 +79,7 @@ export class Vault {
   async readNote(rel: string): Promise<NoteData> {
     assertMarkdown(rel);
     const abs = this.abs(rel);
+    await assertRealContainment(this.root, abs);
     try {
       const [content, s] = await Promise.all([
         readFile(abs, "utf8"),
@@ -93,6 +95,7 @@ export class Vault {
     assertMarkdown(rel);
     assertSafePath(rel);
     const abs = this.abs(rel);
+    await assertRealContainment(this.root, abs);
     await mkdir(dirname(abs), { recursive: true });
     await atomicWrite(abs, content);
     const s = await stat(abs);
@@ -115,6 +118,8 @@ export class Vault {
     assertSafePath(to);
     const fromAbs = this.abs(from);
     const toAbs = this.abs(to);
+    await assertRealContainment(this.root, fromAbs);
+    await assertRealContainment(this.root, toAbs);
     const toStat = await safeStat(toAbs);
     if (toStat?.isFile()) {
       throw new VaultError(`target exists: ${to}`, "EXISTS");
@@ -128,7 +133,9 @@ export class Vault {
     const norm = normalizeRel(rel);
     if (norm === "") return;
     assertSafePath(norm);
-    await mkdir(this.abs(norm), { recursive: true });
+    const abs = this.abs(norm);
+    await assertRealContainment(this.root, abs);
+    await mkdir(abs, { recursive: true });
     this.notify("folder-create", norm);
   }
 
@@ -170,6 +177,7 @@ export class Vault {
   ): Promise<string> {
     const rel = this.mediaPathFor(noteRel, fileName);
     const abs = this.abs(rel);
+    await assertRealContainment(this.root, abs);
     await mkdir(dirname(abs), { recursive: true });
     const buf = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
     await atomicWriteBytes(abs, buf);
@@ -205,6 +213,8 @@ export class Vault {
     const original = tail.slice(slash + 1);
     const srcAbs = this.abs(norm);
     const destAbs = this.abs(original);
+    await assertRealContainment(this.root, srcAbs);
+    await assertRealContainment(this.root, destAbs);
     const destStat = await safeStat(destAbs);
     if (destStat) throw new VaultError(`target exists: ${original}`, "EXISTS");
     await mkdir(dirname(destAbs), { recursive: true });
@@ -216,14 +226,17 @@ export class Vault {
   async readMedia(rel: string): Promise<Uint8Array> {
     const abs = this.abs(rel);
     try {
+      await assertRealContainment(this.root, abs);
       return new Uint8Array(await readFile(abs));
-    } catch {
+    } catch (e) {
+      if (e instanceof VaultError) throw e;
       throw new VaultError(`media not found: ${rel}`, "NOT_FOUND");
     }
   }
 
   private async trashPath(rel: string, isDir: boolean): Promise<string> {
     const abs = this.abs(rel);
+    await assertRealContainment(this.root, abs);
     const s = await safeStat(abs);
     if (!s) throw new VaultError(`not found: ${rel}`, "NOT_FOUND");
     if (isDir && !s.isDirectory()) {
