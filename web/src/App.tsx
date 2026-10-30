@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { EditorView } from "@codemirror/view";
-import { api } from "./api/client";
+import { api, ConflictError } from "./api/client";
 import type { Backlink, TreeData } from "./api/types";
 import { FileTree } from "./components/FileTree";
 import { Editor } from "./components/Editor";
@@ -52,6 +52,7 @@ import { Toaster } from "./components/ui/toaster";
 import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
 import { toast as showToast } from "./components/ui/use-toast";
+import { ToastAction, type ToastActionElement } from "./components/ui/toast";
 import {
   Accordion,
   AccordionContent,
@@ -105,6 +106,14 @@ export function App() {
   const [tree, setTree] = useState<TreeData>({ folders: [], notes: [] });
   const [path, setPath] = useState<string | null>(null);
   const [content, setContent] = useState("");
+  const pathRef = useRef<string | null>(null);
+  useEffect(() => {
+    pathRef.current = path;
+  }, [path]);
+  // Revision of the currently open note, from the last GET/PUT response.
+  // Sent back as baseRevision on the next PUT; servers that don't send a
+  // revision yet leave this undefined, which skips the conflict check.
+  const noteRevisionRef = useRef<string | undefined>(undefined);
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   type RelatedState =
     | { kind: "idle" }
@@ -431,7 +440,16 @@ export function App() {
   const openNote = useCallback(
     async (p: string, opts?: { headingSlug?: string }) => {
       try {
+        await flushSaveRef.current();
+      } catch {
+        // onSave already surfaced the error (or conflict) toast. Keep the
+        // old buffer instead of navigating away from an edit that didn't
+        // actually make it to disk.
+        return;
+      }
+      try {
         const data = await api.readNote(p);
+        noteRevisionRef.current = data.revision;
         setPath(p);
         setContent(data.content);
         setTagFilter(null);
@@ -496,9 +514,59 @@ export function App() {
     }
   }, []);
 
+  // Someone else (another tab, an MCP client) saved this note since we last
+  // read or wrote it. Keep the local buffer either way: reload replaces it
+  // with disk's version, overwrite forces our version onto disk.
+  const reloadNoteFromDisk = useCallback(async (p: string) => {
+    try {
+      const data = await api.readNote(p);
+      if (pathRef.current !== p) return;
+      noteRevisionRef.current = data.revision;
+      setContent(data.content);
+    } catch (e) {
+      setToast(`Reload failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, []);
+
+  const overwriteNoteOnDisk = useCallback(async (p: string, c: string) => {
+    try {
+      const result = await api.writeNote(p, c);
+      if (pathRef.current === p) noteRevisionRef.current = result.revision;
+    } catch (e) {
+      setToast(`Overwrite failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, []);
+
+  const showConflictToast = useCallback(
+    (p: string, c: string) => {
+      showToast({
+        description: "This note changed elsewhere.",
+        variant: "warn",
+        action: (
+          <div className="flex gap-2">
+            <ToastAction altText="Reload from disk" onClick={() => void reloadNoteFromDisk(p)}>
+              Reload
+            </ToastAction>
+            <ToastAction altText="Overwrite with my version" onClick={() => void overwriteNoteOnDisk(p, c)}>
+              Overwrite
+            </ToastAction>
+          </div>
+        ) as unknown as ToastActionElement,
+      });
+    },
+    [reloadNoteFromDisk, overwriteNoteOnDisk],
+  );
+
   const onSave = useCallback(
     async (p: string, c: string) => {
-      await api.writeNote(p, c);
+      try {
+        const result = await api.writeNote(p, c, noteRevisionRef.current);
+        noteRevisionRef.current = result.revision;
+      } catch (e) {
+        if (e instanceof ConflictError) showConflictToast(p, c);
+        else setToast(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
+        throw e;
+      }
       try {
         const bl = await api.backlinks(p);
         setBacklinks(bl);
@@ -511,7 +579,7 @@ export function App() {
       // is best-effort and silent: any failure → no toast at all.
       void suggestTagsAfterSave(p, c);
     },
-    [refreshAliases],
+    [refreshAliases, showConflictToast],
   );
 
   const suggestTagsAfterSave = useCallback(
@@ -837,6 +905,11 @@ export function App() {
           <span className="brand-name">brain.md</span>
         </a>
         <span className="title">{path ? path.replace(/\.md$/, "") : ""}</span>
+        {gitStatus?.enabled ? (
+          <div className="topbar-center">
+            <GitStatusChip status={gitStatus} />
+          </div>
+        ) : null}
         <span className="saved">
           {path
             ? saveStatus === "saved"
@@ -900,11 +973,6 @@ export function App() {
         >
           <HeartFilledIcon />
         </a>
-        {gitStatus?.enabled ? (
-          <div className="topbar-center">
-            <GitStatusChip status={gitStatus} />
-          </div>
-        ) : null}
       </header>
 
       <aside className={clsx("sidebar", drawerOpen && "open")}>

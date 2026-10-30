@@ -7,6 +7,15 @@ export interface NoteData {
   path: string;
   content: string;
   mtime: number;
+  // Optional: older servers don't send it yet. sha256 of the file content,
+  // used for optimistic-concurrency writes (see WriteNoteResult).
+  revision?: string;
+}
+
+export interface WriteNoteResult {
+  path: string;
+  mtime: number;
+  revision?: string;
 }
 
 export interface SearchHit {

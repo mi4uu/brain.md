@@ -7,7 +7,9 @@ import remarkRehype from "remark-rehype";
 import rehypeHighlight from "rehype-highlight";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
 import rehypeStringify from "rehype-stringify";
+import { previewSchema } from "./sanitizeSchema";
 import { parse as parseYaml } from "yaml";
 import { remarkWikilinks } from "./plugins/wikilinks";
 import { remarkTags } from "./plugins/tags";
@@ -290,7 +292,11 @@ export function renderMarkdown(content: string, opts: RenderOptions): {
     .use(rehypeHeadingIds)
     .use(rehypeHighlight, { detect: true, ignoreMissing: true })
     .use(rehypeKatex)
-    .use(rehypeStringify, { allowDangerousHtml: true });
+    // Sanitize last: strips raw HTML the user typed (or rehypeRaw parsed)
+    // down to a safe subset, after our own plugins and KaTeX/highlight.js
+    // have had a chance to add the classes and attributes they rely on.
+    .use(rehypeSanitize, previewSchema)
+    .use(rehypeStringify);
 
   const file = processor.processSync(body);
   return { html: String(file), frontmatter: data, frontmatterError: error };

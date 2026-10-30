@@ -13,6 +13,12 @@ export function useDebouncedSave(
   const lastSaved = useRef<string | null>(null);
   const timer = useRef<number | null>(null);
   const pathRef = useRef<string | null>(path);
+  // Chains every flush (debounce-triggered or explicit) onto the previous
+  // one so two saves for the same note are never in flight at once. Each
+  // link reads `latest.current` only once it actually runs, so the last
+  // queued flush always sends the newest content rather than racing an
+  // earlier one to the server.
+  const chain = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     latest.current = content;
@@ -25,7 +31,10 @@ export function useDebouncedSave(
     setStatus("dirty");
     if (timer.current !== null) window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => {
-      void flushInternal();
+      flushInternal().catch(() => {
+        // status already reflects the failure; caller sees it via `status`
+        // or by awaiting their own explicit flush()
+      });
     }, delay);
     return () => {
       if (timer.current !== null) window.clearTimeout(timer.current);
@@ -40,18 +49,30 @@ export function useDebouncedSave(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
 
-  async function flushInternal() {
-    const p = pathRef.current;
-    if (p === null) return;
-    const c = latest.current;
-    setStatus("saving");
-    try {
-      await save(p, c);
-      lastSaved.current = c;
-      if (latest.current === c) setStatus("saved");
-    } catch {
-      setStatus("error");
-    }
+  function flushInternal(): Promise<void> {
+    const run = async () => {
+      const p = pathRef.current;
+      if (p === null) return;
+      const c = latest.current;
+      if (lastSaved.current === c) {
+        setStatus("saved");
+        return;
+      }
+      setStatus("saving");
+      try {
+        await save(p, c);
+        lastSaved.current = c;
+        if (latest.current === c) setStatus("saved");
+      } catch (e) {
+        // Leave `latest`/`lastSaved` untouched: the buffer the caller holds
+        // is still the unsaved edit, not something to discard or overwrite.
+        setStatus("error");
+        throw e;
+      }
+    };
+    const next = chain.current.catch(() => {}).then(run);
+    chain.current = next;
+    return next;
   }
 
   return { status, flush: flushInternal };
