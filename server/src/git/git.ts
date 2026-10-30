@@ -41,6 +41,14 @@ async function run(
       GIT_TERMINAL_PROMPT: "0",
       GIT_CONFIG_GLOBAL: "/dev/null",
       GIT_CONFIG_SYSTEM: "/dev/null",
+      // log/diff/show/restore all take a caller-supplied path as a
+      // pathspec. Without this, a path like "*.md" that passed the
+      // per-path permission check (it resolves to the root folder's own
+      // perms) is interpreted by git as a glob matching every top-level
+      // note, letting restore/diff touch or disclose files the caller was
+      // never authorised for. Equivalent to prefixing every pathspec with
+      // ":(literal)".
+      GIT_LITERAL_PATHSPECS: "1",
     },
   });
   if (opts.input !== undefined && proc.stdin) {
