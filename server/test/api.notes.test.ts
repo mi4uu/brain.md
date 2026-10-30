@@ -84,3 +84,73 @@ describe("notes API", () => {
     expect(body.content).toBe("deep");
   });
 });
+
+// V-concurrency #9: optimistic concurrency so overlapping autosaves can't
+// silently replace newer edits with older content.
+describe("notes API — optimistic concurrency", () => {
+  test("GET returns a revision", async () => {
+    await handle.app.handle(req("PUT", "/api/note/r.md", { content: "v1" }));
+    const get = await handle.app.handle(req("GET", "/api/note/r.md"));
+    const body = (await get.json()) as { revision: string };
+    expect(typeof body.revision).toBe("string");
+    expect(body.revision.length).toBeGreaterThan(0);
+  });
+
+  test("PUT without baseRevision always succeeds (back-compat)", async () => {
+    await handle.app.handle(req("PUT", "/api/note/s.md", { content: "v1" }));
+    const res = await handle.app.handle(req("PUT", "/api/note/s.md", { content: "v2" }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { revision: string };
+    expect(typeof body.revision).toBe("string");
+  });
+
+  test("PUT with matching baseRevision succeeds and returns a new revision", async () => {
+    const first = await handle.app.handle(req("PUT", "/api/note/t.md", { content: "v1" }));
+    const { revision } = (await first.json()) as { revision: string };
+    const second = await handle.app.handle(
+      req("PUT", "/api/note/t.md", { content: "v2", baseRevision: revision }),
+    );
+    expect(second.status).toBe(200);
+    const body = (await second.json()) as { revision: string };
+    expect(body.revision).not.toBe(revision);
+  });
+
+  test("PUT with stale baseRevision → 409 CONFLICT, no write", async () => {
+    const first = await handle.app.handle(req("PUT", "/api/note/u.md", { content: "v1" }));
+    const { revision: v1 } = (await first.json()) as { revision: string };
+    // A second writer updates the note first (simulating a concurrent save).
+    await handle.app.handle(req("PUT", "/api/note/u.md", { content: "v2 (winner)" }));
+
+    const conflict = await handle.app.handle(
+      req("PUT", "/api/note/u.md", { content: "v3 (loser, stale base)", baseRevision: v1 }),
+    );
+    expect(conflict.status).toBe(409);
+    const body = (await conflict.json()) as { code: string; revision: string };
+    expect(body.code).toBe("CONFLICT");
+    expect(body.revision).not.toBe(v1);
+
+    const get = await handle.app.handle(req("GET", "/api/note/u.md"));
+    const got = (await get.json()) as { content: string };
+    expect(got.content).toBe("v2 (winner)");
+  });
+
+  test("creating a new note with a baseRevision doesn't conflict against an absent file", async () => {
+    const res = await handle.app.handle(
+      req("PUT", "/api/note/brand-new.md", { content: "hello", baseRevision: "deadbeef" }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  test("two concurrent PUTs to the same note don't corrupt it (last write under lock wins cleanly)", async () => {
+    await handle.app.handle(req("PUT", "/api/note/race.md", { content: "base" }));
+    const [a, b] = await Promise.all([
+      handle.app.handle(req("PUT", "/api/note/race.md", { content: "from A" })),
+      handle.app.handle(req("PUT", "/api/note/race.md", { content: "from B" })),
+    ]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    const get = await handle.app.handle(req("GET", "/api/note/race.md"));
+    const body = (await get.json()) as { content: string };
+    expect(["from A", "from B"]).toContain(body.content);
+  });
+});
