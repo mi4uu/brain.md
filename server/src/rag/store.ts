@@ -52,8 +52,16 @@ interface TaskRowDisk {
 interface StoreFile {
   version: 1;
   dim: number;
+  providerId?: ProviderId;
+  modelId?: string;
   notes: NoteRowDisk[];
   tasks: TaskRowDisk[];
+}
+
+export interface EmbeddingConfig {
+  providerId: ProviderId;
+  modelId: string;
+  dim: number;
 }
 
 function chunkToDisk(r: EmbeddedChunk): NoteRowDisk {
@@ -101,10 +109,58 @@ export class RagStore {
   // V63: writeFile is sync to avoid races during reindex bursts; the
   // 200ms debounce hides the cost from a write storm.
 
+  // V-concurrency #23: the provider/model/dim these rows were embedded
+  // under. `open()`'s dim check only catches a changed dim across a
+  // restart — switching provider/model at runtime (settings PATCH →
+  // RagPipeline.applyConfig) without changing `dim` left old rows in the
+  // store that silently mixed with new ones, or produced NaN scores when
+  // a later dim change didn't match old rows' embedding length. Tracked
+  // separately from the constructor's fixed `dim` so a mismatch can be
+  // reported instead of corrupting comparisons.
+  private expectedConfig: EmbeddingConfig | null = null;
+  private incompatible = false;
+
   constructor(
     public readonly dir: string,
     public readonly dim: number,
   ) {}
+
+  // Called by RagPipeline whenever the active embedder config is set
+  // (construction, settings change). If it actually changed from what was
+  // expected before, rows already in the store were embedded under the old
+  // config and can't be compared against new query vectors until a full
+  // reindex rewrites them.
+  setExpectedConfig(cfg: EmbeddingConfig): void {
+    const prev = this.expectedConfig;
+    this.expectedConfig = cfg;
+    if (
+      prev &&
+      (prev.providerId !== cfg.providerId || prev.modelId !== cfg.modelId || prev.dim !== cfg.dim)
+    ) {
+      this.incompatible = true;
+    }
+  }
+
+  getExpectedConfig(): EmbeddingConfig | null {
+    return this.expectedConfig;
+  }
+
+  // Called once reindexAll has rewritten every row under `cfg`.
+  markRebuilt(cfg: EmbeddingConfig): void {
+    this.expectedConfig = cfg;
+    this.incompatible = false;
+  }
+
+  // Refuses vector queries against a store whose rows no longer match the
+  // active embedder, with a message that says what to do, instead of
+  // comparing incompatible vectors (NaN scores) or mixing old and new rows.
+  checkQueryable(): void {
+    if (this.incompatible) {
+      throw new Error(
+        "RAG index was embedded with a different provider/model than is now configured; run a full reindex before querying.",
+      );
+    }
+  }
 
   private filePath(): string {
     return join(this.dir, "vectors.json");
@@ -119,6 +175,9 @@ export class RagStore {
         if (raw.version === 1 && raw.dim === this.dim) {
           for (const n of raw.notes) this.notes.set(n.id, n);
           for (const t of raw.tasks) this.tasks.set(t.id, t);
+          if (raw.providerId && raw.modelId) {
+            this.expectedConfig = { providerId: raw.providerId, modelId: raw.modelId, dim: raw.dim };
+          }
         } else {
           // Different dim → embeddings can't be reused. Wipe.
           console.warn(
@@ -155,6 +214,8 @@ export class RagStore {
     const payload: StoreFile = {
       version: 1,
       dim: this.dim,
+      providerId: this.expectedConfig?.providerId,
+      modelId: this.expectedConfig?.modelId,
       notes: [...this.notes.values()],
       tasks: [...this.tasks.values()],
     };
@@ -185,8 +246,13 @@ export class RagStore {
 
   async search(vector: Float32Array, k: number): Promise<SearchHit[]> {
     this.requireOpen();
+    this.checkQueryable();
     const scored: Array<{ r: NoteRowDisk; score: number }> = [];
     for (const r of this.notes.values()) {
+      // Defensive even with checkQueryable() above: a row embedded at a
+      // different dimension would index past its own array and compute
+      // NaN rather than a sentinel low score.
+      if (r.embedding.length !== vector.length) continue;
       scored.push({ r, score: cosineL2Normalised(vector, r.embedding) });
     }
     scored.sort((a, b) => b.score - a.score);
@@ -204,6 +270,17 @@ export class RagStore {
   async countAll(): Promise<number> {
     this.requireOpen();
     return this.notes.size;
+  }
+
+  // Every distinct note path currently represented in the store (body
+  // chunks or tasks), used to reconcile a full reindex against the vault's
+  // actual notes so deleted-folder subtrees don't linger forever.
+  async distinctPaths(): Promise<string[]> {
+    this.requireOpen();
+    const seen = new Set<string>();
+    for (const r of this.notes.values()) seen.add(r.path);
+    for (const r of this.tasks.values()) seen.add(r.path);
+    return [...seen];
   }
 
   async distinctProviderModel(): Promise<
@@ -248,10 +325,12 @@ export class RagStore {
     filter: TaskDoneFilter = "open",
   ): Promise<TaskHit[]> {
     this.requireOpen();
+    this.checkQueryable();
     const scored: Array<{ r: TaskRowDisk; score: number }> = [];
     for (const r of this.tasks.values()) {
       if (filter === "open" && r.done) continue;
       if (filter === "done" && !r.done) continue;
+      if (r.embedding.length !== vector.length) continue;
       scored.push({ r, score: cosineL2Normalised(vector, r.embedding) });
     }
     scored.sort((a, b) => b.score - a.score);

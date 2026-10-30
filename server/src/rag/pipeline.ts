@@ -22,10 +22,20 @@ function makeEmbedder(cfg: RagConfig): Embedder {
   return new OpenAICompatEmbedder(cfg.openaiCompat);
 }
 
+type PendingAction = "write" | "delete";
+
 export class RagPipeline {
   private embedder: Embedder;
   private unsubscribe?: () => void;
-  private indexing = new Map<string, Promise<void>>(); // path → in-flight job
+  private jobs = new Map<string, Promise<void>>(); // path → in-flight job
+  // V-concurrency #19: the action to rerun once the in-flight job for this
+  // path finishes. An edit that lands mid-embed used to be silently dropped
+  // (indexNote() just returned the existing promise); a delete that lands
+  // mid-embed could lose the race and have the stale write's upsert
+  // resurrect rows for a note that no longer exists. Recording the latest
+  // desired action and rerunning it after the current job settles fixes
+  // both: delete always wins if it's the last thing that happened.
+  private pending = new Map<string, PendingAction>();
   public lastIndexedAt: number | null = null;
   private cfg: RagConfig;
 
@@ -36,6 +46,7 @@ export class RagPipeline {
   ) {
     this.cfg = cfg;
     this.embedder = makeEmbedder(cfg);
+    this.store.setExpectedConfig(describeProvider(cfg));
   }
 
   start(): void {
@@ -67,25 +78,32 @@ export class RagPipeline {
     // is cheap; the real warm-up cost is lazy in .ready() / first .embed().
     this.cfg = cfg;
     this.embedder = makeEmbedder(cfg);
+    this.store.setExpectedConfig(describeProvider(cfg));
     // Reset the cached probe error — old failures don't reflect new config.
     this.lastProbeError = null;
   }
 
   private async handleEvent(e: MutationEvent): Promise<void> {
     if (!this.cfg.enabled) return;
-    if (!e.path.endsWith(".md")) return;
     try {
       switch (e.kind) {
         case "write":
-          await this.indexNote(e.path);
+          if (e.path.endsWith(".md")) await this.indexNote(e.path);
           break;
         case "delete":
-          await this.deleteNote(e.path);
+          if (e.path.endsWith(".md")) await this.deleteNote(e.path);
           break;
         case "rename":
           // notify("rename", to, from) — extra holds the old path
-          if (e.extra) await this.deleteNote(e.extra);
-          await this.indexNote(e.path);
+          if (e.extra && e.extra.endsWith(".md")) await this.deleteNote(e.extra);
+          if (e.path.endsWith(".md")) await this.indexNote(e.path);
+          break;
+        case "folder-delete":
+          // The folder's notes are already in trash by the time this
+          // fires; `paths` carries their pre-trash relative paths so
+          // store rows for the whole subtree get dropped, not just the
+          // folder's own path (which was never a row key).
+          await Promise.all((e.paths ?? []).map((p) => this.deleteNote(p)));
           break;
         default:
           return;
@@ -99,14 +117,40 @@ export class RagPipeline {
     }
   }
 
-  async indexNote(rel: string): Promise<void> {
-    // Dedupe concurrent writes of the same path
-    const existing = this.indexing.get(rel);
-    if (existing) return existing;
-    await this.store.ensureOpen();
-    const job = this.indexOne(rel).finally(() => this.indexing.delete(rel));
-    this.indexing.set(rel, job);
+  // Runs `action` for `path`, serialised: a second call while one is
+  // in-flight doesn't start a parallel job (which could race the first and
+  // leave either a dropped edit or a resurrected delete) — it just records
+  // that `action` should run again once the in-flight job settles.
+  private async run(path: string, action: PendingAction): Promise<void> {
+    const existing = this.jobs.get(path);
+    if (existing) {
+      this.pending.set(path, action);
+      return existing;
+    }
+    const job = this.runOne(path, action).finally(() => {
+      this.jobs.delete(path);
+      const next = this.pending.get(path);
+      if (next !== undefined) {
+        this.pending.delete(path);
+        void this.run(path, next);
+      }
+    });
+    this.jobs.set(path, job);
     return job;
+  }
+
+  private async runOne(path: string, action: PendingAction): Promise<void> {
+    await this.store.ensureOpen();
+    if (action === "delete") {
+      await this.store.deleteByPath(path);
+      await this.store.deleteTasksByPath(path);
+      return;
+    }
+    await this.indexOne(path);
+  }
+
+  async indexNote(rel: string): Promise<void> {
+    return this.run(rel, "write");
   }
 
   private async indexOne(rel: string): Promise<void> {
@@ -157,9 +201,7 @@ export class RagPipeline {
   }
 
   async deleteNote(rel: string): Promise<void> {
-    await this.store.ensureOpen();
-    await this.store.deleteByPath(rel);
-    await this.store.deleteTasksByPath(rel);
+    return this.run(rel, "delete");
   }
 
   // Public encode hook for ad-hoc queries (used by /api/similar).
@@ -210,6 +252,21 @@ export class RagPipeline {
     if (errors.length > 0) {
       console.warn(`[rag] reindex skipped ${skipped} of ${notes.length}; first errors:`, errors.slice(0, 5));
     }
+    // V-concurrency #20: a full reindex only ever upserted notes that
+    // still exist — rows for notes removed since the last reindex (a
+    // single delete, or a whole folder deleted in one go) were never
+    // compared against the current vault and lingered forever. Diff the
+    // store's paths against what's on disk now and drop the rest.
+    const noteSet = new Set(notes);
+    const storedPaths = await this.store.distinctPaths();
+    await Promise.all(
+      storedPaths
+        .filter((p) => !noteSet.has(p))
+        .map((p) => this.run(p, "delete")),
+    );
+    // Every surviving row was just rewritten under the active embedder, so
+    // the store is self-consistent again — queries can resume.
+    this.store.markRebuilt(describeProvider(this.cfg));
     return { indexed, skipped, durationMs: Date.now() - t0 };
   }
 }
