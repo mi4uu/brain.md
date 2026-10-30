@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -15,6 +16,8 @@ import { VERSION } from "../version";
 //                         `$XDG_CACHE_HOME/brain.md/web/<version>/`. Lets
 //                         someone clone the repo, run `bun start` and have
 //                         the UI work without building the frontend first.
+//                         Verified against the release's SHA256SUMS before
+//                         extraction; refuses releases that don't have one.
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -83,10 +86,61 @@ function diskResolver(dir: string): Resolver {
   };
 }
 
+// Returns the expected sha256 for `filename` from a GitHub-style
+// SHA256SUMS listing ("<hex>  <filename>" per line), or null if the
+// file isn't listed.
+export function expectedSha256(sums: string, filename: string): string | null {
+  for (const line of sums.split("\n")) {
+    const m = line.trim().match(/^([0-9a-f]{64})\s+\*?(.+)$/);
+    if (m && m[2] === filename) return m[1] ?? null;
+  }
+  return null;
+}
+
+// An archive entry is safe to extract under `target` only if it stays
+// inside it once resolved: no absolute path, no `..` segment.
+export function isSafeTarEntry(entryPath: string): boolean {
+  const normalized = entryPath.replace(/\\/g, "/");
+  if (normalized.startsWith("/") || /^[a-zA-Z]:/.test(normalized)) return false;
+  return normalized.split("/").every((seg) => seg !== "..");
+}
+
+async function listTarEntries(tarPath: string): Promise<string[] | null> {
+  const proc = Bun.spawn(["tar", "-tzf", tarPath], { stderr: "pipe" });
+  const out = await new Response(proc.stdout).text();
+  const code = await proc.exited;
+  if (code !== 0) {
+    const err = await new Response(proc.stderr).text();
+    console.warn(`[web] tar listing failed (exit ${code}): ${err}`);
+    return null;
+  }
+  return out.split("\n").filter((l) => l.length > 0);
+}
+
 async function downloadAndExtract(target: string): Promise<boolean> {
   await mkdir(target, { recursive: true });
-  const url = `https://github.com/mi4uu/brain.md/releases/download/v${VERSION}/web-dist.tar.gz`;
+  const base = `https://github.com/mi4uu/brain.md/releases/download/v${VERSION}`;
+  const archiveName = "web-dist.tar.gz";
+  const url = `${base}/${archiveName}`;
+  const sumsUrl = `${base}/SHA256SUMS`;
   try {
+    const sumsRes = await fetch(sumsUrl);
+    if (!sumsRes.ok) {
+      console.warn(
+        `[web] no SHA256SUMS for v${VERSION} (${sumsRes.status}). ` +
+          `Refusing to fetch an unverified web bundle.`,
+      );
+      return false;
+    }
+    const expected = expectedSha256(await sumsRes.text(), archiveName);
+    if (!expected) {
+      console.warn(
+        `[web] SHA256SUMS for v${VERSION} has no entry for ${archiveName}. ` +
+          `Refusing to fetch an unverified web bundle.`,
+      );
+      return false;
+    }
+
     const res = await fetch(url);
     if (!res.ok) {
       console.warn(
@@ -95,8 +149,27 @@ async function downloadAndExtract(target: string): Promise<boolean> {
       return false;
     }
     const buf = new Uint8Array(await res.arrayBuffer());
-    const tarPath = join(target, "web-dist.tar.gz");
+    const actual = createHash("sha256").update(buf).digest("hex");
+    if (actual !== expected) {
+      console.warn(
+        `[web] checksum mismatch for ${archiveName}: expected ${expected}, got ${actual}.`,
+      );
+      return false;
+    }
+
+    const tarPath = join(target, archiveName);
     await writeFile(tarPath, buf);
+
+    const entries = await listTarEntries(tarPath);
+    if (!entries) return false;
+    const unsafe = entries.filter((e) => !isSafeTarEntry(e));
+    if (unsafe.length > 0) {
+      console.warn(
+        `[web] refusing to extract ${archiveName}: unsafe entries ${unsafe.join(", ")}`,
+      );
+      return false;
+    }
+
     // Use system tar (POSIX + Windows 10+).
     const proc = Bun.spawn(["tar", "-xzf", tarPath, "-C", target], {
       stderr: "pipe",
