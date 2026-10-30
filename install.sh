@@ -36,21 +36,32 @@ esac
 ASSET="brain-md-${OS}-${ARCH}"
 
 if [ "$VERSION" = "latest" ]; then
-  URL="https://github.com/${REPO}/releases/latest/download/${ASSET}"
+  RELEASE_BASE="https://github.com/${REPO}/releases/latest/download"
 else
-  URL="https://github.com/${REPO}/releases/download/${VERSION}/${ASSET}"
+  RELEASE_BASE="https://github.com/${REPO}/releases/download/${VERSION}"
 fi
+URL="${RELEASE_BASE}/${ASSET}"
+SUMS_URL="${RELEASE_BASE}/SHA256SUMS"
 
 # ---------- prerequisites ----------
 if ! command -v curl >/dev/null 2>&1; then
   die "curl is required."
 fi
 
+if command -v shasum >/dev/null 2>&1; then
+  sha256() { shasum -a 256 "$1" | awk '{print $1}'; }
+elif command -v sha256sum >/dev/null 2>&1; then
+  sha256() { sha256sum "$1" | awk '{print $1}'; }
+else
+  die "need shasum or sha256sum to verify the download."
+fi
+
 # ---------- download ----------
 mkdir -p "$INSTALL_DIR"
 TARGET="$INSTALL_DIR/$BIN_NAME"
 TMP="$(mktemp)"
-trap 'rm -f "$TMP"' EXIT
+SUMS_TMP="$(mktemp)"
+trap 'rm -f "$TMP" "$SUMS_TMP"' EXIT
 
 bold "→ downloading $ASSET ($VERSION)"
 printf "  url: %s\n" "$URL"
@@ -58,9 +69,23 @@ if ! curl -fSL --progress-bar "$URL" -o "$TMP"; then
   die "download failed. Check that release '$VERSION' exists at https://github.com/${REPO}/releases"
 fi
 
+bold "→ verifying checksum"
+if ! curl -fsSL "$SUMS_URL" -o "$SUMS_TMP"; then
+  die "could not download SHA256SUMS from $SUMS_URL. Refusing to install an unverified binary."
+fi
+EXPECTED="$(grep -E " \*?${ASSET}\$" "$SUMS_TMP" | awk '{print $1}')"
+if [ -z "$EXPECTED" ]; then
+  die "no checksum entry for $ASSET in SHA256SUMS. Refusing to install an unverified binary."
+fi
+ACTUAL="$(sha256 "$TMP")"
+if [ "$EXPECTED" != "$ACTUAL" ]; then
+  die "checksum mismatch for $ASSET (expected $EXPECTED, got $ACTUAL). The download may be corrupt or tampered with."
+fi
+
 mv "$TMP" "$TARGET"
 chmod +x "$TARGET"
 trap - EXIT
+rm -f "$SUMS_TMP"
 
 # ---------- verify ----------
 bold "→ verifying"
