@@ -3,7 +3,7 @@ import type { Vault } from "../vault/vault";
 import type { VaultIndex } from "../index/index";
 import { renameAndPatch } from "../index/rename";
 import { asError } from "./errors";
-import { requireWrite } from "./perm-guard";
+import { requireWrite, writeFilterFor } from "./perm-guard";
 
 export function renameRoutes(vault: Vault, index: VaultIndex) {
   return new Elysia({ prefix: "/api" }).post(
@@ -12,7 +12,8 @@ export function renameRoutes(vault: Vault, index: VaultIndex) {
       try {
         await requireWrite(vault, request, body.from);
         await requireWrite(vault, request, body.to);
-        const result = await renameAndPatch(vault, index, body.from, body.to);
+        const canWrite = await writeFilterFor(vault, request);
+        const result = await renameAndPatch(vault, index, body.from, body.to, canWrite);
         return { ok: true, ...result };
       } catch (e) {
         const { status, body: err } = asError(e);
