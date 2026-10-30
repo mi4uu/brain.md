@@ -138,7 +138,7 @@ interface TarEntryInfo {
 // Parses one line of `tar -tv` output (works for both GNU tar and
 // macOS/bsdtar): a permission string whose first character is the entry
 // type ('-' regular, 'd' directory, 'l' symlink, …), then owner/size/date
-// columns, then the path — "-> target" for a symlink, "link to target"
+// columns, then the path: "-> target" for a symlink, "link to target"
 // for a hardlink.
 export function parseTarVerboseLine(line: string): TarEntryInfo {
   const typeChar = line[0] ?? "?";
