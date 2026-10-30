@@ -69,6 +69,18 @@ export function useLocal<T>(key: string, initial: T): [T, (v: T) => void] {
     } catch {
       // ignore
     }
+    // Follow writes from other tabs so a later setter call doesn't
+    // clobber them with this tab's stale value.
+    function onStorage(e: StorageEvent) {
+      if (e.key !== key) return;
+      try {
+        setVal(e.newValue === null ? initial : (JSON.parse(e.newValue) as T));
+      } catch {
+        // ignore
+      }
+    }
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, [key]);
   return [val, setter];
 }

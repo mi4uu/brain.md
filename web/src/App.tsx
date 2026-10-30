@@ -32,6 +32,7 @@ import {
   CalendarIcon,
   EyeIcon,
   PenIcon,
+  ColumnsIcon,
   TagIcon,
   CheckSquareIcon,
   TrashIcon,
@@ -43,6 +44,7 @@ import {
 } from "./components/Icons";
 import { useTheme } from "./hooks/useTheme";
 import { useMediaQuery } from "./hooks/useMediaQuery";
+import { useLocal } from "./state/store";
 import { settingsApi, type AppSettings } from "./api/settings";
 import { useDebouncedSave } from "./hooks/useDebouncedSave";
 import { TooltipProvider } from "./components/ui/tooltip";
@@ -83,6 +85,19 @@ import "./styles/history.css";
 import "./styles/hljs.css";
 import "katex/dist/katex.min.css";
 
+type DesktopView = "split" | "edit" | "preview";
+const NEXT_DESKTOP_VIEW: Record<DesktopView, DesktopView> = {
+  split: "edit",
+  edit: "preview",
+  preview: "split",
+};
+const DESKTOP_VIEW_LABEL: Record<DesktopView, string> = {
+  split: "Layout: editor + preview",
+  edit: "Layout: editor only",
+  preview: "Layout: preview only",
+};
+const MOD_KEY = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘" : "Ctrl+";
+
 export function App() {
   const { theme, setTheme, resolved } = useTheme();
   const auth = useAuth();
@@ -100,6 +115,19 @@ export function App() {
   const [relatedState, setRelatedState] = useState<RelatedState>({ kind: "idle" });
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [mobileView, setMobileView] = useState<"edit" | "preview">("edit");
+  // Desktop layout: both panes, editor only, or preview only. Persisted per device.
+  const [storedView, setDesktopView] = useLocal<DesktopView>("brain.desktopView", "split");
+  // Stored value is untrusted (null, garbage, "constructor"…): accept only known layouts.
+  const desktopView: DesktopView = storedView === "edit" || storedView === "preview" ? storedView : "split";
+  const cycleDesktopView = useCallback(() => {
+    setDesktopView(NEXT_DESKTOP_VIEW[desktopView]);
+  }, [desktopView, setDesktopView]);
+  // Lives in whichever pane head is visible, so it's always in the same corner.
+  const layoutBtn = isMobile ? null : (
+    <IconBtn label={`${DESKTOP_VIEW_LABEL[desktopView]} (${MOD_KEY}\\)`} onClick={cycleDesktopView}>
+      {desktopView === "edit" ? <PenIcon /> : desktopView === "preview" ? <EyeIcon /> : <ColumnsIcon />}
+    </IconBtn>
+  );
   const [cmd, setCmd] = useState<"search" | "switcher" | null>(null);
   const [settings, setSettings] = useState<AppSettings>({
     version: 1,
@@ -704,11 +732,17 @@ export function App() {
       } else if (mod && e.shiftKey && e.key.toLowerCase() === "f") {
         e.preventDefault();
         setCmd("search");
+      } else if (mod && !e.altKey && !isMobile && e.key === "\\") {
+        // !altKey: CodeMirror binds Mod-Alt-\ to indentSelection.
+        // !isMobile: the mobile tabs own the layout there.
+        e.preventDefault();
+        // Holding the keys auto-repeats; one press = one layout step.
+        if (!e.repeat) cycleDesktopView();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [flush]);
+  }, [flush, cycleDesktopView, isMobile]);
 
   const onFileInputChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -977,14 +1011,24 @@ export function App() {
 
       {drawerOpen && isMobile ? <div className="drawer-backdrop open" onClick={() => setDrawerOpen(false)} /> : null}
 
-      <main ref={mainRef} className={clsx("main", isMobile && mobileView === "preview" && "show-preview", path && "has-toolbar")}>
+      <main
+        ref={mainRef}
+        className={clsx(
+          "main",
+          isMobile && mobileView === "preview" && "show-preview",
+          !isMobile && desktopView !== "split" && `view-${desktopView}`,
+          path && "has-toolbar",
+        )}
+      >
         <div className="pane-head editor-head">
           <PenIcon />
           <span>Editor</span>
+          {desktopView === "edit" ? layoutBtn : null}
         </div>
         <div className="pane-head preview-head">
           <EyeIcon />
           <span>Preview</span>
+          {desktopView !== "edit" ? layoutBtn : null}
         </div>
         {path ? (
           <div className="toolbar-row">
@@ -1045,7 +1089,7 @@ export function App() {
             onSelectLine={onPreviewSelectLine}
           />
         </section>
-        {path && !isMobile ? (
+        {path && !isMobile && desktopView === "split" ? (
           <SyncConnector
             mainRef={mainRef}
             editorViewRef={editorViewRef}
