@@ -5,7 +5,7 @@ import type { SettingsStore } from "../settings/settings";
 import type { Vault } from "../vault/vault";
 import { asError } from "./errors";
 import { assertSafePath, assertMarkdown } from "../vault/paths";
-import { requireRead, requireWrite } from "./perm-guard";
+import { requireRead, requireWrite, requireOwner } from "./perm-guard";
 
 export function gitRoutes(
   vault: Vault,
@@ -142,7 +142,14 @@ export function gitRoutes(
     )
     .post(
       "/autocommit",
-      async ({ body }) => {
+      async ({ body, set, request }) => {
+        try {
+          requireOwner(request);
+        } catch (e) {
+          const { status, body: err } = asError(e);
+          set.status = status;
+          return err;
+        }
         if (body.enabled !== undefined) autocommit.setEnabled(body.enabled);
         if (body.debounceMs !== undefined) autocommit.setDebounceMs(body.debounceMs);
         await settings.patch({

@@ -1,16 +1,35 @@
 import { Elysia, t } from "elysia";
 import type { APIKeyStore } from "../auth/api-keys";
+import { asError } from "./errors";
+import { requireOwner } from "./perm-guard";
 
 // V66 routes: GET / POST / DELETE on /api/auth/keys.
-// Sit behind the same auth-middleware as the rest of /api/* — only
-// the V53 session bearer (i.e. the logged-in web UI) can manage keys.
+// Only the owner (V53 session bearer, or the back-compat no-password
+// principal) can manage keys — an API key must never be able to mint or
+// revoke API keys, including itself a replacement with wider scope.
 
 export function apiKeyRoutes(keys: APIKeyStore) {
   return new Elysia()
-    .get("/api/auth/keys", () => ({ keys: keys.list() }))
+    .get("/api/auth/keys", ({ request, set }) => {
+      try {
+        requireOwner(request);
+        return { keys: keys.list() };
+      } catch (e) {
+        const { status, body } = asError(e);
+        set.status = status;
+        return body;
+      }
+    })
     .post(
       "/api/auth/keys",
-      ({ body }) => {
+      ({ body, request, set }) => {
+        try {
+          requireOwner(request);
+        } catch (e) {
+          const { status, body: err } = asError(e);
+          set.status = status;
+          return err;
+        }
         const created = keys.create({
           name: body.name,
           expiresInDays: body.expiresInDays ?? null,
@@ -35,7 +54,14 @@ export function apiKeyRoutes(keys: APIKeyStore) {
     )
     .delete(
       "/api/auth/keys/:id",
-      ({ params, set }) => {
+      ({ params, request, set }) => {
+        try {
+          requireOwner(request);
+        } catch (e) {
+          const { status, body: err } = asError(e);
+          set.status = status;
+          return err;
+        }
         const ok = keys.revoke(params.id);
         if (!ok) {
           set.status = 404;

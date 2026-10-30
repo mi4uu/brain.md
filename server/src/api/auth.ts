@@ -2,6 +2,7 @@ import { Elysia, t } from "elysia";
 import type { AuthStore } from "../auth/store";
 import type { TokenStore } from "../auth/tokens";
 import { hashPassword, verifyPassword } from "../auth/hasher";
+import { requireOwner } from "./perm-guard";
 
 // V53: auth routes.
 // - GET  /api/auth/status        always open
@@ -34,7 +35,13 @@ export function authRoutes(auth: AuthStore, tokens: TokenStore) {
     })
     .post(
       "/api/auth/set",
-      async ({ body, set }) => {
+      async ({ body, set, request }) => {
+        try {
+          requireOwner(request);
+        } catch {
+          set.status = 403;
+          return { error: "owner session required" };
+        }
         const { newPassword, currentPassword } = body;
         if (typeof newPassword !== "string" || newPassword.length < 4) {
           set.status = 400;
@@ -63,7 +70,13 @@ export function authRoutes(auth: AuthStore, tokens: TokenStore) {
     )
     .post(
       "/api/auth/clear",
-      async ({ body, set }) => {
+      async ({ body, set, request }) => {
+        try {
+          requireOwner(request);
+        } catch {
+          set.status = 403;
+          return { error: "owner session required" };
+        }
         if (!auth.isConfigured()) {
           return { ok: true };
         }

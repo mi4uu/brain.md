@@ -3,6 +3,7 @@ import type { SettingsStore, AppSettings } from "../settings/settings";
 import type { Autocommit } from "../git/autocommit";
 import type { RagPipeline } from "../rag/pipeline";
 import { asError } from "./errors";
+import { requireOwner } from "./perm-guard";
 
 // The embedder apiKey is a credential, not UI state: it must never leave
 // the server in a GET or PATCH response. Callers get a boolean flag
@@ -26,8 +27,9 @@ export function settingsRoutes(
     .get("/", () => redact(settings.get()))
     .patch(
       "/",
-      async ({ body, set }) => {
+      async ({ body, set, request }) => {
         try {
+          requireOwner(request);
           const prev = settings.get();
           const next = await settings.patch(body);
           // sync to runtime autocommit

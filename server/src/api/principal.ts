@@ -29,8 +29,27 @@ export function principalCanWrite(p: Principal): boolean {
 }
 
 // Owner sessions (and the back-compat "no auth configured" case) bypass
-// per-folder MCP permissions entirely. Everyone else is subject to them.
+// per-folder MCP permissions on REST, matching the web UI's own full
+// access to the vault it's serving.
 export function bypassesFolderPerms(p: Principal): boolean {
+  return p.kind === "owner" || p.kind === "open";
+}
+
+// MCP is always agent traffic, even when auth.json is unconfigured. Before
+// the per-folder MCP permissions existed, there was no bypass at all; the
+// "open" principal (added for REST back-compat) must not grant MCP clients
+// something they never had. Only a proven owner session (password login)
+// bypasses folder perms over MCP.
+export function bypassesFolderPermsForMcp(p: Principal): boolean {
+  return p.kind === "owner";
+}
+
+// Endpoints that administer the server itself (folder MCP permissions,
+// settings, API keys, the password) require someone who's either proved
+// they know the owner's password, or is using the vault with no password
+// configured at all (there's nobody else to protect it from in that mode).
+// API keys and OAuth tokens — agent credentials — never qualify.
+export function isOwnerPrincipal(p: Principal): boolean {
   return p.kind === "owner" || p.kind === "open";
 }
 

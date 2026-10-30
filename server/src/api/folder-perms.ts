@@ -5,6 +5,7 @@ import type { Vault } from "../vault/vault";
 import { normalizeRel, parentDir } from "../vault/paths";
 import { asError } from "./errors";
 import { decodeWildcard } from "./wildcard";
+import { requireOwner } from "./perm-guard";
 
 // V52: per-folder MCP permissions.
 // Stored alongside icons/colors in <VAULT>/.brain/folder-meta.json under
@@ -109,8 +110,9 @@ export function folderPermsRoutes(vault: Vault) {
     })
     .post(
       "/api/folder-mcp-perms",
-      async ({ body, set }) => {
+      async ({ body, set, request }) => {
         try {
+          requireOwner(request);
           const meta = await withFolderMetaLock(async () => {
             const m = await loadFolderMeta(vault);
             const norm = normalizeRel(body.path);
@@ -136,8 +138,9 @@ export function folderPermsRoutes(vault: Vault) {
         }),
       },
     )
-    .delete("/api/folder-mcp-perms/*", async ({ params, set }) => {
+    .delete("/api/folder-mcp-perms/*", async ({ params, set, request }) => {
       try {
+        requireOwner(request);
         const rel = decodeWildcard((params as { "*": string })["*"]);
         const meta = await withFolderMetaLock(async () => {
           const m = await loadFolderMeta(vault);
