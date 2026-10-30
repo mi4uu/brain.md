@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, createHash } from "node:crypto";
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Vault } from "../vault/vault";
@@ -13,9 +13,19 @@ import type { Vault } from "../vault/vault";
 // curl scripts, cron-driven agents) that need a stable Authorization
 // header. Generated once in Settings → Security → API Keys, revoked
 // individually if leaked.
+//
+// Only the SHA-256 hash of a key is ever persisted; the plaintext is
+// returned to the caller once, at creation, and never stored. A short
+// unhashed prefix is kept so the UI can show "which key is this" without
+// revealing the rest. Files predating this change stored the plaintext
+// token; load() migrates those in place.
 
 const REL = ".brain/api-keys.json";
 const DEBOUNCE_MS = 200;
+
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
 
 export interface APIKey {
   id: string;                 // 8-hex public identifier (shown in UI + URL)
@@ -35,14 +45,34 @@ export interface PublicAPIKey {
   prefix: string;             // first 8 chars of token, for "match it to your config"
 }
 
+// Stored, hashed record — never holds the plaintext token.
+interface StoredAPIKey {
+  id: string;
+  tokenHash: string;
+  prefix: string;
+  name: string;
+  createdAt: number;
+  lastUsedAt: number | null;
+  expiresAt: number | null;
+}
+
 interface PersistedFile {
   version: 1;
-  keys: APIKey[];
+  keys: StoredAPIKey[];
+}
+
+// Pre-migration on-disk shape (plaintext token, no hash/prefix).
+interface LegacyStoredAPIKey extends Partial<StoredAPIKey> {
+  token?: string;
+}
+interface LegacyPersistedFile {
+  version: 1;
+  keys: LegacyStoredAPIKey[];
 }
 
 export class APIKeyStore {
-  private readonly byToken = new Map<string, APIKey>();
-  private readonly byId = new Map<string, APIKey>();
+  private readonly byHash = new Map<string, StoredAPIKey>();
+  private readonly byId = new Map<string, StoredAPIKey>();
   private vault?: Vault;
   private dirty = false;
   private flushTimer?: ReturnType<typeof setTimeout>;
@@ -56,13 +86,41 @@ export class APIKeyStore {
     if (!this.vault) return;
     try {
       const raw = await readFile(this.vault.abs(REL), "utf8");
-      const parsed = JSON.parse(raw) as PersistedFile;
+      const parsed = JSON.parse(raw) as LegacyPersistedFile;
       if (parsed?.version !== 1 || !Array.isArray(parsed.keys)) return;
+      let migrated = false;
       for (const k of parsed.keys) {
-        if (typeof k.token !== "string" || typeof k.id !== "string") continue;
-        this.byToken.set(k.token, k);
-        this.byId.set(k.id, k);
+        if (typeof k.id !== "string") continue;
+        let rec: StoredAPIKey;
+        if (typeof k.tokenHash === "string" && typeof k.prefix === "string") {
+          rec = {
+            id: k.id,
+            tokenHash: k.tokenHash,
+            prefix: k.prefix,
+            name: k.name ?? "Unnamed key",
+            createdAt: k.createdAt ?? Date.now(),
+            lastUsedAt: k.lastUsedAt ?? null,
+            expiresAt: k.expiresAt ?? null,
+          };
+        } else if (typeof k.token === "string") {
+          // Pre-hash format: migrate to a hash-only record on next flush.
+          rec = {
+            id: k.id,
+            tokenHash: hashToken(k.token),
+            prefix: k.token.slice(0, 8),
+            name: k.name ?? "Unnamed key",
+            createdAt: k.createdAt ?? Date.now(),
+            lastUsedAt: k.lastUsedAt ?? null,
+            expiresAt: k.expiresAt ?? null,
+          };
+          migrated = true;
+        } else {
+          continue;
+        }
+        this.byHash.set(rec.tokenHash, rec);
+        this.byId.set(rec.id, rec);
       }
+      if (migrated) this.scheduleFlush();
     } catch {
       // No file or malformed — start empty.
     }
@@ -84,13 +142,13 @@ export class APIKeyStore {
     this.dirty = false;
     const data: PersistedFile = {
       version: 1,
-      keys: Array.from(this.byToken.values()),
+      keys: Array.from(this.byHash.values()),
     };
     const abs = this.vault.abs(REL);
     try {
-      await mkdir(dirname(abs), { recursive: true });
+      await mkdir(dirname(abs), { recursive: true, mode: 0o700 });
       const tmp = `${abs}.tmp`;
-      await writeFile(tmp, JSON.stringify(data, null, 2), "utf8");
+      await writeFile(tmp, JSON.stringify(data, null, 2), { encoding: "utf8", mode: 0o600 });
       await rename(tmp, abs);
     } catch (e) {
       // eslint-disable-next-line no-console
@@ -109,57 +167,61 @@ export class APIKeyStore {
       args.expiresInDays && args.expiresInDays > 0
         ? now + args.expiresInDays * 24 * 60 * 60 * 1000
         : null;
-    const key: APIKey = {
+    const name = args.name.slice(0, 200) || "Unnamed key";
+    const rec: StoredAPIKey = {
       id,
-      token,
-      name: args.name.slice(0, 200) || "Unnamed key",
+      tokenHash: hashToken(token),
+      prefix: token.slice(0, 8),
+      name,
       createdAt: now,
       lastUsedAt: null,
       expiresAt,
     };
-    this.byToken.set(token, key);
-    this.byId.set(id, key);
+    this.byHash.set(rec.tokenHash, rec);
+    this.byId.set(id, rec);
     this.scheduleFlush();
-    return key;
+    // Plaintext token only ever leaves the store here, at creation time.
+    return { id, token, name, createdAt: now, lastUsedAt: null, expiresAt };
   }
 
   validate(token: string | undefined): APIKey | null {
     if (!token) return null;
-    const key = this.byToken.get(token);
-    if (!key) return null;
-    if (key.expiresAt !== null && key.expiresAt < Date.now()) {
+    const hash = hashToken(token);
+    const rec = this.byHash.get(hash);
+    if (!rec) return null;
+    if (rec.expiresAt !== null && rec.expiresAt < Date.now()) {
       // Lazy GC of expired keys.
-      this.byToken.delete(token);
-      this.byId.delete(key.id);
+      this.byHash.delete(hash);
+      this.byId.delete(rec.id);
       this.scheduleFlush();
       return null;
     }
-    key.lastUsedAt = Date.now();
+    rec.lastUsedAt = Date.now();
     this.scheduleFlush();
-    return key;
+    return { ...rec, token };
   }
 
   revoke(id: string): boolean {
-    const key = this.byId.get(id);
-    if (!key) return false;
-    this.byToken.delete(key.token);
+    const rec = this.byId.get(id);
+    if (!rec) return false;
+    this.byHash.delete(rec.tokenHash);
     this.byId.delete(id);
     this.scheduleFlush();
     return true;
   }
 
   list(): PublicAPIKey[] {
-    return Array.from(this.byToken.values()).map((k) => ({
+    return Array.from(this.byHash.values()).map((k) => ({
       id: k.id,
       name: k.name,
       createdAt: k.createdAt,
       lastUsedAt: k.lastUsedAt,
       expiresAt: k.expiresAt,
-      prefix: k.token.slice(0, 8),
+      prefix: k.prefix,
     }));
   }
 
   count(): number {
-    return this.byToken.size;
+    return this.byHash.size;
   }
 }

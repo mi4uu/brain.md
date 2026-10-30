@@ -32,6 +32,7 @@ export interface AccessToken {
   resource: string;
   expiresAt: number;
   refreshTokenRef?: string; // back-link for "revoke whole chain"
+  familyId: string;
 }
 
 export interface RefreshToken {
@@ -42,6 +43,16 @@ export interface RefreshToken {
   expiresAt: number;
   accessTokenRef?: string;  // latest access token issued from this refresh
   rotatedFrom?: string;     // previous refresh token (RFC 6749 §10.4 chain)
+  familyId: string;         // shared by every token descended from one login
+}
+
+// Record kept after a refresh token is rotated out, so a replay of that
+// exact (now-dead) token can still be recognised as theft of the family
+// rather than just "unknown token". RFC 6749 §10.4: reuse of a rotated
+// refresh token means the family is compromised — revoke everything.
+interface ConsumedRefresh {
+  familyId: string;
+  expiresAt: number;
 }
 
 export interface IssuedTokenPair {
@@ -66,6 +77,7 @@ export class OAuthStore {
   private readonly codes = new Map<string, AuthorizationCode>();
   private readonly access = new Map<string, AccessToken>();
   private readonly refresh = new Map<string, RefreshToken>();
+  private readonly consumedRefresh = new Map<string, ConsumedRefresh>();
   private sweepTimer?: ReturnType<typeof setInterval>;
 
   startSweeper(intervalMs: number = 5 * 60 * 1000): void {
@@ -147,10 +159,14 @@ export class OAuthStore {
 
   // ---- token issuance ----
 
-  issueTokenPair(args: { clientId: string; scope: string; resource: string }): IssuedTokenPair {
+  issueTokenPair(
+    args: { clientId: string; scope: string; resource: string },
+    familyId?: string,
+  ): IssuedTokenPair {
     const access = randomBytes(32).toString("base64url");
     const refresh = randomBytes(32).toString("base64url");
     const now = Date.now();
+    const fam = familyId ?? randomBytes(16).toString("base64url");
     this.access.set(access, {
       token: access,
       clientId: args.clientId,
@@ -158,6 +174,7 @@ export class OAuthStore {
       resource: args.resource,
       expiresAt: now + ACCESS_TTL_MS,
       refreshTokenRef: refresh,
+      familyId: fam,
     });
     this.refresh.set(refresh, {
       token: refresh,
@@ -166,6 +183,7 @@ export class OAuthStore {
       resource: args.resource,
       expiresAt: now + REFRESH_TTL_MS,
       accessTokenRef: access,
+      familyId: fam,
     });
     return {
       accessToken: access,
@@ -181,7 +199,15 @@ export class OAuthStore {
     | { ok: true; pair: IssuedTokenPair }
     | { ok: false; error: "invalid_grant"; reason: string } {
     const rec = this.refresh.get(args.refreshToken);
-    if (!rec) return { ok: false, error: "invalid_grant", reason: "unknown refresh_token" };
+    if (!rec) {
+      // Token not live. If it's one we rotated out earlier, this is a
+      // replay — the stolen token's family is compromised, revoke all of it.
+      const consumed = this.consumedRefresh.get(args.refreshToken);
+      if (consumed && consumed.expiresAt >= Date.now()) {
+        this.revokeFamily(consumed.familyId);
+      }
+      return { ok: false, error: "invalid_grant", reason: "unknown refresh_token" };
+    }
     if (rec.expiresAt < Date.now()) {
       this.refresh.delete(rec.token);
       return { ok: false, error: "invalid_grant", reason: "refresh expired" };
@@ -189,17 +215,27 @@ export class OAuthStore {
     if (!constantTimeEq(rec.clientId, args.clientId)) {
       return { ok: false, error: "invalid_grant", reason: "client_id mismatch" };
     }
-    // Invalidate old refresh + its access companion (rotation).
+    // Invalidate old refresh + its access companion (rotation), but keep a
+    // tombstone around for the rest of its original lifetime so a replay
+    // of this exact token can still be traced back to the family.
     this.refresh.delete(rec.token);
+    this.consumedRefresh.set(rec.token, { familyId: rec.familyId, expiresAt: rec.expiresAt });
     if (rec.accessTokenRef) this.access.delete(rec.accessTokenRef);
-    const pair = this.issueTokenPair({
-      clientId: rec.clientId,
-      scope: rec.scope,
-      resource: rec.resource,
-    });
+    const pair = this.issueTokenPair(
+      { clientId: rec.clientId, scope: rec.scope, resource: rec.resource },
+      rec.familyId,
+    );
     const newRefresh = this.refresh.get(pair.refreshToken);
     if (newRefresh) newRefresh.rotatedFrom = args.refreshToken;
     return { ok: true, pair };
+  }
+
+  // Revoke every access/refresh token descended from one login. Called when
+  // a rotated-out refresh token is replayed (theft indicator).
+  private revokeFamily(familyId: string): void {
+    for (const [k, v] of this.access) if (v.familyId === familyId) this.access.delete(k);
+    for (const [k, v] of this.refresh) if (v.familyId === familyId) this.refresh.delete(k);
+    for (const [k, v] of this.consumedRefresh) if (v.familyId === familyId) this.consumedRefresh.delete(k);
   }
 
   // ---- validation (called from auth-middleware) ----
@@ -239,6 +275,7 @@ export class OAuthStore {
     for (const [k, v] of this.codes) if (v.expiresAt < now) this.codes.delete(k);
     for (const [k, v] of this.access) if (v.expiresAt < now) this.access.delete(k);
     for (const [k, v] of this.refresh) if (v.expiresAt < now) this.refresh.delete(k);
+    for (const [k, v] of this.consumedRefresh) if (v.expiresAt < now) this.consumedRefresh.delete(k);
   }
 
   // For tests + admin UI (step 4).

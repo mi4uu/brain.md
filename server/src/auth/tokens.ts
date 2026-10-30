@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, createHash } from "node:crypto";
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Vault } from "../vault/vault";
@@ -13,10 +13,20 @@ import type { Vault } from "../vault/vault";
 // auth.json present.
 //
 // Writes are debounced 200ms so login bursts don't hammer disk.
+//
+// Only the SHA-256 hash of a token is ever persisted or kept as a map
+// key, never the plaintext. Lookups hash the incoming bearer value and
+// compare with timingSafeEqual so a token can't be recovered by timing
+// a byte-by-byte guess. Files predating this change stored plaintext
+// tokens under a "token" field; load() migrates those in place.
 
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 const REL = ".brain/tokens.json";
 const DEBOUNCE_MS = 200;
+
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
 
 interface TokenRecord {
   expiresAt: number;
@@ -24,7 +34,13 @@ interface TokenRecord {
 
 interface PersistedFile {
   version: 1;
-  tokens: Array<{ token: string; expiresAt: number }>;
+  tokens: Array<{ tokenHash: string; expiresAt: number }>;
+}
+
+// Pre-migration on-disk shape (plaintext token).
+interface LegacyPersistedFile {
+  version: 1;
+  tokens: Array<{ token?: string; tokenHash?: string; expiresAt: number }>;
 }
 
 export class TokenStore {
@@ -49,14 +65,21 @@ export class TokenStore {
     if (!this.vault) return;
     try {
       const raw = await readFile(this.vault.abs(REL), "utf8");
-      const parsed = JSON.parse(raw) as PersistedFile;
+      const parsed = JSON.parse(raw) as LegacyPersistedFile;
       if (parsed?.version !== 1 || !Array.isArray(parsed.tokens)) return;
       const now = Date.now();
+      let migrated = false;
       for (const t of parsed.tokens) {
-        if (typeof t.token === "string" && typeof t.expiresAt === "number" && t.expiresAt > now) {
-          this.tokens.set(t.token, { expiresAt: t.expiresAt });
+        if (typeof t.expiresAt !== "number" || t.expiresAt <= now) continue;
+        if (typeof t.tokenHash === "string") {
+          this.tokens.set(t.tokenHash, { expiresAt: t.expiresAt });
+        } else if (typeof t.token === "string") {
+          // Pre-hash format: migrate to a hash-only record on next flush.
+          this.tokens.set(hashToken(t.token), { expiresAt: t.expiresAt });
+          migrated = true;
         }
       }
+      if (migrated) this.scheduleFlush();
     } catch {
       // No file or malformed JSON — start empty.
     }
@@ -78,16 +101,16 @@ export class TokenStore {
     this.dirty = false;
     const data: PersistedFile = {
       version: 1,
-      tokens: Array.from(this.tokens.entries()).map(([token, rec]) => ({
-        token,
+      tokens: Array.from(this.tokens.entries()).map(([tokenHash, rec]) => ({
+        tokenHash,
         expiresAt: rec.expiresAt,
       })),
     };
     const abs = this.vault.abs(REL);
     try {
-      await mkdir(dirname(abs), { recursive: true });
+      await mkdir(dirname(abs), { recursive: true, mode: 0o700 });
       const tmp = `${abs}.tmp`;
-      await writeFile(tmp, JSON.stringify(data), "utf8");
+      await writeFile(tmp, JSON.stringify(data), { encoding: "utf8", mode: 0o600 });
       await rename(tmp, abs);
     } catch (e) {
       // Best-effort persistence — keep serving even if disk write fails.
@@ -102,17 +125,18 @@ export class TokenStore {
   issue(): { token: string; expiresAt: number } {
     const token = randomBytes(32).toString("base64url");
     const expiresAt = Date.now() + this.ttlMs;
-    this.tokens.set(token, { expiresAt });
+    this.tokens.set(hashToken(token), { expiresAt });
     this.scheduleFlush();
     return { token, expiresAt };
   }
 
   validate(token: string | undefined): boolean {
     if (!token) return false;
-    const rec = this.tokens.get(token);
+    const hash = hashToken(token);
+    const rec = this.tokens.get(hash);
     if (!rec) return false;
     if (rec.expiresAt < Date.now()) {
-      this.tokens.delete(token);
+      this.tokens.delete(hash);
       this.scheduleFlush();
       return false;
     }
@@ -121,7 +145,7 @@ export class TokenStore {
 
   revoke(token: string | undefined): boolean {
     if (!token) return false;
-    const had = this.tokens.delete(token);
+    const had = this.tokens.delete(hashToken(token));
     if (had) this.scheduleFlush();
     return had;
   }
