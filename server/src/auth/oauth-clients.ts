@@ -54,8 +54,34 @@ function constantTimeEq(a: string, b: string): boolean {
   return timingSafeEqual(ab, bb);
 }
 
+// Unbounded DCR self-registration (any client can POST /oauth/register with
+// no auth) would otherwise let a registration loop grow this in-memory map
+// without bound. Capped with LRU-by-last-use eviction instead.
+const MAX_CLIENTS = 500;
+
 export class OAuthClientStore {
   private readonly clients = new Map<string, RegisteredClient>();
+  private readonly lastUsedAt = new Map<string, number>();
+
+  private touch(clientId: string): void {
+    this.lastUsedAt.set(clientId, Date.now());
+  }
+
+  private pruneIfFull(): void {
+    if (this.clients.size < MAX_CLIENTS) return;
+    const byAge = Array.from(this.clients.keys()).sort((a, b) => {
+      const ageA = this.lastUsedAt.get(a) ?? this.clients.get(a)!.client_id_issued_at * 1000;
+      const ageB = this.lastUsedAt.get(b) ?? this.clients.get(b)!.client_id_issued_at * 1000;
+      return ageA - ageB;
+    });
+    // Evict enough of the stalest, least-recently-used registrations to
+    // make room for the one about to be registered.
+    const evictCount = this.clients.size - MAX_CLIENTS + 1;
+    for (const id of byAge.slice(0, evictCount)) {
+      this.clients.delete(id);
+      this.lastUsedAt.delete(id);
+    }
+  }
 
   register(req: ClientRegistrationRequest):
     | { ok: true; client: RegisteredClient }
@@ -121,12 +147,16 @@ export class OAuthClientStore {
       client_id_issued_at: Math.floor(Date.now() / 1000),
       registration_access_token: randomBytes(32).toString("base64url"),
     };
+    this.pruneIfFull();
     this.clients.set(client.client_id, client);
+    this.touch(client.client_id);
     return { ok: true, client };
   }
 
   get(clientId: string): RegisteredClient | undefined {
-    return this.clients.get(clientId);
+    const c = this.clients.get(clientId);
+    if (c) this.touch(clientId);
+    return c;
   }
 
   // Returns true if (clientId, redirectUri) pair was registered. Used by
@@ -136,7 +166,9 @@ export class OAuthClientStore {
   validateRedirectUri(clientId: string, redirectUri: string): boolean {
     const c = this.clients.get(clientId);
     if (!c) return false;
-    return c.redirect_uris.some((r) => constantTimeEq(r, redirectUri));
+    const ok = c.redirect_uris.some((r) => constantTimeEq(r, redirectUri));
+    if (ok) this.touch(clientId);
+    return ok;
   }
 
   list(): RegisteredClient[] {
@@ -144,6 +176,7 @@ export class OAuthClientStore {
   }
 
   revoke(clientId: string): boolean {
+    this.lastUsedAt.delete(clientId);
     return this.clients.delete(clientId);
   }
 
