@@ -57,6 +57,45 @@ describe("git API", () => {
     expect(note.content.trim()).toBe("first");
   });
 
+  test("restore refuses a traversal path", async () => {
+    await put("/api/note/a.md", "first");
+    await h.autocommit.flush();
+    const restore = await h.app.handle(
+      new Request("http://localhost/api/git/restore", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: "../../etc/passwd", sha: "HEAD" }),
+      }),
+    );
+    expect(restore.status).toBe(400);
+  });
+
+  test("restore refuses a .brain/ path", async () => {
+    await put("/api/note/a.md", "first");
+    await h.autocommit.flush();
+    const restore = await h.app.handle(
+      new Request("http://localhost/api/git/restore", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: ".brain/auth.json", sha: "HEAD" }),
+      }),
+    );
+    expect(restore.status).toBe(400);
+  });
+
+  test("restore refuses a non-markdown path", async () => {
+    await put("/api/note/a.md", "first");
+    await h.autocommit.flush();
+    const restore = await h.app.handle(
+      new Request("http://localhost/api/git/restore", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: "a.txt", sha: "HEAD" }),
+      }),
+    );
+    expect(restore.status).toBe(400);
+  });
+
   test("manual commit", async () => {
     await put("/api/note/x.md", "manual");
     const res = await h.app.handle(

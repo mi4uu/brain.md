@@ -3,6 +3,7 @@ import type { GitRepo } from "../git/git";
 import type { Autocommit } from "../git/autocommit";
 import type { SettingsStore } from "../settings/settings";
 import { asError } from "./errors";
+import { assertSafePath, assertMarkdown } from "../vault/paths";
 
 export function gitRoutes(repo: GitRepo, autocommit: Autocommit, settings: SettingsStore) {
   return new Elysia({ prefix: "/api/git" })
@@ -75,6 +76,14 @@ export function gitRoutes(repo: GitRepo, autocommit: Autocommit, settings: Setti
       "/restore",
       async ({ body, set }) => {
         try {
+          // `git checkout <sha> -- <path>` writes to the real working tree
+          // at <path> — unlike show/diff, which only look inside git's
+          // tree objects, this one can escape onto the real filesystem if
+          // <path> isn't validated the same way every vault write is, and
+          // it must not be able to resurrect a historical .brain/ file
+          // (auth.json, tokens.json, …) over the live one.
+          assertSafePath(body.path);
+          assertMarkdown(body.path);
           await repo.restore(body.path, body.sha);
           const sha = await repo.commitAll(
             `restore ${body.path} → ${body.sha.slice(0, 7)}`,
