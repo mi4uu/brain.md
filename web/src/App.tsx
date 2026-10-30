@@ -122,9 +122,17 @@ export function App() {
   const cycleDesktopView = useCallback(() => {
     setDesktopView(NEXT_DESKTOP_VIEW[desktopView]);
   }, [desktopView, setDesktopView]);
+  // The button remounts in the other pane head on some steps, so keyboard
+  // focus has to be handed over or Enter stops cycling after one press.
+  const refocusLayoutBtn = useRef(false);
+  const onLayoutBtn = useCallback(() => {
+    const active = document.activeElement;
+    refocusLayoutBtn.current = active instanceof HTMLElement && active.closest(".pane-head") !== null;
+    cycleDesktopView();
+  }, [cycleDesktopView]);
   // Lives in whichever pane head is visible, so it's always in the same corner.
   const layoutBtn = isMobile ? null : (
-    <IconBtn label={`${DESKTOP_VIEW_LABEL[desktopView]} (${MOD_KEY}\\)`} onClick={cycleDesktopView}>
+    <IconBtn label={`${DESKTOP_VIEW_LABEL[desktopView]} (${MOD_KEY}\\)`} onClick={onLayoutBtn}>
       {desktopView === "edit" ? <PenIcon /> : desktopView === "preview" ? <EyeIcon /> : <ColumnsIcon />}
     </IconBtn>
   );
@@ -732,8 +740,17 @@ export function App() {
       } else if (mod && e.shiftKey && e.key.toLowerCase() === "f") {
         e.preventDefault();
         setCmd("search");
-      } else if (mod && !e.altKey && !isMobile && e.key === "\\") {
-        // !altKey: CodeMirror binds Mod-Alt-\ to indentSelection.
+      } else if (
+        mod &&
+        !e.altKey &&
+        !e.shiftKey &&
+        !e.isComposing &&
+        !e.defaultPrevented &&
+        !isMobile &&
+        e.key === "\\"
+      ) {
+        // !altKey / !shiftKey: CodeMirror binds Mod-Alt-\ and Shift-Mod-\.
+        // !defaultPrevented: the editor or a dialog already handled the key.
         // !isMobile: the mobile tabs own the layout there.
         e.preventDefault();
         // Holding the keys auto-repeats; one press = one layout step.
@@ -743,6 +760,12 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [flush, cycleDesktopView, isMobile]);
+
+  useEffect(() => {
+    if (!refocusLayoutBtn.current) return;
+    refocusLayoutBtn.current = false;
+    mainRef.current?.querySelector<HTMLButtonElement>(".pane-head .btn.icon")?.focus();
+  }, [desktopView]);
 
   const onFileInputChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
