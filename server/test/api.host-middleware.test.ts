@@ -59,11 +59,32 @@ describe("Origin check on state-changing requests", () => {
     handle = createApp({ vaultDir: dir, gitAutocommit: false });
   });
 
-  test("GET with a foreign Origin is not blocked (read-only, no CSRF risk)", async () => {
+  // Codex r2 #9: with no password configured, a GET also returns real
+  // content (any /api/* route), so a foreign Origin must be rejected on
+  // reads too, not just on writes — otherwise a page on an attacker's
+  // origin that rebinds its own hostname to this server can read the
+  // vault same-origin.
+  test("GET with a foreign Origin is rejected", async () => {
     const r = await handle.app.handle(
       new Request("http://localhost/health", {
         headers: { host: "localhost", origin: "https://evil.example.com" },
       }),
+    );
+    expect(r.status).toBe(403);
+  });
+
+  test("GET with a matching Origin is allowed", async () => {
+    const r = await handle.app.handle(
+      new Request("http://localhost/health", {
+        headers: { host: "localhost", origin: "http://localhost" },
+      }),
+    );
+    expect(r.status).toBe(200);
+  });
+
+  test("GET with no Origin header is allowed (non-browser clients)", async () => {
+    const r = await handle.app.handle(
+      new Request("http://localhost/health", { headers: { host: "localhost" } }),
     );
     expect(r.status).toBe(200);
   });

@@ -27,7 +27,7 @@ import { settingsRoutes } from "./api/settings";
 import { ragRoutes } from "./api/rag";
 import { authRoutes } from "./api/auth";
 import { authMiddleware } from "./api/auth-middleware";
-import { hostMiddleware } from "./api/host-middleware";
+import { hostMiddleware, buildAllowedHostsSet, isAllowedOriginHost } from "./api/host-middleware";
 import { oauthDiscoveryRoutes } from "./api/oauth-discovery";
 import { oauthFlowRoutes } from "./api/oauth-flow";
 import { OAuthStore } from "./auth/oauth-store";
@@ -84,9 +84,25 @@ export function createApp(opts: AppOptions = {}) {
   const cimdResolver = new CimdResolver();
   const apiKeys = new APIKeyStore();
 
+  const allowedHosts = opts.allowedHosts ?? config.allowedHosts;
+  const allowedHostsSet = buildAllowedHostsSet(allowedHosts);
+
   const app = new Elysia()
-    .use(hostMiddleware(opts.allowedHosts ?? config.allowedHosts, authStore))
-    .use(cors())
+    .use(hostMiddleware(allowedHosts, authStore))
+    // The default `cors()` reflects back whatever Origin a request sends,
+    // which is "allow any origin" in practice. Restrict Access-Control-
+    // Allow-Origin to loopback dev origins (the Vite dev server) plus
+    // whatever's in ALLOWED_HOSTS; a request with no Origin (same-origin,
+    // or a non-browser client) is unaffected either way.
+    .use(
+      cors({
+        origin: (request) => {
+          const origin = request.headers.get("origin");
+          return !origin || isAllowedOriginHost(origin, allowedHostsSet);
+        },
+        credentials: false,
+      }),
+    )
     .use(authMiddleware(authStore, tokenStore, oauthStore, apiKeys))
     .get("/health", () => ({ ok: true, vaultDir: vault.root }))
     // V64: OAuth discovery surface, served before everything else so it's

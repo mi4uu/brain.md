@@ -15,6 +15,20 @@ import { Elysia } from "elysia";
 // ALLOWED_HOSTS (config/index.ts) seeds the list with loopback names plus
 // any extra hostnames for passwordless access through a proxy or the LAN.
 
+// Shared with app.ts's CORS config: both need "is this hostname one we
+// trust" with the same loopback + ALLOWED_HOSTS rules.
+export function buildAllowedHostsSet(allowedHosts: string[]): Set<string> {
+  return new Set(allowedHosts.map((h) => h.toLowerCase()));
+}
+
+export function isAllowedOriginHost(origin: string, allowed: Set<string>): boolean {
+  try {
+    return allowed.has(hostnameOf(new URL(origin).host));
+  } catch {
+    return false;
+  }
+}
+
 function hostnameOf(hostHeader: string): string {
   const h = hostHeader.trim().toLowerCase();
   if (h.startsWith("[")) {
@@ -31,7 +45,7 @@ export function hostMiddleware(
   allowedHosts: string[],
   auth: { isConfigured(): boolean },
 ) {
-  const allowed = new Set(allowedHosts.map((h) => h.toLowerCase()));
+  const allowed = buildAllowedHostsSet(allowedHosts);
   return new Elysia().onRequest(({ request, set }) => {
     if (auth.isConfigured()) return;
 
@@ -49,26 +63,18 @@ export function hostMiddleware(
       );
     }
 
-    // A bare Host match is not enough once a browser sends Origin on a
-    // write. curl, MCP and CLI clients usually send no Origin.
-    const method = request.method.toUpperCase();
-    if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS") {
-      const origin = request.headers.get("origin");
-      if (origin) {
-        let originHost: string | undefined;
-        try {
-          originHost = hostnameOf(new URL(origin).host);
-        } catch {
-          originHost = undefined;
-        }
-        if (!originHost || !allowed.has(originHost)) {
-          set.status = 403;
-          return new Response(
-            JSON.stringify({ error: "invalid origin", code: "ORIGIN_NOT_ALLOWED" }),
-            { status: 403, headers: { "content-type": "application/json" } },
-          );
-        }
-      }
+    // Validate Origin whenever it's sent, not just on writes: with no
+    // password configured, a GET also returns real content, and a page
+    // on an untrusted origin can rebind its own hostname to reach us
+    // same-origin, then issue a cross-origin read with an attacker Origin
+    // header. curl, MCP and CLI clients usually send no Origin at all.
+    const origin = request.headers.get("origin");
+    if (origin && !isAllowedOriginHost(origin, allowed)) {
+      set.status = 403;
+      return new Response(
+        JSON.stringify({ error: "invalid origin", code: "ORIGIN_NOT_ALLOWED" }),
+        { status: 403, headers: { "content-type": "application/json" } },
+      );
     }
   });
 }
