@@ -165,7 +165,9 @@ curl -fsSL https://raw.githubusercontent.com/mi4uu/brain.md/main/install.sh | ba
 powershell -c "irm https://raw.githubusercontent.com/mi4uu/brain.md/main/install.ps1 | iex"
 ```
 
-The script picks the right asset for your OS and CPU, writes it to
+The script picks the right asset for your OS and CPU, downloads it
+together with the release's `SHA256SUMS`, verifies the checksum
+matches before installing anything, writes the binary to
 `~/.local/bin/brain` (or `%USERPROFILE%\.brain.md\bin\brain.exe`),
 chmod's it, and verifies it boots. Pin a version with
 `BRAIN_VERSION=v0.1.0`, change the install dir with `BRAIN_INSTALL=…`.
@@ -173,8 +175,9 @@ chmod's it, and verifies it boots. Pin a version with
 ### Option B — download the binary manually
 
 Every release ships a **single-file executable** per platform with
-the web UI embedded inside it. No Bun runtime, no Node.js, no
-`git clone`, no `bun install` — just download, mark executable, run.
+the web UI embedded inside it, plus a `SHA256SUMS` file to verify them
+against. No Bun runtime, no Node.js, no `git clone`, no `bun install`
+— just download, mark executable, run.
 
 Grab the file for your machine from the latest release:
 👉 **[github.com/mi4uu/brain.md/releases/latest](https://github.com/mi4uu/brain.md/releases/latest)**

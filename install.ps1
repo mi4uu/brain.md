@@ -27,18 +27,21 @@ switch ($env:PROCESSOR_ARCHITECTURE) {
 }
 
 $Asset = "brain-md-windows-$Arch.exe"
-$Url = if ($Version -eq "latest") {
-  "https://github.com/$Repo/releases/latest/download/$Asset"
+$ReleaseBase = if ($Version -eq "latest") {
+  "https://github.com/$Repo/releases/latest/download"
 } else {
-  "https://github.com/$Repo/releases/download/$Version/$Asset"
+  "https://github.com/$Repo/releases/download/$Version"
 }
+$Url     = "$ReleaseBase/$Asset"
+$SumsUrl = "$ReleaseBase/SHA256SUMS"
 
 # ---------- download ----------
 if (-not (Test-Path $InstallDir)) {
   New-Item -ItemType Directory -Path $InstallDir | Out-Null
 }
-$Target = Join-Path $InstallDir $BinName
-$Tmp    = "$Target.tmp"
+$Target  = Join-Path $InstallDir $BinName
+$Tmp     = "$Target.tmp"
+$SumsTmp = "$Target.sha256sums.tmp"
 
 Write-Host "→ downloading $Asset ($Version)" -ForegroundColor White
 Write-Host "  url: $Url"
@@ -46,6 +49,26 @@ try {
   Invoke-WebRequest -Uri $Url -OutFile $Tmp -UseBasicParsing
 } catch {
   throw "download failed. Check that release '$Version' exists at https://github.com/$Repo/releases"
+}
+
+Write-Host "→ verifying checksum" -ForegroundColor White
+try {
+  Invoke-WebRequest -Uri $SumsUrl -OutFile $SumsTmp -UseBasicParsing
+} catch {
+  Remove-Item $Tmp -Force -ErrorAction SilentlyContinue
+  throw "could not download SHA256SUMS from $SumsUrl. Refusing to install an unverified binary."
+}
+$SumsLine = Get-Content $SumsTmp | Where-Object { $_ -match "\*?$([regex]::Escape($Asset))$" } | Select-Object -First 1
+Remove-Item $SumsTmp -Force -ErrorAction SilentlyContinue
+if (-not $SumsLine) {
+  Remove-Item $Tmp -Force -ErrorAction SilentlyContinue
+  throw "no checksum entry for $Asset in SHA256SUMS. Refusing to install an unverified binary."
+}
+$Expected = ($SumsLine -split '\s+')[0]
+$Actual = (Get-FileHash -Path $Tmp -Algorithm SHA256).Hash.ToLower()
+if ($Expected.ToLower() -ne $Actual) {
+  Remove-Item $Tmp -Force -ErrorAction SilentlyContinue
+  throw "checksum mismatch for $Asset (expected $Expected, got $Actual). The download may be corrupt or tampered with."
 }
 
 if (Test-Path $Target) { Remove-Item $Target -Force }
