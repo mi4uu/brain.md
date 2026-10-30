@@ -58,6 +58,11 @@ export function createApp(opts: AppOptions = {}) {
     debounceMs: opts.gitDebounceMs ?? config.gitDebounceMs,
   });
   vault.onMutation((e) => autocommit.notify(e.path));
+  // Centralised index maintenance (V-concurrency #18): every vault mutation
+  // — REST writes, MCP write_note/append_note, trash restore, git restore
+  // via vault.notifyWrite — flows through this one subscription instead of
+  // each caller remembering to call index.updatePath/remove itself.
+  index.start();
 
   // RAG pipeline — store dim is taken from the currently selected provider's
   // dim. SettingsStore.load() will overwrite this cfg with the persisted one;

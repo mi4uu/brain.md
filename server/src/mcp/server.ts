@@ -402,16 +402,10 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
     },
     async ({ path, content }) => {
       await checkWrite(vault, principal, path);
-      let body = "";
-      try {
-        const cur = await vault.readNote(path);
-        body = cur.content;
-      } catch {
-        body = "";
-      }
-      const joiner = body === "" ? "" : body.endsWith("\n\n") ? "" : body.endsWith("\n") ? "\n" : "\n\n";
-      const next = body + joiner + content + (content.endsWith("\n") ? "" : "\n");
-      const r = await vault.writeNote(path, next);
+      // V-concurrency #10: appendNote reads+writes under a per-path lock,
+      // so two concurrent appends can't both read the same body and have
+      // the second write clobber the first's addition.
+      const r = await vault.appendNote(path, content);
       logCall("append_note", { path, bytes: content.length }, true);
       // Metadata only — a write-only folder (read:false, write:true) must
       // not leak the pre-existing content this call just appended to.

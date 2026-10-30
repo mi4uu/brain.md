@@ -55,6 +55,12 @@ describe("git API", () => {
     expect(restore.status).toBe(200);
     const note = await (await h.app.handle(new Request("http://localhost/api/note/a.md"))).json() as { content: string };
     expect(note.content.trim()).toBe("first");
+    // V-concurrency #18: git restore writes straight to the working tree,
+    // bypassing Vault's own write methods — the full-text index must still
+    // pick it up (via vault.notifyWrite) instead of serving the pre-restore
+    // content forever.
+    const indexed = h.index.get("a.md");
+    expect(indexed?.body.trim()).toBe("first");
   });
 
   test("restore refuses a traversal path", async () => {

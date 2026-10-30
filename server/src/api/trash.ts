@@ -33,10 +33,9 @@ export function trashRoutes(vault: Vault, index: VaultIndex) {
         try {
           const original = originalPathOf(body.trashPath);
           if (original) await requireWrite(vault, request, original);
+          // index update flows from vault.restoreFromTrash's own
+          // notify("write", ...) via VaultIndex.start() (see app.ts).
           const restored = await vault.restoreFromTrash(body.trashPath);
-          if (restored.endsWith(".md")) {
-            await index.updatePath(restored);
-          }
           return { ok: true, path: restored };
         } catch (e) {
           const { status, body: err } = asError(e);

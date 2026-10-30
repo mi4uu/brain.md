@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile, rename, unlink, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { Vault } from "../vault/vault";
+import type { Vault, MutationEvent } from "../vault/vault";
 import { basenameNoExt } from "../vault/paths";
 import { parseNote } from "./parse";
 
@@ -34,8 +34,69 @@ const INDEX_REL = ".brain/index.json";
 
 export class VaultIndex {
   private data: IndexData = { version: 1, entries: {} };
+  private unsubscribe?: () => void;
+  private persistTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly vault: Vault) {}
+
+  // Centralises index maintenance on the same vault.onMutation feed RAG
+  // already uses, so every mutation path (REST, MCP write_note/append_note,
+  // trash restore, git restore via vault.notifyWrite) updates the index in
+  // one place instead of each caller remembering to.
+  start(): void {
+    if (this.unsubscribe) return;
+    // Returning the promise (not firing it with `void`) lets Vault.notify()
+    // await it, so a write's HTTP/MCP response only lands once the index
+    // actually reflects it — RagPipeline.start() deliberately doesn't do
+    // this, so slow embedding never blocks a note write.
+    this.unsubscribe = this.vault.onMutation((e) => this.handleEvent(e));
+  }
+
+  stop(): void {
+    this.unsubscribe?.();
+    this.unsubscribe = undefined;
+  }
+
+  private async handleEvent(e: MutationEvent): Promise<void> {
+    try {
+      switch (e.kind) {
+        case "write":
+          if (e.path.endsWith(".md")) await this.updatePath(e.path);
+          break;
+        case "delete":
+          if (e.path.endsWith(".md")) {
+            this.remove(e.path);
+            this.schedulePersist();
+          }
+          break;
+        case "rename":
+          if (e.path.endsWith(".md")) {
+            this.rename(e.extra ?? e.path, e.path);
+            this.schedulePersist();
+          }
+          break;
+        case "folder-delete":
+          for (const p of e.paths ?? []) this.remove(p);
+          this.schedulePersist();
+          break;
+        default:
+          return;
+      }
+    } catch (err) {
+      console.warn(
+        `[index] ${e.kind} ${e.path} failed:`,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
+  private schedulePersist(): void {
+    if (this.persistTimer) clearTimeout(this.persistTimer);
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      void this.persist();
+    }, 1500);
+  }
 
   snapshot(): IndexData {
     return this.data;
@@ -162,6 +223,8 @@ export class VaultIndex {
   async updatePath(path: string): Promise<void> {
     const e = await this.buildEntry(path);
     if (e) this.data.entries[path] = e;
+    else delete this.data.entries[path];
+    this.schedulePersist();
   }
 
   remove(path: string): void {
@@ -173,6 +236,31 @@ export class VaultIndex {
     if (!e) return;
     delete this.data.entries[from];
     this.data.entries[to] = { ...e, path: to, basename: basenameNoExt(to), basenameLower: basenameNoExt(to).toLowerCase() };
+  }
+
+  // V-concurrency: the initial build is persisted but nothing after it was,
+  // so a restart kept trusting a snapshot that could be arbitrarily stale.
+  // Reconciles the loaded snapshot against what's actually on disk: entries
+  // for notes that no longer exist are dropped, entries for notes whose
+  // mtime moved (edited while the server was down, or never indexed) are
+  // rebuilt.
+  async reconcile(): Promise<void> {
+    const notes = await this.vault.listAllNotes();
+    const onDisk = new Set(notes);
+    for (const path of Object.keys(this.data.entries)) {
+      if (!onDisk.has(path)) delete this.data.entries[path];
+    }
+    await Promise.all(
+      notes.map(async (path) => {
+        const existing = this.data.entries[path];
+        if (existing) {
+          const s = await this.vault.stat(path);
+          if (s.exists && s.mtime === existing.mtime) return;
+        }
+        const e = await this.buildEntry(path);
+        if (e) this.data.entries[path] = e;
+      }),
+    );
   }
 
   private async buildEntry(path: string): Promise<IndexEntry | null> {
@@ -235,8 +323,11 @@ export class VaultIndex {
 
   async loadOrBuild(): Promise<void> {
     const ok = await this.load();
-    if (ok) return;
-    await this.buildAll();
+    if (!ok) {
+      await this.buildAll();
+    } else {
+      await this.reconcile();
+    }
     await this.persist();
   }
 }

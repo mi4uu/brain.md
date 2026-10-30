@@ -135,6 +135,65 @@ describe("VaultIndex", () => {
     expect(idx.get("z.md")?.title).toBe("Z");
   });
 
+  // V-concurrency #17: the initial build was persisted but nothing after
+  // it was, so a restart trusted an arbitrarily stale snapshot.
+  describe("loadOrBuild reconciles a stale persisted snapshot", () => {
+    test("picks up edits made while the server was down", async () => {
+      await vault.writeNote("edited.md", "# Before restart");
+      await idx.loadOrBuild(); // persists the initial snapshot
+
+      await vault.writeNote("edited.md", "# After restart");
+      const idx2 = new VaultIndex(vault);
+      await idx2.loadOrBuild();
+      expect(idx2.get("edited.md")?.title).toBe("After restart");
+    });
+
+    test("drops entries for notes deleted while the server was down", async () => {
+      await vault.writeNote("gone.md", "# Will be deleted");
+      await idx.loadOrBuild();
+
+      await vault.deleteNote("gone.md");
+      const idx2 = new VaultIndex(vault);
+      await idx2.loadOrBuild();
+      expect(idx2.get("gone.md")).toBeUndefined();
+    });
+
+    test("picks up notes created while the server was down", async () => {
+      await idx.loadOrBuild();
+      await vault.writeNote("new-while-down.md", "# New");
+      const idx2 = new VaultIndex(vault);
+      await idx2.loadOrBuild();
+      expect(idx2.get("new-while-down.md")?.title).toBe("New");
+    });
+  });
+
+  // V-concurrency #18: centralised index maintenance via vault.onMutation
+  // instead of every caller remembering to call updatePath/remove.
+  describe("start() centralises index updates", () => {
+    test("a plain vault write updates the index without an explicit updatePath call", async () => {
+      idx.start();
+      await vault.writeNote("auto.md", "# Auto");
+      expect(idx.get("auto.md")?.title).toBe("Auto");
+    });
+
+    test("a vault delete removes the entry", async () => {
+      idx.start();
+      await vault.writeNote("auto2.md", "# Auto2");
+      expect(idx.get("auto2.md")).toBeDefined();
+      await vault.deleteNote("auto2.md");
+      expect(idx.get("auto2.md")).toBeUndefined();
+    });
+
+    test("deleting a folder removes every note under it, not just the folder path", async () => {
+      idx.start();
+      await vault.writeNote("sub/one.md", "# One");
+      await vault.writeNote("sub/two.md", "# Two");
+      await vault.deleteFolder("sub");
+      expect(idx.get("sub/one.md")).toBeUndefined();
+      expect(idx.get("sub/two.md")).toBeUndefined();
+    });
+  });
+
   test("tags index", async () => {
     await vault.writeNote("a.md", "#foo #bar");
     await vault.writeNote("b.md", "#foo");

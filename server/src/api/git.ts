@@ -106,6 +106,11 @@ export function gitRoutes(
           assertMarkdown(body.path);
           await requireWrite(vault, request, body.path);
           await repo.restore(body.path, body.sha);
+          // `repo.restore` writes straight to the working tree via `git
+          // checkout`, bypassing Vault's own write methods — without this,
+          // the index and RAG never learn the file changed (V-concurrency
+          // #18). Route it through the same notify() everything else uses.
+          await vault.notifyWrite(body.path);
           const sha = await repo.commitAll(
             `restore ${body.path} → ${body.sha.slice(0, 7)}`,
           );

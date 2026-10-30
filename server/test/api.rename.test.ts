@@ -81,4 +81,41 @@ describe("rename + V5 inbound patch", () => {
     expect(res.status).toBe(200);
     expect(await getContent("/api/note/sub/root.md")).toBe("x");
   });
+
+  // V-concurrency #21: moving a note across folders must rewrite
+  // path-qualified wikilinks ([[work/A]]) to the new path, not just bare
+  // basename links — and must not bail out early just because the
+  // basename happens to be unchanged.
+  test("folder move rewrites path-qualified wikilinks", async () => {
+    await put("/api/note/work/A.md", "content");
+    await put("/api/note/linker.md", "see [[work/A]] and [[work/A#Section|alias]]");
+
+    const res = await rename("work/A.md", "archive/A.md");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { patchedFiles: string[]; totalReplacements: number };
+    expect(body.patchedFiles).toEqual(["linker.md"]);
+    expect(body.totalReplacements).toBe(2);
+    expect(await getContent("/api/note/linker.md")).toBe(
+      "see [[archive/A]] and [[archive/A#Section|alias]]",
+    );
+  });
+
+  test("folder move with unchanged basename still processes the vault (no early return)", async () => {
+    await put("/api/note/work/A.md", "content");
+    await put("/api/note/other.md", "unrelated [[other-thing]]");
+    const res = await rename("work/A.md", "archive/A.md");
+    expect(res.status).toBe(200);
+    // Nothing to patch in other.md, but the call must still succeed and
+    // leave it untouched rather than throwing or skipping the whole vault.
+    expect(await getContent("/api/note/other.md")).toBe("unrelated [[other-thing]]");
+  });
+
+  test("bare basename link left alone when ambiguous between two notes", async () => {
+    await put("/api/note/work/A.md", "one");
+    await put("/api/note/other/A.md", "two");
+    await put("/api/note/linker.md", "[[A]]");
+    await rename("work/A.md", "work/Renamed.md");
+    // "A" also refers to other/A.md — a bare link can't be safely rewritten.
+    expect(await getContent("/api/note/linker.md")).toBe("[[A]]");
+  });
 });
