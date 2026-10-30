@@ -905,6 +905,11 @@ export function App() {
           <span className="brand-name">brain.md</span>
         </a>
         <span className="title">{path ? path.replace(/\.md$/, "") : ""}</span>
+        {gitStatus?.enabled ? (
+          <div className="topbar-center">
+            <GitStatusChip status={gitStatus} />
+          </div>
+        ) : null}
         <span className="saved">
           {path
             ? saveStatus === "saved"
@@ -968,11 +973,6 @@ export function App() {
         >
           <HeartFilledIcon />
         </a>
-        {gitStatus?.enabled ? (
-          <div className="topbar-center">
-            <GitStatusChip status={gitStatus} />
-          </div>
-        ) : null}
       </header>
 
       <aside className={clsx("sidebar", drawerOpen && "open")}>

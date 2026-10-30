@@ -22,25 +22,20 @@
   top: 0;
   z-index: 10;
 }
+/* Used to be `position: absolute; left: 50%` to dead-center the chip on
+   the topbar's own width. That width includes the icon row, which is
+   itself pushed flush right by .title's `margin-right: auto` and often
+   covers more than half the bar — so any viewport-relative center point
+   could land on top of it (reported: it sat on "saved" and the search
+   icon at 1280px). A flex item in normal flow can't overlap its
+   siblings, so render it where it sits in markup (right after the title,
+   before "saved") instead of pulling it out of flow to chase a center
+   point that depends on title length, sidebar width and icon count. */
 .topbar-center {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  pointer-events: auto;
-  z-index: 1;
+  flex-shrink: 0;
 }
 @media (max-width: 720px) {
   .topbar-center { display: none; }
-}
-/* Above the sidebar breakpoint the topbar still spans both grid columns,
-   so centering on 50% of its own width centers on the whole window, not
-   on the title/saved/icons cluster to the right of the fixed 260px
-   sidebar — it used to land on top of them. Shift by half that width. */
-@media (min-width: 841px) {
-  .topbar-center {
-    left: calc(50% + 130px);
-  }
 }
 /* V62: on narrow viewports the topbar action row overflows past the
    right edge — allow horizontal scroll for the actions, but keep the
