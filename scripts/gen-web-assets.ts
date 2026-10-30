@@ -22,6 +22,7 @@ const OUT = join(REPO_ROOT, "server", "src", "web", "assets.ts");
 
 function walk(dir: string, acc: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
+    if (name.startsWith(".")) continue; // skip dotfiles, e.g. macOS .DS_Store
     const abs = join(dir, name);
     const s = statSync(abs);
     if (s.isDirectory()) walk(abs, acc);
