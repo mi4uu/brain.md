@@ -102,7 +102,7 @@ export function createApp(opts: AppOptions = {}) {
     .use(folderRoutes(vault))
     .use(mediaRoutes(vault))
     .use(searchRoutes(vault, index))
-    .use(resolveRoutes(index))
+    .use(resolveRoutes(vault, index))
     .use(backlinkRoutes(vault, index))
     .use(renameRoutes(vault, index))
     .use(trashRoutes(vault, index))

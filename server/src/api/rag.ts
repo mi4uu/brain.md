@@ -23,6 +23,7 @@ import {
   type RagDeps,
 } from "../rag/queries";
 import { decodeWildcard } from "./wildcard";
+import { readFilterFor } from "./perm-guard";
 
 // V47 / V49 / V51: RAG HTTP surface.
 // - GET  /api/similar?q=&k=        T105
@@ -60,7 +61,7 @@ export function ragRoutes(
   return new Elysia()
     .get(
       "/api/similar",
-      async ({ query, set }) => {
+      async ({ query, set, request }) => {
         const q = (query.q ?? "").toString();
         const k = Number(query.k ?? 5);
         if (q.trim() === "") {
@@ -77,8 +78,12 @@ export function ragRoutes(
           return { error: "RAG disabled in settings", code: "RAG_DISABLED" };
         }
         try {
+          const allowed = await readFilterFor(vault, request);
           const vec = (await pipeline.embed([q]))[0]!;
-          const hits = await pipeline.store.search(vec, k);
+          // Over-fetch so enough permitted hits survive the folder-perm
+          // filter below — the store has no notion of permissions itself.
+          const raw = await pipeline.store.search(vec, k + 50);
+          const hits = raw.filter((h) => allowed(h.path)).slice(0, k);
           return hits;
         } catch (e) {
           set.status = 500;
