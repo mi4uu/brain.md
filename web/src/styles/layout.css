@@ -33,6 +33,15 @@
 @media (max-width: 720px) {
   .topbar-center { display: none; }
 }
+/* Above the sidebar breakpoint the topbar still spans both grid columns,
+   so centering on 50% of its own width centers on the whole window, not
+   on the title/saved/icons cluster to the right of the fixed 260px
+   sidebar — it used to land on top of them. Shift by half that width. */
+@media (min-width: 841px) {
+  .topbar-center {
+    left: calc(50% + 130px);
+  }
+}
 /* V62: on narrow viewports the topbar action row overflows past the
    right edge — allow horizontal scroll for the actions, but keep the
    left identity zone (hamburger + brand) pinned via `position: sticky`
@@ -126,6 +135,8 @@
   font-size: var(--text-xs);
   color: var(--text-3);
   margin-right: var(--space-2);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .sidebar {
