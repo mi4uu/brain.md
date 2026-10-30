@@ -1,13 +1,14 @@
 import {
   mkdir,
+  open as fsOpen,
   readdir,
   readFile,
   rename,
   rm,
   stat,
   unlink,
-  writeFile,
 } from "node:fs/promises";
+import { randomBytes, createHash } from "node:crypto";
 import { dirname, join, posix, resolve } from "node:path";
 import {
   assertMarkdown,
@@ -34,13 +35,49 @@ export interface MutationEvent {
   kind: MutationKind;
   path: string;
   extra?: string;
+  // folder-delete: every note path (relative, pre-trash) that was under the
+  // deleted folder, so index/RAG listeners can drop each one individually
+  // instead of only hearing about the folder's own path.
+  paths?: string[];
 }
-export type MutationListener = (event: MutationEvent) => void;
+export type MutationListener = (event: MutationEvent) => void | Promise<void>;
+
+export function sha256Hex(content: string): string {
+  return createHash("sha256").update(content, "utf8").digest("hex");
+}
 
 export class Vault {
   private listeners = new Set<MutationListener>();
+  // Per-path mutation queue (V-concurrency): every write/delete/rename/
+  // restore serialises on the path(s) it touches so concurrent callers
+  // read-modify-write in turn instead of racing each other.
+  private pathLocks = new Map<string, Promise<unknown>>();
 
   constructor(public readonly root: string) {}
+
+  // Acquires the queue slot for every path in `paths` atomically (no await
+  // between reading and replacing each slot), then runs `fn` once all prior
+  // holders of any of those paths have finished. Locks are always taken in
+  // sorted order so two callers locking the same pair of paths never
+  // deadlock on each other.
+  protected async withPathLock<T>(paths: string[], fn: () => Promise<T>): Promise<T> {
+    const sorted = Array.from(new Set(paths.map((p) => normalizeRel(p)))).sort();
+    let release!: () => void;
+    const gate = new Promise<void>((res) => {
+      release = res;
+    });
+    const waits: Array<Promise<unknown>> = [];
+    for (const p of sorted) {
+      waits.push(this.pathLocks.get(p) ?? Promise.resolve());
+      this.pathLocks.set(p, gate);
+    }
+    await Promise.all(waits.map((w) => w.catch(() => {})));
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  }
 
   onMutation(l: MutationListener): () => void {
     this.listeners.add(l);
@@ -49,14 +86,30 @@ export class Vault {
     };
   }
 
-  private notify(kind: MutationKind, path: string, extra?: string): void {
+  // Awaits any listener that returns a promise (VaultIndex.start() does,
+  // so a write's response reflects the index update that just happened)
+  // while listeners that intentionally fire-and-forget (RagPipeline.start()
+  // doesn't block a note write on embedding) just run in the background.
+  // A listener throwing or rejecting never breaks the mutation itself.
+  private async notify(kind: MutationKind, path: string, extra?: string, paths?: string[]): Promise<void> {
+    const event: MutationEvent = { kind, path, extra, paths };
+    const pending: Array<Promise<unknown>> = [];
     for (const l of this.listeners) {
       try {
-        l({ kind, path, extra });
+        const r = l(event);
+        if (r && typeof (r as Promise<void>).then === "function") pending.push(r as Promise<void>);
       } catch {
         // ignore listener errors
       }
     }
+    if (pending.length > 0) await Promise.allSettled(pending);
+  }
+
+  // Git restore (and anything else that writes straight to the filesystem
+  // outside the Vault's own methods) uses this to funnel into the same
+  // single notification point index/RAG already subscribe to.
+  async notifyWrite(rel: string): Promise<void> {
+    await this.notify("write", normalizeRel(rel));
   }
 
   async ensureRoot(): Promise<void> {
@@ -85,30 +138,107 @@ export class Vault {
         readFile(abs, "utf8"),
         stat(abs),
       ]);
-      return { path: normalizeRel(rel), content, mtime: s.mtimeMs };
+      return { path: normalizeRel(rel), content, mtime: s.mtimeMs, revision: sha256Hex(content) };
     } catch (e) {
       throw new VaultError(`note not found: ${rel}`, "NOT_FOUND");
     }
   }
 
   async writeNote(rel: string, content: string): Promise<NoteData> {
+    const r = await this.writeNoteChecked(rel, content);
+    if (!r.ok) {
+      // writeNote() (no baseRevision) never conflicts — writeNoteChecked
+      // only returns ok:false when a baseRevision mismatched.
+      throw new VaultError("unexpected conflict", "IO");
+    }
+    return r.data;
+  }
+
+  // V-concurrency: optimistic concurrency for note writes. `baseRevision`,
+  // when given, must match the sha256 of the content currently on disk or
+  // the write is refused — the caller gets the current revision back
+  // instead. Absent on-disk content (creating a new note) never conflicts
+  // by itself; it only conflicts if the file has concurrently come into
+  // existence with different content than the caller's baseRevision reflects.
+  async writeNoteChecked(
+    rel: string,
+    content: string,
+    baseRevision?: string,
+  ): Promise<{ ok: true; data: NoteData } | { ok: false; revision: string | null }> {
     assertMarkdown(rel);
     assertSafePath(rel);
     const abs = this.abs(rel);
     await assertRealContainment(this.root, abs);
-    await mkdir(dirname(abs), { recursive: true });
-    await atomicWrite(abs, content);
-    const s = await stat(abs);
     const path = normalizeRel(rel);
-    this.notify("write", path);
-    return { path, content, mtime: s.mtimeMs };
+    return this.withPathLock([path], async () => {
+      const existing = await safeReadFile(abs);
+      const currentRevision = existing === null ? null : sha256Hex(existing);
+      if (baseRevision !== undefined && currentRevision !== null && currentRevision !== baseRevision) {
+        return { ok: false, revision: currentRevision };
+      }
+      await mkdir(dirname(abs), { recursive: true });
+      await atomicWrite(abs, content);
+      const s = await stat(abs);
+      await this.notify("write", path);
+      return { ok: true, data: { path, content, mtime: s.mtimeMs, revision: sha256Hex(content) } };
+    });
+  }
+
+  // Read-modify-write under the same per-path lock as writeNote, so two
+  // concurrent appends to the same note can't both read the old body and
+  // overwrite each other's addition.
+  async appendNote(rel: string, text: string): Promise<NoteData> {
+    assertMarkdown(rel);
+    assertSafePath(rel);
+    const abs = this.abs(rel);
+    await assertRealContainment(this.root, abs);
+    const path = normalizeRel(rel);
+    return this.withPathLock([path], async () => {
+      const existing = await safeReadFile(abs);
+      const body = existing ?? "";
+      const joiner = body === "" ? "" : body.endsWith("\n\n") ? "" : body.endsWith("\n") ? "\n" : "\n\n";
+      const next = body + joiner + text + (text.endsWith("\n") ? "" : "\n");
+      await mkdir(dirname(abs), { recursive: true });
+      await atomicWrite(abs, next);
+      const s = await stat(abs);
+      await this.notify("write", path);
+      return { path, content: next, mtime: s.mtimeMs, revision: sha256Hex(next) };
+    });
+  }
+
+  // General-purpose locked read-modify-write, used by backlink rewriting on
+  // rename (index/rename.ts) so two renames patching the same note can't
+  // both read the pre-patch body and have one's edit overwrite the other's.
+  // `fn` returns the new content, or null to leave the note untouched.
+  async mutateNote(
+    rel: string,
+    fn: (current: string | null) => string | null | Promise<string | null>,
+  ): Promise<NoteData | null> {
+    assertMarkdown(rel);
+    assertSafePath(rel);
+    const abs = this.abs(rel);
+    await assertRealContainment(this.root, abs);
+    const path = normalizeRel(rel);
+    return this.withPathLock([path], async () => {
+      const existing = await safeReadFile(abs);
+      const next = await fn(existing);
+      if (next === null) return null;
+      await mkdir(dirname(abs), { recursive: true });
+      await atomicWrite(abs, next);
+      const s = await stat(abs);
+      await this.notify("write", path);
+      return { path, content: next, mtime: s.mtimeMs, revision: sha256Hex(next) };
+    });
   }
 
   async deleteNote(rel: string): Promise<string> {
     assertMarkdown(rel);
-    const trashed = await this.trashPath(rel, false);
-    this.notify("delete", normalizeRel(rel), trashed);
-    return trashed;
+    const path = normalizeRel(rel);
+    return this.withPathLock([path], async () => {
+      const trashed = await this.trashPath(rel, false);
+      await this.notify("delete", path, trashed);
+      return trashed;
+    });
   }
 
   async renameNote(from: string, to: string): Promise<void> {
@@ -116,17 +246,24 @@ export class Vault {
     assertMarkdown(to);
     // `from` may be a pathological pre-V42 file; only enforce on the target.
     assertSafePath(to);
-    const fromAbs = this.abs(from);
-    const toAbs = this.abs(to);
-    await assertRealContainment(this.root, fromAbs);
-    await assertRealContainment(this.root, toAbs);
-    const toStat = await safeStat(toAbs);
-    if (toStat?.isFile()) {
-      throw new VaultError(`target exists: ${to}`, "EXISTS");
-    }
-    await mkdir(dirname(toAbs), { recursive: true });
-    await rename(fromAbs, toAbs);
-    this.notify("rename", normalizeRel(to), normalizeRel(from));
+    const fromPath = normalizeRel(from);
+    const toPath = normalizeRel(to);
+    await this.withPathLock([fromPath, toPath], async () => {
+      const fromAbs = this.abs(fromPath);
+      const toAbs = this.abs(toPath);
+      await assertRealContainment(this.root, fromAbs);
+      await assertRealContainment(this.root, toAbs);
+      // Existence check + rename happen under the same lock on both paths,
+      // so two concurrent renames onto the same target can't both pass the
+      // check and have the second clobber the first's file.
+      const toStat = await safeStat(toAbs);
+      if (toStat?.isFile()) {
+        throw new VaultError(`target exists: ${to}`, "EXISTS");
+      }
+      await mkdir(dirname(toAbs), { recursive: true });
+      await rename(fromAbs, toAbs);
+      await this.notify("rename", toPath, fromPath);
+    });
   }
 
   async mkdirFolder(rel: string): Promise<void> {
@@ -136,7 +273,7 @@ export class Vault {
     const abs = this.abs(norm);
     await assertRealContainment(this.root, abs);
     await mkdir(abs, { recursive: true });
-    this.notify("folder-create", norm);
+    await this.notify("folder-create", norm);
   }
 
   async deleteFolder(rel: string): Promise<string> {
@@ -144,9 +281,17 @@ export class Vault {
     if (norm === "" || norm.startsWith(BRAIN_REL)) {
       throw new VaultError("refuse delete root/brain", "INVALID_PATH");
     }
-    const trashed = await this.trashPath(norm, true);
-    this.notify("folder-delete", norm, trashed);
-    return trashed;
+    return this.withPathLock([norm], async () => {
+      // Snapshot the notes under this folder before trashing it — once
+      // trashed they live under .brain/trash/<stamp>/..., so this is the
+      // only chance to tell index/RAG listeners which paths disappeared.
+      const { notes: allNotes } = await this.listTree();
+      const prefix = `${norm}/`;
+      const removedNotes = allNotes.filter((p) => p === norm || p.startsWith(prefix));
+      const trashed = await this.trashPath(norm, true);
+      await this.notify("folder-delete", norm, trashed, removedNotes);
+      return trashed;
+    });
   }
 
   async listTree(): Promise<TreeNode> {
@@ -181,7 +326,7 @@ export class Vault {
     await mkdir(dirname(abs), { recursive: true });
     const buf = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
     await atomicWriteBytes(abs, buf);
-    this.notify("media", rel);
+    await this.notify("media", rel);
     return rel;
   }
 
@@ -211,6 +356,10 @@ export class Vault {
     const slash = tail.indexOf("/");
     if (slash < 0) throw new VaultError("trash path missing stamp", "INVALID_PATH");
     const original = tail.slice(slash + 1);
+    return this.withPathLock([norm, original], () => this.restoreFromTrashLocked(norm, original));
+  }
+
+  private async restoreFromTrashLocked(norm: string, original: string): Promise<string> {
     const srcAbs = this.abs(norm);
     const destAbs = this.abs(original);
     await assertRealContainment(this.root, srcAbs);
@@ -219,7 +368,7 @@ export class Vault {
     if (destStat) throw new VaultError(`target exists: ${original}`, "EXISTS");
     await mkdir(dirname(destAbs), { recursive: true });
     await rename(srcAbs, destAbs);
-    this.notify("write", original, "restore");
+    await this.notify("write", original, "restore");
     return original;
   }
 
@@ -298,9 +447,24 @@ async function walk(
   }
 }
 
+// `${abs}.tmp-${pid}-${Date.now()}` collided whenever two writes to the same
+// destination landed in the same millisecond: both opened the same tmp
+// path, so one write's content could be clobbered by the other's, and the
+// renamer that lost the race got ENOENT. A random suffix plus exclusive
+// ("wx") creation makes each write's tmp file unique and guarantees nobody
+// else can be holding it.
+function tmpNameFor(abs: string): string {
+  return `${abs}.tmp-${process.pid}-${randomBytes(6).toString("hex")}`;
+}
+
 async function atomicWrite(abs: string, content: string): Promise<void> {
-  const tmp = `${abs}.tmp-${process.pid}-${Date.now()}`;
-  await writeFile(tmp, content, "utf8");
+  const tmp = tmpNameFor(abs);
+  const handle = await fsOpen(tmp, "wx");
+  try {
+    await handle.writeFile(content, "utf8");
+  } finally {
+    await handle.close();
+  }
   try {
     await rename(tmp, abs);
   } catch (e) {
@@ -310,13 +474,26 @@ async function atomicWrite(abs: string, content: string): Promise<void> {
 }
 
 async function atomicWriteBytes(abs: string, bytes: Uint8Array): Promise<void> {
-  const tmp = `${abs}.tmp-${process.pid}-${Date.now()}`;
-  await writeFile(tmp, bytes);
+  const tmp = tmpNameFor(abs);
+  const handle = await fsOpen(tmp, "wx");
+  try {
+    await handle.writeFile(bytes);
+  } finally {
+    await handle.close();
+  }
   try {
     await rename(tmp, abs);
   } catch (e) {
     await unlink(tmp).catch(() => {});
     throw e;
+  }
+}
+
+async function safeReadFile(abs: string): Promise<string | null> {
+  try {
+    return await readFile(abs, "utf8");
+  } catch {
+    return null;
   }
 }
 

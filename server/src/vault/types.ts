@@ -2,6 +2,9 @@ export interface NoteData {
   path: string;
   content: string;
   mtime: number;
+  // sha256 hex of `content` as read/written — used for optimistic
+  // concurrency on writes (see Vault.writeNoteChecked).
+  revision: string;
 }
 
 export interface TreeNode {

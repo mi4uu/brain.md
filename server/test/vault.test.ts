@@ -159,6 +159,94 @@ describe("mkdir folder", () => {
   });
 });
 
+describe("V-concurrency: revision / optimistic concurrency (#9)", () => {
+  test("writeNoteChecked without baseRevision never conflicts", async () => {
+    const r = await vault.writeNoteChecked("rev.md", "hello");
+    expect(r.ok).toBe(true);
+  });
+
+  test("writeNoteChecked with matching baseRevision succeeds", async () => {
+    const first = await vault.writeNoteChecked("rev2.md", "v1");
+    expect(first.ok).toBe(true);
+    if (!first.ok) throw new Error("unreachable");
+    const second = await vault.writeNoteChecked("rev2.md", "v2", first.data.revision);
+    expect(second.ok).toBe(true);
+  });
+
+  test("writeNoteChecked with stale baseRevision reports the conflict without writing", async () => {
+    await vault.writeNote("rev3.md", "v1");
+    const stale = await vault.writeNoteChecked("rev3.md", "v2", "not-the-real-hash");
+    expect(stale.ok).toBe(false);
+    const current = await vault.readNote("rev3.md");
+    expect(current.content).toBe("v1");
+  });
+
+  test("baseRevision against an absent file is not a conflict", async () => {
+    const r = await vault.writeNoteChecked("brand-new.md", "x", "irrelevant-hash");
+    expect(r.ok).toBe(true);
+  });
+});
+
+describe("V-concurrency: per-path locking (#10, #12)", () => {
+  test("concurrent appends to the same note don't lose either paragraph", async () => {
+    await vault.writeNote("append.md", "base");
+    await Promise.all([
+      vault.appendNote("append.md", "from A"),
+      vault.appendNote("append.md", "from B"),
+    ]);
+    const final = await vault.readNote("append.md");
+    expect(final.content).toContain("from A");
+    expect(final.content).toContain("from B");
+  });
+
+  test("concurrent renames onto the same target: one wins, the other is refused, nothing is lost", async () => {
+    await vault.writeNote("src1.md", "one");
+    await vault.writeNote("src2.md", "two");
+    const results = await Promise.allSettled([
+      vault.renameNote("src1.md", "dest.md"),
+      vault.renameNote("src2.md", "dest.md"),
+    ]);
+    const fulfilled = results.filter((r) => r.status === "fulfilled").length;
+    const rejected = results.filter((r) => r.status === "rejected").length;
+    expect(fulfilled).toBe(1);
+    expect(rejected).toBe(1);
+    // The rename that lost the race never ran (it threw EXISTS under the
+    // lock before touching the filesystem), so its source file is still
+    // sitting right where it was — never silently dropped.
+    const destContent = await vault.readNote("dest.md");
+    expect(["one", "two"]).toContain(destContent.content);
+    const loserPath = destContent.content === "one" ? "src2.md" : "src1.md";
+    const loserContent = await vault.readNote(loserPath);
+    expect(loserContent.content).toBe(destContent.content === "one" ? "two" : "one");
+  });
+
+  test("mutateNote serialises concurrent read-modify-writes to the same note", async () => {
+    await vault.writeNote("mutate.md", "[[Old]] and [[Old]]");
+    const [a, b] = await Promise.all([
+      vault.mutateNote("mutate.md", (c) => (c ? c.replace("[[Old]]", "[[A]]") : null)),
+      vault.mutateNote("mutate.md", (c) => (c ? c.replace("[[Old]]", "[[B]]") : null)),
+    ]);
+    expect(a).not.toBeNull();
+    expect(b).not.toBeNull();
+    const final = await vault.readNote("mutate.md");
+    // Each mutation only ever sees the other's completed result, never a
+    // torn read — so both substitutions land, nothing is overwritten.
+    expect(final.content).toBe("[[A]] and [[B]]");
+  });
+});
+
+describe("V-concurrency: atomic write temp files (#11)", () => {
+  test("many concurrent writes to the same path never collide on a shared tmp name", async () => {
+    const writes = Array.from({ length: 20 }, (_, i) => vault.writeNote("hot.md", `v${i}`));
+    const results = await Promise.allSettled(writes);
+    expect(results.every((r) => r.status === "fulfilled")).toBe(true);
+    const final = await vault.readNote("hot.md");
+    expect(final.content.startsWith("v")).toBe(true);
+    const entries = await readdir(dir);
+    expect(entries.some((e) => e.includes(".tmp-"))).toBe(false);
+  });
+});
+
 describe("symlink escape (V52/V67 follow-up)", () => {
   test("readNote refuses a symlinked directory pointing outside the vault", async () => {
     const outside = await mkdtemp(join(tmpdir(), "brain-outside-"));
