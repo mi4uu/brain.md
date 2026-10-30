@@ -1,8 +1,21 @@
 import { Elysia, t } from "elysia";
-import type { SettingsStore } from "../settings/settings";
+import type { SettingsStore, AppSettings } from "../settings/settings";
 import type { Autocommit } from "../git/autocommit";
 import type { RagPipeline } from "../rag/pipeline";
 import { asError } from "./errors";
+
+// The embedder apiKey is a credential, not UI state: it must never leave
+// the server in a GET or PATCH response. Callers get a boolean flag
+// instead and change the key by sending a new one (an empty string
+// clears it); an omitted field leaves the stored key untouched
+// (SettingsStore.mergeRag only overwrites on a string value).
+function redact(s: AppSettings): AppSettings & { rag: { openaiCompat: { apiKeySet: boolean } } } {
+  const { apiKey, ...rest } = s.rag.openaiCompat;
+  return {
+    ...s,
+    rag: { ...s.rag, openaiCompat: { ...rest, apiKeySet: !!apiKey } },
+  } as AppSettings & { rag: { openaiCompat: { apiKeySet: boolean } } };
+}
 
 export function settingsRoutes(
   settings: SettingsStore,
@@ -10,7 +23,7 @@ export function settingsRoutes(
   ragPipeline: RagPipeline,
 ) {
   return new Elysia({ prefix: "/api/settings" })
-    .get("/", () => settings.get())
+    .get("/", () => redact(settings.get()))
     .patch(
       "/",
       async ({ body, set }) => {
@@ -35,7 +48,7 @@ export function settingsRoutes(
               console.warn("[rag] enable failed:", e);
             }
           }
-          return next;
+          return redact(next);
         } catch (e) {
           const { status, body: err } = asError(e);
           set.status = status;

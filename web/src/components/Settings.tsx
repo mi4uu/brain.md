@@ -16,7 +16,13 @@ interface RagConfigUI {
   enabled: boolean;
   provider: "local" | "openai-compat";
   local: { model: string; dim: number };
-  openaiCompat: { baseURL: string; model: string; apiKey?: string; dim: number };
+  openaiCompat: {
+    baseURL: string;
+    model: string;
+    apiKey?: string;
+    apiKeySet?: boolean; // server never returns the real key; this just says one is stored
+    dim: number;
+  };
 }
 
 interface RagStatusUI {
@@ -407,13 +413,21 @@ function RagPanel() {
               className="input"
               type="password"
               value={cfg.openaiCompat.apiKey ?? ""}
+              placeholder={cfg.openaiCompat.apiKeySet ? "Set — leave blank to keep, clear to remove" : ""}
               onChange={(e) =>
                 setCfg({
                   ...cfg,
                   openaiCompat: { ...cfg.openaiCompat, apiKey: e.target.value },
                 })
               }
-              onBlur={() => void save({ openaiCompat: cfg.openaiCompat })}
+              onBlur={() => {
+                // Server never sends the key back (GET /api/settings redacts
+                // it), so an untouched field is `undefined` here — omit it
+                // from the patch so the stored key is left alone. Typing
+                // (including clearing to "") sets a new one.
+                if (cfg.openaiCompat.apiKey === undefined) return;
+                void save({ openaiCompat: cfg.openaiCompat });
+              }}
             />
           </Field>
           <Field label="Dim">

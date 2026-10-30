@@ -60,3 +60,35 @@ describe("settings PATCH — rag must round-trip (regression)", () => {
     expect(patched.json.rag.openaiCompat.dim).toBe(256);
   });
 });
+
+describe("settings GET/PATCH never leak the embedder apiKey", () => {
+  test("setting a key returns apiKeySet, never the key itself", async () => {
+    const patched = await fetchJson("PATCH", "/api/settings", {
+      rag: { openaiCompat: { baseURL: "http://x", model: "m", apiKey: "sk-secret", dim: 8 } },
+    });
+    expect(patched.json.rag.openaiCompat.apiKey).toBeUndefined();
+    expect(patched.json.rag.openaiCompat.apiKeySet).toBe(true);
+
+    const got = await fetchJson("GET", "/api/settings");
+    expect(got.json.rag.openaiCompat.apiKey).toBeUndefined();
+    expect(got.json.rag.openaiCompat.apiKeySet).toBe(true);
+    expect(JSON.stringify(got.json)).not.toContain("sk-secret");
+  });
+
+  test("an omitted apiKey on patch leaves the stored key untouched", async () => {
+    await fetchJson("PATCH", "/api/settings", {
+      rag: { openaiCompat: { baseURL: "http://y", model: "m2", dim: 8 } },
+    });
+    const got = await fetchJson("GET", "/api/settings");
+    expect(got.json.rag.openaiCompat.apiKeySet).toBe(true);
+    expect(got.json.rag.openaiCompat.baseURL).toBe("http://y");
+  });
+
+  test("an explicit empty apiKey clears it", async () => {
+    await fetchJson("PATCH", "/api/settings", {
+      rag: { openaiCompat: { baseURL: "http://y", model: "m2", apiKey: "", dim: 8 } },
+    });
+    const got = await fetchJson("GET", "/api/settings");
+    expect(got.json.rag.openaiCompat.apiKeySet).toBe(false);
+  });
+});
