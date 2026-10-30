@@ -97,7 +97,7 @@ async function callTool(client: Client, name: string, args: Record<string, unkno
   return client.callTool({ name, arguments: args });
 }
 
-describe("MCP folder-perm filtering (unauthenticated — back-compat)", () => {
+describe("MCP folder-perm filtering (unauthenticated, back-compat)", () => {
   test("search_notes / list_tags / get_tasks skip denied folders", async () => {
     await handle.vault.writeNote("secret/a.md", "# A\n\nsearchable-term here\n- [ ] do thing #tag1\n");
     await handle.vault.writeNote("public/b.md", "# B\n\nsearchable-term also here\n- [ ] other #tag2\n");
@@ -190,7 +190,7 @@ describe("MCP folder-perm filtering with auth configured", () => {
   });
 });
 
-describe("MCP OAuth scope enforcement — read-only token cannot mutate", () => {
+describe("MCP OAuth scope enforcement: read-only token cannot mutate", () => {
   beforeEach(async () => {
     await setPassword("hunter2hunter2");
     await handle.authStore.load();

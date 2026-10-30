@@ -45,7 +45,7 @@ export interface PublicAPIKey {
   prefix: string;             // first 8 chars of token, for "match it to your config"
 }
 
-// Stored, hashed record — never holds the plaintext token.
+// Stored, hashed record, never holds the plaintext token.
 interface StoredAPIKey {
   id: string;
   tokenHash: string;

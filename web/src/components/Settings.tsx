@@ -413,7 +413,7 @@ function RagPanel() {
               className="input"
               type="password"
               value={cfg.openaiCompat.apiKey ?? ""}
-              placeholder={cfg.openaiCompat.apiKeySet ? "Set — leave blank to keep, clear to remove" : ""}
+              placeholder={cfg.openaiCompat.apiKeySet ? "Set: leave blank to keep, clear to remove" : ""}
               onChange={(e) =>
                 setCfg({
                   ...cfg,
@@ -422,7 +422,7 @@ function RagPanel() {
               }
               onBlur={() => {
                 // Server never sends the key back (GET /api/settings redacts
-                // it), so an untouched field is `undefined` here — omit it
+                // it), so an untouched field is `undefined` here, omit it
                 // from the patch so the stored key is left alone. Typing
                 // (including clearing to "") sets a new one.
                 if (cfg.openaiCompat.apiKey === undefined) return;

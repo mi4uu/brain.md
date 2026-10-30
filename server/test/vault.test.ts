@@ -212,7 +212,7 @@ describe("V-concurrency: per-path locking (#10, #12)", () => {
     expect(rejected).toBe(1);
     // The rename that lost the race never ran (it threw EXISTS under the
     // lock before touching the filesystem), so its source file is still
-    // sitting right where it was — never silently dropped.
+    // sitting right where it was, never silently dropped.
     const destContent = await vault.readNote("dest.md");
     expect(["one", "two"]).toContain(destContent.content);
     const loserPath = destContent.content === "one" ? "src2.md" : "src1.md";
@@ -230,7 +230,7 @@ describe("V-concurrency: per-path locking (#10, #12)", () => {
     expect(b).not.toBeNull();
     const final = await vault.readNote("mutate.md");
     // Each mutation only ever sees the other's completed result, never a
-    // torn read — so both substitutions land, nothing is overwritten.
+    // torn read, so both substitutions land, nothing is overwritten.
     expect(final.content).toBe("[[A]] and [[B]]");
   });
 });

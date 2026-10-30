@@ -147,7 +147,7 @@ export class Vault {
   async writeNote(rel: string, content: string): Promise<NoteData> {
     const r = await this.writeNoteChecked(rel, content);
     if (!r.ok) {
-      // writeNote() (no baseRevision) never conflicts — writeNoteChecked
+      // writeNote() (no baseRevision) never conflicts, writeNoteChecked
       // only returns ok:false when a baseRevision mismatched.
       throw new VaultError("unexpected conflict", "IO");
     }
@@ -156,7 +156,7 @@ export class Vault {
 
   // V-concurrency: optimistic concurrency for note writes. `baseRevision`,
   // when given, must match the sha256 of the content currently on disk or
-  // the write is refused — the caller gets the current revision back
+  // the write is refused, the caller gets the current revision back
   // instead. Absent on-disk content (creating a new note) never conflicts
   // by itself; it only conflicts if the file has concurrently come into
   // existence with different content than the caller's baseRevision reflects.
@@ -282,7 +282,7 @@ export class Vault {
       throw new VaultError("refuse delete root/brain", "INVALID_PATH");
     }
     return this.withPathLock([norm], async () => {
-      // Snapshot the notes under this folder before trashing it — once
+      // Snapshot the notes under this folder before trashing it, once
       // trashed they live under .brain/trash/<stamp>/..., so this is the
       // only chance to tell index/RAG listeners which paths disappeared.
       const { notes: allNotes } = await this.listTree();

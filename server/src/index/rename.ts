@@ -26,7 +26,7 @@ export async function renameAndPatch(
   const newPathNoExt = stripMdExt(toPath);
 
   // Bare `[[Name]]` links are only safe to repoint when this note is the
-  // sole note with that basename — otherwise we can't tell which note the
+  // sole note with that basename, otherwise we can't tell which note the
   // link author meant, and a basename collision would make us rewrite a
   // link that was never pointing at the moved note. Captured before the
   // move touches the index.

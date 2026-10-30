@@ -32,7 +32,7 @@ export function search(
   scope?: string | string[],
   // Per-folder read permission gate. Applied before scoring/ranking so a
   // denied note never contributes a score, let alone its text, to the
-  // results — not just filtered out of the final top-N.
+  // results, not just filtered out of the final top-N.
   allowed?: (path: string) => boolean,
 ): SearchHit[] {
   const query = q.trim();

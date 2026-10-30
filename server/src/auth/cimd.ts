@@ -68,7 +68,7 @@ interface SafeURL {
   url: URL;
   // Every address the hostname resolved to, already checked against the
   // private/loopback blocklist. The caller connects to one of these
-  // directly instead of letting fetch() re-resolve the hostname — that
+  // directly instead of letting fetch() re-resolve the hostname, that
   // second resolution is the DNS-rebinding TOCTOU window (V67 follow-up).
   addresses: Array<{ address: string; family: number }>;
 }
@@ -173,7 +173,7 @@ export function validateMetadata(raw: unknown, expectedClientId: string): Client
 // Fetches the metadata document over a connection pinned to one of the
 // addresses `assertSafeURL` already validated. We use node:https directly
 // (rather than fetch()) because fetch would re-resolve the hostname itself
-// right before connecting — the classic DNS-rebinding TOCTOU: the name
+// right before connecting, the classic DNS-rebinding TOCTOU: the name
 // could point at a public IP during our check and a private one moments
 // later. Pinning the socket to the validated address closes that window
 // while `servername` keeps TLS hostname verification against the real
@@ -192,7 +192,7 @@ function fetchWithLimit(safe: SafeURL): Promise<unknown> {
         servername: url.hostname, // SNI + cert hostname check stay on the real name
         headers: { accept: "application/json", host: url.hostname },
         timeout: FETCH_TIMEOUT_MS,
-        // Never follow redirects — a redirect target would need its own
+        // Never follow redirects, a redirect target would need its own
         // SSRF check, and the CIMD draft doesn't require following them.
       },
       (res) => {

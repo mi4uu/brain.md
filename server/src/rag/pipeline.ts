@@ -119,7 +119,7 @@ export class RagPipeline {
 
   // Runs `action` for `path`, serialised: a second call while one is
   // in-flight doesn't start a parallel job (which could race the first and
-  // leave either a dropped edit or a resurrected delete) — it just records
+  // leave either a dropped edit or a resurrected delete), it just records
   // that `action` should run again once the in-flight job settles.
   private async run(path: string, action: PendingAction): Promise<void> {
     const existing = this.jobs.get(path);
@@ -253,7 +253,7 @@ export class RagPipeline {
       console.warn(`[rag] reindex skipped ${skipped} of ${notes.length}; first errors:`, errors.slice(0, 5));
     }
     // V-concurrency #20: a full reindex only ever upserted notes that
-    // still exist — rows for notes removed since the last reindex (a
+    // still exist, rows for notes removed since the last reindex (a
     // single delete, or a whole folder deleted in one go) were never
     // compared against the current vault and lingered forever. Diff the
     // store's paths against what's on disk now and drop the rest.
@@ -265,7 +265,7 @@ export class RagPipeline {
         .map((p) => this.run(p, "delete")),
     );
     // Every surviving row was just rewritten under the active embedder, so
-    // the store is self-consistent again — queries can resume.
+    // the store is self-consistent again, queries can resume.
     this.store.markRebuilt(describeProvider(this.cfg));
     return { indexed, skipped, durationMs: Date.now() - t0 };
   }

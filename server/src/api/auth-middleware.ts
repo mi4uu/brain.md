@@ -6,7 +6,7 @@ import type { APIKeyStore } from "../auth/api-keys";
 import type { Principal } from "./principal";
 
 // Who authenticated a given request, keyed by the exact Request instance
-// Elysia hands to onRequest — the same object flows through to route
+// Elysia hands to onRequest, the same object flows through to route
 // handlers for the lifetime of that request, so routes can look themselves
 // up here instead of re-deriving the bearer kind. Falls back to "open"
 // (unrestricted) for anything not found, which only happens for requests
@@ -117,7 +117,7 @@ export function authMiddleware(
     const tok = bearer(request);
 
     // V53: session token from POST /api/auth/login (web UI). This is the
-    // one credential that proves the caller knows the owner's password —
+    // one credential that proves the caller knows the owner's password,
     // it bypasses per-folder MCP permissions everywhere.
     if (tokens.validate(tok)) {
       principals.set(request, { kind: "owner" });

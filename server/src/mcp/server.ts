@@ -381,7 +381,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
       const r = await vault.writeNote(path, content);
       logCall("write_note", { path, bytes: content.length }, true);
       // write_note replaces the whole body with content the caller just
-      // sent us, so echoing it back discloses nothing new — unlike
+      // sent us, so echoing it back discloses nothing new, unlike
       // append_note, which would otherwise hand back pre-existing content
       // the caller may not have read permission for.
       return { content: [{ type: "text", text: JSON.stringify({ ok: true, ...r }) }] };
@@ -393,7 +393,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
     {
       description:
         "Append a paragraph to an existing note (ensures a blank-line separator). " +
-        "Returns only path/mtime, never the resulting body — call read_note " +
+        "Returns only path/mtime, never the resulting body, call read_note " +
         "separately if you also have read permission on this note.",
       inputSchema: {
         path: z.string().min(1),
@@ -407,7 +407,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
       // the second write clobber the first's addition.
       const r = await vault.appendNote(path, content);
       logCall("append_note", { path, bytes: content.length }, true);
-      // Metadata only — a write-only folder (read:false, write:true) must
+      // Metadata only, a write-only folder (read:false, write:true) must
       // not leak the pre-existing content this call just appended to.
       return {
         content: [{ type: "text", text: JSON.stringify({ ok: true, path: r.path, mtime: r.mtime }) }],

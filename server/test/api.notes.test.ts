@@ -87,7 +87,7 @@ describe("notes API", () => {
 
 // V-concurrency #9: optimistic concurrency so overlapping autosaves can't
 // silently replace newer edits with older content.
-describe("notes API — optimistic concurrency", () => {
+describe("notes API: optimistic concurrency", () => {
   test("GET returns a revision", async () => {
     await handle.app.handle(req("PUT", "/api/note/r.md", { content: "v1" }));
     const get = await handle.app.handle(req("GET", "/api/note/r.md"));

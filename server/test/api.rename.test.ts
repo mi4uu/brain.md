@@ -84,7 +84,7 @@ describe("rename + V5 inbound patch", () => {
 
   // V-concurrency #21: moving a note across folders must rewrite
   // path-qualified wikilinks ([[work/A]]) to the new path, not just bare
-  // basename links — and must not bail out early just because the
+  // basename links, and must not bail out early just because the
   // basename happens to be unchanged.
   test("folder move rewrites path-qualified wikilinks", async () => {
     await put("/api/note/work/A.md", "content");
@@ -115,7 +115,7 @@ describe("rename + V5 inbound patch", () => {
     await put("/api/note/other/A.md", "two");
     await put("/api/note/linker.md", "[[A]]");
     await rename("work/A.md", "work/Renamed.md");
-    // "A" also refers to other/A.md — a bare link can't be safely rewritten.
+    // "A" also refers to other/A.md, a bare link can't be safely rewritten.
     expect(await getContent("/api/note/linker.md")).toBe("[[A]]");
   });
 });

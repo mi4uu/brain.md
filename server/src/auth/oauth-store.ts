@@ -49,7 +49,7 @@ export interface RefreshToken {
 // Record kept after a refresh token is rotated out, so a replay of that
 // exact (now-dead) token can still be recognised as theft of the family
 // rather than just "unknown token". RFC 6749 §10.4: reuse of a rotated
-// refresh token means the family is compromised — revoke everything.
+// refresh token means the family is compromised, revoke everything.
 interface ConsumedRefresh {
   familyId: string;
   expiresAt: number;
@@ -201,7 +201,7 @@ export class OAuthStore {
     const rec = this.refresh.get(args.refreshToken);
     if (!rec) {
       // Token not live. If it's one we rotated out earlier, this is a
-      // replay — the stolen token's family is compromised, revoke all of it.
+      // replay, the stolen token's family is compromised, revoke all of it.
       const consumed = this.consumedRefresh.get(args.refreshToken);
       if (consumed && consumed.expiresAt >= Date.now()) {
         this.revokeFamily(consumed.familyId);

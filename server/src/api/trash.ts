@@ -7,7 +7,7 @@ import { asError } from "./errors";
 import { requireWrite, readFilterFor } from "./perm-guard";
 
 // A trashed item's permission belongs to the folder it came from, not to
-// .brain/trash/ itself — otherwise trash would be a way around a folder's
+// .brain/trash/ itself, otherwise trash would be a way around a folder's
 // write restriction (delete is a write; so is restoring).
 function originalPathOf(trashPath: string): string | null {
   const norm = normalizeRel(trashPath);

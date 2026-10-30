@@ -13,7 +13,7 @@ const DIM = 4;
 
 // A controllable stand-in for the real embedders (which need a model
 // download / network access) so these tests can control exactly when an
-// embed() call resolves — the race conditions under test only show up when
+// embed() call resolves, the race conditions under test only show up when
 // one embed() is still in flight while another mutation arrives.
 class FakeEmbedder implements Embedder {
   readonly providerId: ProviderId = "local";
@@ -53,7 +53,7 @@ beforeEach(async () => {
   const cfg = { ...DEFAULT_RAG_CONFIG, enabled: true, local: { model: "fake-model", dim: DIM } };
   pipeline = new RagPipeline(vault, store, cfg);
   embedder = new FakeEmbedder();
-  // Swap in the fake embedder — RagPipeline has no injection seam for this
+  // Swap in the fake embedder, RagPipeline has no injection seam for this
   // (it always builds a real embedder from cfg), so reach into the
   // private field. Pragmatic for a concurrency test, not a style to copy
   // for ordinary behaviour tests.
@@ -73,7 +73,7 @@ describe("RagPipeline concurrency (V-concurrency #19)", () => {
     embedder.delayMs = 40;
     const firstWrite = vault.writeNote("a.md", "version one (slow embed)");
     // Vault.notify() awaits VaultIndex's listener but RagPipeline's is
-    // fire-and-forget, so the write resolves before the embed job does —
+    // fire-and-forget, so the write resolves before the embed job does,
     // give the first indexNote() a moment to actually start before firing
     // the second mutation at the same path.
     await new Promise((r) => setTimeout(r, 5));
@@ -150,7 +150,7 @@ describe("RagPipeline embedding config mismatch (V-concurrency #23)", () => {
     );
 
     await pipeline.reindexAll();
-    // Rebuilt under the new config — queries work again, no NaN scores.
+    // Rebuilt under the new config, queries work again, no NaN scores.
     const hits = await store.search(Float32Array.from([1, 0, 0, 0]), 5);
     for (const h of hits) expect(Number.isNaN(h.score)).toBe(false);
   });

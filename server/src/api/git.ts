@@ -30,7 +30,7 @@ export function gitRoutes(
         try {
           // A path-scoped log is a read of that note's history; gate it
           // the same as reading the note itself. An unscoped (vault-wide)
-          // log isn't filtered per-commit here — a known gap for agent
+          // log isn't filtered per-commit here, a known gap for agent
           // credentials, see README/handoff notes.
           if (query.path) await requireRead(vault, request, query.path);
           const limit = query.limit ? Math.max(1, Math.min(500, Number(query.limit))) : 50;
@@ -97,7 +97,7 @@ export function gitRoutes(
       async ({ body, set, request }) => {
         try {
           // `git checkout <sha> -- <path>` writes to the real working tree
-          // at <path> — unlike show/diff, which only look inside git's
+          // at <path>, unlike show/diff, which only look inside git's
           // tree objects, this one can escape onto the real filesystem if
           // <path> isn't validated the same way every vault write is, and
           // it must not be able to resurrect a historical .brain/ file
@@ -107,7 +107,7 @@ export function gitRoutes(
           await requireWrite(vault, request, body.path);
           await repo.restore(body.path, body.sha);
           // `repo.restore` writes straight to the working tree via `git
-          // checkout`, bypassing Vault's own write methods — without this,
+          // checkout`, bypassing Vault's own write methods, without this,
           // the index and RAG never learn the file changed (V-concurrency
           // #18). Route it through the same notify() everything else uses.
           await vault.notifyWrite(body.path);

@@ -111,7 +111,7 @@ export class RagStore {
 
   // V-concurrency #23: the provider/model/dim these rows were embedded
   // under. `open()`'s dim check only catches a changed dim across a
-  // restart — switching provider/model at runtime (settings PATCH →
+  // restart, switching provider/model at runtime (settings PATCH →
   // RagPipeline.applyConfig) without changing `dim` left old rows in the
   // store that silently mixed with new ones, or produced NaN scores when
   // a later dim change didn't match old rows' embedding length. Tracked

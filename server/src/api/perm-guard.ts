@@ -7,7 +7,7 @@ import { VaultError } from "../vault/types";
 // REST equivalent of mcp/server.ts's checkRead/checkWrite. A long-lived API
 // key or OAuth token authenticates the same way on /api/* as it does on
 // /mcp/* (auth-middleware.ts), so it must be held to the same per-folder
-// permissions here — otherwise the folder restrictions an owner sets up for
+// permissions here, otherwise the folder restrictions an owner sets up for
 // agents are MCP-only decoration, defeated by pointing the same credential
 // at the HTTP API instead. An owner (password-login) session keeps full
 // access everywhere.

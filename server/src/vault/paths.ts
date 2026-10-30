@@ -79,7 +79,7 @@ export function safeJoin(vaultDir: string, rel: string): string {
 // actually opens the file, which is the escape. This walks up from the
 // target to the nearest ancestor that exists, realpath()s that ancestor
 // (fully resolving any symlink chain), and re-joins the remaining
-// non-existent suffix — then checks the result is still inside the vault.
+// non-existent suffix, then checks the result is still inside the vault.
 // Call this right before the actual read/write, after safeJoin/assertSafePath.
 export async function assertRealContainment(vaultDir: string, abs: string): Promise<void> {
   const base = resolve(vaultDir);
@@ -97,13 +97,13 @@ export async function assertRealContainment(vaultDir: string, abs: string): Prom
     } catch (e) {
       if (e instanceof VaultError) throw e;
       if ((e as { code?: string }).code !== "ENOENT") {
-        // Any other I/O error (EACCES, ELOOP, …) — don't mask it as a pass.
+        // Any other I/O error (EACCES, ELOOP, …), don't mask it as a pass.
         throw e;
       }
       const parent = dirname(cur);
       if (parent === cur) {
         // Walked off the filesystem root without finding an existing
-        // ancestor — treat as escaped rather than looping forever.
+        // ancestor, treat as escaped rather than looping forever.
         throw new VaultError("path escapes vault (symlink)", "TRAVERSAL");
       }
       suffix.unshift(pathBasename(cur));

@@ -176,8 +176,8 @@ chmod's it, and verifies it boots. Pin a version with
 
 Every release ships a **single-file executable** per platform with
 the web UI embedded inside it, plus a `SHA256SUMS` file to verify them
-against. No Bun runtime, no Node.js, no `git clone`, no `bun install`
-— just download, mark executable, run.
+against. No Bun runtime, no Node.js, no `git clone`, no `bun install`.
+Just download, mark executable, run.
 
 Grab the file for your machine from the latest release:
 👉 **[github.com/mi4uu/brain.md/releases/latest](https://github.com/mi4uu/brain.md/releases/latest)**

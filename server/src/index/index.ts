@@ -47,7 +47,7 @@ export class VaultIndex {
     if (this.unsubscribe) return;
     // Returning the promise (not firing it with `void`) lets Vault.notify()
     // await it, so a write's HTTP/MCP response only lands once the index
-    // actually reflects it — RagPipeline.start() deliberately doesn't do
+    // actually reflects it, RagPipeline.start() deliberately doesn't do
     // this, so slow embedding never blocks a note write.
     this.unsubscribe = this.vault.onMutation((e) => this.handleEvent(e));
   }
@@ -196,7 +196,7 @@ export class VaultIndex {
     const out: Array<{ from: string; lineNo: number; context: string; embed: boolean }> = [];
     for (const e of this.entries()) {
       if (e.path === toPath) continue;
-      // The backlink's source note is itself content — don't leak its
+      // The backlink's source note is itself content, don't leak its
       // path or quoted context if the caller can't read that note.
       if (allowed && !allowed(e.path)) continue;
       for (const l of e.outLinks) {
