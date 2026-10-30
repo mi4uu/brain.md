@@ -41,10 +41,8 @@ Environment:
   GIT_AUTOCOMMIT            "1" / "0" — bootstrap default
   GIT_AUTOCOMMIT_DEBOUNCE_MS
   ALLOWED_HOSTS              Comma-separated extra hostnames accepted on the
-                              Host header, on top of localhost/127.0.0.1/[::1].
-                              Set this to your reverse proxy or tunnel's public
-                              hostname (e.g. brain.example.com) if you're not
-                              accessing the server over loopback.
+                              Host header while no password is set, on top of
+                              localhost/127.0.0.1/[::1] (e.g. brain.example.com).
 
 Precedence: CLI flag > env var > XDG default
 `;

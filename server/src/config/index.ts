@@ -21,11 +21,9 @@ function resolvePort(cli?: CliOptions): number {
   return Number(process.env.PORT ?? 3000);
 }
 
-// Host header (and, for state-changing requests, Origin) allowlist. Always
-// includes loopback — the default, no-password setup only ever needs to be
-// reachable from the same machine. ALLOWED_HOSTS adds extra hostnames for a
-// reverse proxy or tunnel that terminates elsewhere and forwards the public
-// hostname as Host (e.g. a Cloudflare Tunnel hostname, or a LAN name).
+// Host allowlist for passwordless mode (see api/host-middleware.ts).
+// ALLOWED_HOSTS adds hostnames beyond loopback, e.g. a LAN name or a tunnel
+// hostname when the server runs without a password.
 const DEFAULT_ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
 
 function resolveAllowedHosts(): string[] {

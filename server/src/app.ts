@@ -85,7 +85,7 @@ export function createApp(opts: AppOptions = {}) {
   const apiKeys = new APIKeyStore();
 
   const app = new Elysia()
-    .use(hostMiddleware(opts.allowedHosts ?? config.allowedHosts))
+    .use(hostMiddleware(opts.allowedHosts ?? config.allowedHosts, authStore))
     .use(cors())
     .use(authMiddleware(authStore, tokenStore, oauthStore, apiKeys))
     .get("/health", () => ({ ok: true, vaultDir: vault.root }))

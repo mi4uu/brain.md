@@ -334,11 +334,11 @@ that runs comfortably on the free tier of **Oracle Cloud** or
 on a $0/month VPS, route a hostname to it through Cloudflare, and
 you have a private second brain reachable from any device, anywhere.
 
-The server only accepts requests whose `Host` header matches
-`localhost`/`127.0.0.1`/`[::1]` or an entry in `ALLOWED_HOSTS` (both
-guard against DNS rebinding when no password is set). If you're
-reaching it through a Cloudflare Tunnel or another reverse proxy
-under its own hostname, add that hostname to `ALLOWED_HOSTS`.
+Without a password the server only accepts requests whose `Host`
+header is `localhost`/`127.0.0.1`/`[::1]` or an entry in
+`ALLOWED_HOSTS`, as a guard against DNS rebinding. Set a password
+(you want one anyway outside loopback) or add your LAN name or tunnel
+hostname to `ALLOWED_HOSTS`. With a password set the check is off.
 
 The mobile layout adapts: editor and preview swap in place via a
 bottom tab, the topbar scrolls horizontally with a sticky brand +
@@ -707,7 +707,7 @@ Every env knob:
 | `XDG_CONFIG_HOME`              | —       | Base for default settings location.       |
 | `GIT_AUTOCOMMIT`               | `1`     | `1` / `0`. Bootstrap default only.        |
 | `GIT_AUTOCOMMIT_DEBOUNCE_MS`   | `15000` | Bootstrap default only.                   |
-| `ALLOWED_HOSTS`                | —       | Comma-separated extra hostnames accepted on the Host header, beyond `localhost`/`127.0.0.1`/`[::1]`. Set this to your tunnel/reverse-proxy hostname if you don't reach the server over loopback — see [Mobile](#-mobile). |
+| `ALLOWED_HOSTS`                | none    | Comma-separated extra hostnames accepted on the Host header without a password, beyond `localhost`/`127.0.0.1`/`[::1]`. Not needed once a password is set. See [Mobile](#-mobile). |
 
 ---
 

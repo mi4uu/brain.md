@@ -97,4 +97,34 @@ describe("Origin check on state-changing requests", () => {
     );
     expect(r.status).not.toBe(403);
   });
+
+  test("x-forwarded-host cannot whitelist a foreign Host", async () => {
+    handle = createApp({ vaultDir: dir, gitAutocommit: false });
+    const r = await handle.app.handle(
+      new Request("http://localhost/health", {
+        headers: { host: "evil.example.com", "x-forwarded-host": "localhost" },
+      }),
+    );
+    expect(r.status).toBe(400);
+  });
+
+  test("with a password set, any Host is accepted (bearer auth covers it)", async () => {
+    handle = createApp({ vaultDir: dir, gitAutocommit: false });
+    const set = await handle.app.handle(
+      new Request("http://localhost/api/auth/set", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ newPassword: "hunter2hunter2" }),
+      }),
+    );
+    expect(set.status).toBe(200);
+    const health = await handle.app.handle(
+      new Request("http://localhost/health", { headers: { host: "brain.example.com" } }),
+    );
+    expect(health.status).toBe(200);
+    const tree = await handle.app.handle(
+      new Request("http://localhost/api/tree", { headers: { host: "brain.example.com" } }),
+    );
+    expect(tree.status).toBe(401);
+  });
 });
