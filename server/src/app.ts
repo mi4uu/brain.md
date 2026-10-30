@@ -27,6 +27,7 @@ import { settingsRoutes } from "./api/settings";
 import { ragRoutes } from "./api/rag";
 import { authRoutes } from "./api/auth";
 import { authMiddleware } from "./api/auth-middleware";
+import { hostMiddleware } from "./api/host-middleware";
 import { oauthDiscoveryRoutes } from "./api/oauth-discovery";
 import { oauthFlowRoutes } from "./api/oauth-flow";
 import { OAuthStore } from "./auth/oauth-store";
@@ -44,6 +45,7 @@ export interface AppOptions {
   gitAutocommit?: boolean;
   gitDebounceMs?: number;
   mcpDisabled?: boolean;
+  allowedHosts?: string[];
 }
 
 export function createApp(opts: AppOptions = {}) {
@@ -78,6 +80,7 @@ export function createApp(opts: AppOptions = {}) {
   const apiKeys = new APIKeyStore();
 
   const app = new Elysia()
+    .use(hostMiddleware(opts.allowedHosts ?? config.allowedHosts))
     .use(cors())
     .use(authMiddleware(authStore, tokenStore, oauthStore, apiKeys))
     .get("/health", () => ({ ok: true, vaultDir: vault.root }))

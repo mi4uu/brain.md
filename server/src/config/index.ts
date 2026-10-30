@@ -21,6 +21,21 @@ function resolvePort(cli?: CliOptions): number {
   return Number(process.env.PORT ?? 3000);
 }
 
+// Host header (and, for state-changing requests, Origin) allowlist. Always
+// includes loopback — the default, no-password setup only ever needs to be
+// reachable from the same machine. ALLOWED_HOSTS adds extra hostnames for a
+// reverse proxy or tunnel that terminates elsewhere and forwards the public
+// hostname as Host (e.g. a Cloudflare Tunnel hostname, or a LAN name).
+const DEFAULT_ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
+
+function resolveAllowedHosts(): string[] {
+  const extra = (process.env.ALLOWED_HOSTS ?? "")
+    .split(",")
+    .map((h) => h.trim().toLowerCase())
+    .filter((h) => h.length > 0);
+  return Array.from(new Set([...DEFAULT_ALLOWED_HOSTS, ...extra]));
+}
+
 export interface AppConfig {
   vaultDir: string;
   port: number;
@@ -30,6 +45,7 @@ export interface AppConfig {
   indexFile: string;
   gitAutocommit: boolean;
   gitDebounceMs: number;
+  allowedHosts: string[];
 }
 
 export function loadConfig(cli?: CliOptions): AppConfig {
@@ -42,6 +58,7 @@ export function loadConfig(cli?: CliOptions): AppConfig {
     indexFile: ".brain/index.json",
     gitAutocommit: boolEnv("GIT_AUTOCOMMIT", true),
     gitDebounceMs: Number(process.env.GIT_AUTOCOMMIT_DEBOUNCE_MS ?? 15000),
+    allowedHosts: resolveAllowedHosts(),
   };
 }
 
