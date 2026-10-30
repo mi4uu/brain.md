@@ -266,13 +266,20 @@ const remarkTagToHast: Plugin<[], Root> = function () {
   };
 };
 
-export function renderMarkdown(content: string, opts: RenderOptions): {
+export function renderMarkdown(
+  content: string,
+  opts: RenderOptions,
+  // `sanitize: false` is for the sanitizer-coverage test only: it renders
+  // the same pipeline minus the sanitize step, to diff what the renderer
+  // emits against what the schema allows through.
+  renderOpts?: { sanitize?: boolean },
+): {
   html: string;
   frontmatter: Record<string, unknown> | null;
   frontmatterError: string | null;
 } {
   const { data, error, body, lineOffset } = splitFrontmatter(content);
-  const processor = unified()
+  let processor = unified()
     .use(remarkParse)
     .use(remarkFrontmatter, ["yaml"])
     .use(remarkGfm)
@@ -291,12 +298,14 @@ export function renderMarkdown(content: string, opts: RenderOptions): {
     .use(rehypeRelativeMedia, { buildMediaUrl: opts.buildMediaUrl })
     .use(rehypeHeadingIds)
     .use(rehypeHighlight, { detect: true, ignoreMissing: true })
-    .use(rehypeKatex)
+    .use(rehypeKatex);
+  if (renderOpts?.sanitize !== false) {
     // Sanitize last: strips raw HTML the user typed (or rehypeRaw parsed)
     // down to a safe subset, after our own plugins and KaTeX/highlight.js
     // have had a chance to add the classes and attributes they rely on.
-    .use(rehypeSanitize, previewSchema)
-    .use(rehypeStringify);
+    processor = processor.use(rehypeSanitize, previewSchema);
+  }
+  processor = processor.use(rehypeStringify);
 
   const file = processor.processSync(body);
   return { html: String(file), frontmatter: data, frontmatterError: error };

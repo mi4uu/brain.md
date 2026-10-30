@@ -42,7 +42,10 @@ export const previewSchema: Schema = {
     "svg",
     "path",
     "line",
+    "polyline",
     "g",
+    "button",
+    "header",
     ...mathmlTags,
   ],
   attributes: {
