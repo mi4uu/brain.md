@@ -7,7 +7,7 @@ export function useDebouncedSave(
   path: string | null,
   save: (path: string, content: string) => Promise<void>,
   delay = 500,
-): { status: Status; flush: () => Promise<void> } {
+): { status: Status; flush: () => Promise<void>; resetBaseline: (content: string) => void } {
   const [status, setStatus] = useState<Status>("saved");
   const latest = useRef(content);
   const lastSaved = useRef<string | null>(null);
@@ -75,5 +75,13 @@ export function useDebouncedSave(
     return next;
   }
 
-  return { status, flush: flushInternal };
+  // For callers that replace the buffer with content already on disk
+  // (history restore, conflict reload): mark it saved instead of letting
+  // the content-changed effect treat it as a new dirty edit and re-save it.
+  function resetBaseline(content: string) {
+    lastSaved.current = content;
+    setStatus("saved");
+  }
+
+  return { status, flush: flushInternal, resetBaseline };
 }

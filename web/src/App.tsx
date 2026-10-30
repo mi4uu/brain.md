@@ -191,6 +191,7 @@ export function App() {
   const mainRef = useRef<HTMLElement | null>(null);
   const syncLockRef = useRef<number>(0);
   const flushSaveRef = useRef<() => Promise<void>>(async () => {});
+  const resetBaselineRef = useRef<(content: string) => void>(() => {});
   const [activeLine, setActiveLine] = useState<number>(1);
   void resolved;
 
@@ -522,6 +523,7 @@ export function App() {
       const data = await api.readNote(p);
       if (pathRef.current !== p) return;
       noteRevisionRef.current = data.revision;
+      resetBaselineRef.current(data.content);
       setContent(data.content);
     } catch (e) {
       setToast(`Reload failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -635,8 +637,9 @@ export function App() {
     [],
   );
 
-  const { status: saveStatus, flush } = useDebouncedSave(content, path, onSave, 500);
+  const { status: saveStatus, flush, resetBaseline } = useDebouncedSave(content, path, onSave, 500);
   flushSaveRef.current = flush;
+  resetBaselineRef.current = resetBaseline;
 
   const createNote = useCallback(
     async (parentDir: string) => {
@@ -1245,6 +1248,8 @@ export function App() {
           onRestored={async () => {
             if (path) {
               const data = await api.readNote(path);
+              noteRevisionRef.current = data.revision;
+              resetBaselineRef.current(data.content);
               setContent(data.content);
             }
             void refreshTree();
