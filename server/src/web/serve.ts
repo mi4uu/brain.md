@@ -41,6 +41,26 @@ function mimeFor(path: string): string {
   return MIME[extname(path).toLowerCase()] ?? "application/octet-stream";
 }
 
+// A note can contain attacker-controlled HTML (imported, synced, or
+// written by an MCP agent) that reaches the DOM through the Markdown
+// renderer. CSP is the backstop if that sanitisation ever has a gap:
+// no inline/external script beyond our own bundle can run, nothing can
+// be <object>/<embed>ed, and the page can't be framed or have its <base>
+// hijacked. style-src allows 'unsafe-inline' because KaTeX and
+// highlight.js generate inline styles; img-src allows data:/blob: for
+// the same (KaTeX glyphs, pasted/rendered images).
+const CSP =
+  "default-src 'self'; " +
+  "script-src 'self'; " +
+  "style-src 'self' 'unsafe-inline'; " +
+  "img-src 'self' data: blob:; " +
+  "font-src 'self' data:; " +
+  "connect-src 'self'; " +
+  "worker-src 'self' blob:; " +
+  "object-src 'none'; " +
+  "base-uri 'self'; " +
+  "frame-ancestors 'none'";
+
 // Where Tier 3 caches downloaded bundles.
 function cacheDir(): string {
   const xdg = process.env.XDG_CACHE_HOME?.trim();
@@ -181,6 +201,9 @@ export async function mountEmbeddedWeb(app: unknown): Promise<void> {
           p === "index.html"
             ? "no-cache"
             : "public, max-age=31536000, immutable";
+        if (p.endsWith(".html")) {
+          set.headers["content-security-policy"] = CSP;
+        }
         return new Response(data as BodyInit);
       }
     }
