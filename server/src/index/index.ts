@@ -113,9 +113,12 @@ export class VaultIndex {
       .sort();
   }
 
-  allTags(): Array<{ tag: string; count: number }> {
+  // `allowed`: per-folder read permission gate. Entries failing it don't
+  // contribute to tag counts / backlink results at all.
+  allTags(allowed?: (path: string) => boolean): Array<{ tag: string; count: number }> {
     const counts = new Map<string, number>();
     for (const e of this.entries()) {
+      if (allowed && !allowed(e.path)) continue;
       for (const t of e.tags) counts.set(t, (counts.get(t) ?? 0) + 1);
     }
     return Array.from(counts.entries())
@@ -123,11 +126,17 @@ export class VaultIndex {
       .sort((a, b) => a.tag.localeCompare(b.tag));
   }
 
-  backlinks(toPath: string): Array<{ from: string; lineNo: number; context: string; embed: boolean }> {
+  backlinks(
+    toPath: string,
+    allowed?: (path: string) => boolean,
+  ): Array<{ from: string; lineNo: number; context: string; embed: boolean }> {
     const target = basenameNoExt(toPath).toLowerCase();
     const out: Array<{ from: string; lineNo: number; context: string; embed: boolean }> = [];
     for (const e of this.entries()) {
       if (e.path === toPath) continue;
+      // The backlink's source note is itself content — don't leak its
+      // path or quoted context if the caller can't read that note.
+      if (allowed && !allowed(e.path)) continue;
       for (const l of e.outLinks) {
         if (l.targetLower === target) {
           out.push({ from: e.path, lineNo: l.lineNo, context: l.context, embed: l.embed });

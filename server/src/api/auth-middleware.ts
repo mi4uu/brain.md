@@ -3,6 +3,20 @@ import type { AuthStore } from "../auth/store";
 import type { TokenStore } from "../auth/tokens";
 import type { OAuthStore } from "../auth/oauth-store";
 import type { APIKeyStore } from "../auth/api-keys";
+import type { Principal } from "./principal";
+
+// Who authenticated a given request, keyed by the exact Request instance
+// Elysia hands to onRequest — the same object flows through to route
+// handlers for the lifetime of that request, so routes can look themselves
+// up here instead of re-deriving the bearer kind. Falls back to "open"
+// (unrestricted) for anything not found, which only happens for requests
+// that never went through this middleware (tests constructing routes
+// directly) or auth.json being unconfigured.
+const principals = new WeakMap<Request, Principal>();
+
+export function principalFor(request: Request): Principal {
+  return principals.get(request) ?? { kind: "open" };
+}
 
 // V53: protect every /api/* (except /api/auth/{status,login}) + /mcp/*
 // (including /mcp itself, not just /mcp/sub-paths) once auth.json exists.
@@ -91,7 +105,10 @@ export function authMiddleware(
       );
     }
 
-    if (!auth.isConfigured()) return; // no auth required
+    if (!auth.isConfigured()) {
+      principals.set(request, { kind: "open" });
+      return; // no auth required
+    }
     const isProtected =
       path.startsWith("/api/") || path === "/mcp" || path.startsWith("/mcp/");
     if (!isProtected) return;
@@ -99,23 +116,38 @@ export function authMiddleware(
     if (OPEN_PREFIXES.some((p) => path.startsWith(p))) return;
     const tok = bearer(request);
 
-    // V53: session token from POST /api/auth/login (web UI).
-    if (tokens.validate(tok)) return;
+    // V53: session token from POST /api/auth/login (web UI). This is the
+    // one credential that proves the caller knows the owner's password —
+    // it bypasses per-folder MCP permissions everywhere.
+    if (tokens.validate(tok)) {
+      principals.set(request, { kind: "owner" });
+      return;
+    }
 
     // V66: long-lived named API key (Settings → Security → API Keys).
     // Works on EVERY protected path (both /api/* and /mcp/*) so a single
     // key can drive the HTTP API and the MCP transport from the same
-    // Claude Desktop / curl config.
-    if (keys && keys.validate(tok)) return;
+    // Claude Desktop / curl config. Treated as an agent credential: full
+    // read/write scope, but subject to per-folder MCP permissions.
+    if (keys && keys.validate(tok)) {
+      principals.set(request, { kind: "apikey" });
+      return;
+    }
 
     // V63: OAuth access token — audience-bound to this MCP resource.
-    // Only valid for /mcp paths; /api/* stays session-or-API-key.
+    // Only valid for /mcp paths; /api/* stays session-or-API-key. Subject
+    // to both its own granted scope and per-folder MCP permissions.
     if (oauth && tok && (path === "/mcp" || path.startsWith("/mcp/"))) {
       const resource = `${originOf(request)}/mcp`;
       const v = oauth.validateAccess(tok, resource);
       if (v.ok) {
         const scopes = v.scope.split(/\s+/).filter(Boolean);
-        if (scopes.includes("vault:read") || scopes.includes("vault:write")) return;
+        const read = scopes.includes("vault:read");
+        const write = scopes.includes("vault:write");
+        if (read || write) {
+          principals.set(request, { kind: "oauth", read, write });
+          return;
+        }
       }
     }
 

@@ -30,6 +30,10 @@ export function search(
   idx: VaultIndex,
   q: string,
   scope?: string | string[],
+  // Per-folder read permission gate. Applied before scoring/ranking so a
+  // denied note never contributes a score, let alone its text, to the
+  // results — not just filtered out of the final top-N.
+  allowed?: (path: string) => boolean,
 ): SearchHit[] {
   const query = q.trim();
   if (query === "") return [];
@@ -40,6 +44,7 @@ export function search(
 
   for (const e of idx.entries()) {
     if (!inScope(e.path, prefixes)) continue;
+    if (allowed && !allowed(e.path)) continue;
     let score = 0;
     let matches = 0;
     const titleLower = e.title.toLowerCase();

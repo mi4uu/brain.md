@@ -129,6 +129,7 @@ export function createApp(opts: AppOptions = {}) {
     authStore,
     tokenStore,
     apiKeys,
+    oauthStore,
     mcp,
   };
 }

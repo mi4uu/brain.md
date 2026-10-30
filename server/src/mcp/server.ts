@@ -18,6 +18,13 @@ import {
   resolveFolderPerms,
   type McpFolderPerms,
 } from "../api/folder-perms";
+import {
+  principalCanRead,
+  principalCanWrite,
+  bypassesFolderPerms,
+  type Principal,
+} from "../api/principal";
+import { principalFor } from "../api/auth-middleware";
 import { loadMcpInstructions } from "./instructions";
 import { VERSION } from "../version";
 import {
@@ -96,6 +103,44 @@ function denied(perm: "read" | "write", path: string): never {
   throw e;
 }
 
+function scopeDenied(perm: "read" | "write"): never {
+  const e: Error & { code?: string } = new Error(
+    `[mcp] ${perm} denied: this token's OAuth grant does not include vault:${perm}`,
+  );
+  e.code = perm === "read" ? "MCP_READ_DENIED" : "MCP_WRITE_DENIED";
+  throw e;
+}
+
+// Combines the caller's own scope (owner / API key / OAuth grant) with the
+// per-folder MCP permission for `path`. A read-only OAuth token must not be
+// able to call write_note just because the folder itself allows writes, and
+// an owner session must not be blocked by a folder someone restricted for
+// agents.
+async function checkRead(vault: Vault, principal: Principal, path: string): Promise<void> {
+  if (!principalCanRead(principal)) scopeDenied("read");
+  if (bypassesFolderPerms(principal)) return;
+  const perms = resolveFolderPerms(path, await readPerms(vault));
+  if (!perms.read) denied("read", path);
+}
+
+async function checkWrite(vault: Vault, principal: Principal, path: string): Promise<void> {
+  if (!principalCanWrite(principal)) scopeDenied("write");
+  if (bypassesFolderPerms(principal)) return;
+  const perms = resolveFolderPerms(path, await readPerms(vault));
+  if (!perms.write) denied("write", path);
+}
+
+// Filter for list/search-style tools: true if this principal may see `path`.
+async function mayRead(
+  principal: Principal,
+  path: string,
+  map: Record<string, McpFolderPerms>,
+): Promise<boolean> {
+  if (!principalCanRead(principal)) return false;
+  if (bypassesFolderPerms(principal)) return true;
+  return resolveFolderPerms(path, map).read;
+}
+
 function logCall(name: string, args: unknown, ok: boolean): void {
   // V46: audit log to stderr (servers usually capture stderr)
   const argSummary = JSON.stringify(args).slice(0, 200);
@@ -106,8 +151,17 @@ function logCall(name: string, args: unknown, ok: boolean): void {
 // at will. The SDK's stateless mode requires a NEW Server + Transport
 // per request, so we extract handler registration here and rebuild
 // both objects on every /mcp request inside mcpRoutes() below.
-function registerHandlers(server: McpServer, deps: McpDeps): void {
+function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal): void {
   const { vault, index, pipeline, ragEnabled } = deps;
+
+  // Shared read-permission predicate for this request: true if `principal`
+  // may see `path`, combining its own scope with per-folder MCP perms.
+  const readFilter = async (): Promise<(path: string) => boolean> => {
+    if (!principalCanRead(principal)) return () => false;
+    if (bypassesFolderPerms(principal)) return () => true;
+    const map = await readPerms(vault);
+    return (path: string) => resolveFolderPerms(path, map).read;
+  };
 
   // ---------------- tools ----------------
 
@@ -119,7 +173,8 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
       inputSchema: { query: z.string().min(1), scope: scopeSchema },
     },
     async ({ query, scope }) => {
-      const hits = fullTextSearch(index, query, scope);
+      const allowed = await readFilter();
+      const hits = fullTextSearch(index, query, scope, allowed);
       logCall("search_notes", { query, scope }, true);
       return { content: [{ type: "text", text: JSON.stringify(hits) }] };
     },
@@ -167,15 +222,17 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
       const prefixes = normalizeScope(scope);
       const limit = k ?? 5;
       const [vec] = await pipeline.embed([query]);
-      // Over-fetch under a scope so enough in-scope hits survive the filter.
+      const allowed = await readFilter();
+      // Over-fetch so enough in-scope, permitted hits survive both filters.
+      const needsOverfetch = prefixes.length > 0 || !bypassesFolderPerms(principal);
       const raw = await pipeline.store.search(
         vec!,
-        prefixes.length > 0 ? limit + 50 : limit,
+        needsOverfetch ? limit + 50 : limit,
       );
-      const hits =
-        prefixes.length > 0
-          ? raw.filter((h) => inScope(h.path, prefixes)).slice(0, limit)
-          : raw;
+      const hits = raw
+        .filter((h) => inScope(h.path, prefixes))
+        .filter((h) => allowed(h.path))
+        .slice(0, limit);
       logCall("similar_notes", { query, k, scope }, true);
       return { content: [{ type: "text", text: JSON.stringify(hits) }] };
     },
@@ -188,8 +245,7 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
       inputSchema: { path: z.string().min(1) },
     },
     async ({ path }) => {
-      const perms = resolveFolderPerms(path, await readPerms(vault));
-      if (!perms.read) denied("read", path);
+      await checkRead(vault, principal, path);
       const note = await vault.readNote(path);
       logCall("read_note", { path }, true);
       return {
@@ -205,25 +261,22 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
       inputSchema: { folder: z.string().optional() },
     },
     async ({ folder }) => {
-      const map = await readPerms(vault);
+      const allowedPath = await readFilter();
       const tree = await vault.listTree();
       // Filter notes by per-folder read perm (V52).
-      const allowed = tree.notes.filter(
-        (n) => resolveFolderPerms(n, map).read,
-      );
+      const allowedNotes = tree.notes.filter(allowedPath);
       const allowedFolders = tree.folders.filter((f) => {
         // a folder is visible if its own (or any descendant note's) perm
         // is read=true; cheapest approximation = check resolveFolderPerms
         // on the folder path itself
-        const dummy = `${f}/.md`;
-        return resolveFolderPerms(dummy, map).read;
+        return allowedPath(`${f}/.md`);
       });
       const filtered = folder
         ? {
             folders: allowedFolders.filter((f) => f.startsWith(folder)),
-            notes: allowed.filter((n) => n.startsWith(folder)),
+            notes: allowedNotes.filter((n) => n.startsWith(folder)),
           }
-        : { folders: allowedFolders, notes: allowed };
+        : { folders: allowedFolders, notes: allowedNotes };
       logCall("list_notes", { folder }, true);
       return { content: [{ type: "text", text: JSON.stringify(filtered) }] };
     },
@@ -236,9 +289,9 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
       inputSchema: { path: z.string().min(1) },
     },
     async ({ path }) => {
-      const perms = resolveFolderPerms(path, await readPerms(vault));
-      if (!perms.read) denied("read", path);
-      const bls = index.backlinks(path);
+      await checkRead(vault, principal, path);
+      const allowedPath = await readFilter();
+      const bls = index.backlinks(path, allowedPath);
       logCall("get_backlinks", { path }, true);
       return { content: [{ type: "text", text: JSON.stringify(bls) }] };
     },
@@ -251,7 +304,8 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
       inputSchema: {},
     },
     async () => {
-      const tags = index.allTags();
+      const allowedPath = await readFilter();
+      const tags = index.allTags(allowedPath);
       logCall("list_tags", {}, true);
       return { content: [{ type: "text", text: JSON.stringify(tags) }] };
     },
@@ -299,7 +353,8 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
       inputSchema: { filter: z.enum(["open", "done", "all"]).optional() },
     },
     async ({ filter }) => {
-      const tasks = collectTasks(index);
+      const allowedPath = await readFilter();
+      const tasks = collectTasks(index).filter((t) => allowedPath(t.path));
       const f = filter ?? "all";
       const out =
         f === "open"
@@ -322,10 +377,13 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
       },
     },
     async ({ path, content }) => {
-      const perms = resolveFolderPerms(path, await readPerms(vault));
-      if (!perms.write) denied("write", path);
+      await checkWrite(vault, principal, path);
       const r = await vault.writeNote(path, content);
       logCall("write_note", { path, bytes: content.length }, true);
+      // write_note replaces the whole body with content the caller just
+      // sent us, so echoing it back discloses nothing new — unlike
+      // append_note, which would otherwise hand back pre-existing content
+      // the caller may not have read permission for.
       return { content: [{ type: "text", text: JSON.stringify({ ok: true, ...r }) }] };
     },
   );
@@ -334,15 +392,16 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
     "append_note",
     {
       description:
-        "Append a paragraph to an existing note (ensures a blank-line separator).",
+        "Append a paragraph to an existing note (ensures a blank-line separator). " +
+        "Returns only path/mtime, never the resulting body — call read_note " +
+        "separately if you also have read permission on this note.",
       inputSchema: {
         path: z.string().min(1),
         content: z.string().min(1),
       },
     },
     async ({ path, content }) => {
-      const perms = resolveFolderPerms(path, await readPerms(vault));
-      if (!perms.write) denied("write", path);
+      await checkWrite(vault, principal, path);
       let body = "";
       try {
         const cur = await vault.readNote(path);
@@ -354,7 +413,11 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
       const next = body + joiner + content + (content.endsWith("\n") ? "" : "\n");
       const r = await vault.writeNote(path, next);
       logCall("append_note", { path, bytes: content.length }, true);
-      return { content: [{ type: "text", text: JSON.stringify({ ok: true, ...r }) }] };
+      // Metadata only — a write-only folder (read:false, write:true) must
+      // not leak the pre-existing content this call just appended to.
+      return {
+        content: [{ type: "text", text: JSON.stringify({ ok: true, path: r.path, mtime: r.mtime }) }],
+      };
     },
   );
 
@@ -415,9 +478,12 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
     },
     async ({ path, k, scope }) => {
       try {
-        const perms = resolveFolderPerms(path, await readPerms(vault));
-        if (!perms.read) denied("read", path);
-        const hits = await qRelated(ragDeps, path, k ?? 5, scope);
+        await checkRead(vault, principal, path);
+        const allowedPath = await readFilter();
+        const raw = await qRelated(ragDeps, path, k ?? 5, scope);
+        const hits = Array.isArray(raw)
+          ? raw.filter((h: { path?: string }) => !h.path || allowedPath(h.path))
+          : raw;
         logCall("find_related", { path, k, scope }, true);
         return { content: [{ type: "text", text: JSON.stringify(hits) }] };
       } catch (err) {
@@ -544,9 +610,9 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
       mimeType: "application/json",
     },
     async () => {
-      const map = await readPerms(vault);
+      const allowedPath = await readFilter();
       const tree = await vault.listTree();
-      const notes = tree.notes.filter((n) => resolveFolderPerms(n, map).read);
+      const notes = tree.notes.filter(allowedPath);
       return {
         contents: [
           {
@@ -568,8 +634,7 @@ function registerHandlers(server: McpServer, deps: McpDeps): void {
     },
     async (uri, vars) => {
       const path = String((vars as { path?: string }).path ?? "");
-      const perms = resolveFolderPerms(path, await readPerms(vault));
-      if (!perms.read) denied("read", path);
+      await checkRead(vault, principal, path);
       const note = await vault.readNote(path);
       return {
         contents: [
@@ -605,7 +670,7 @@ export function createMcp(deps: McpDeps) {
         { name: "brain.md", version: VERSION },
         instructions ? { instructions } : undefined,
       );
-      registerHandlers(server, deps);
+      registerHandlers(server, deps, principalFor(request));
       const transport = new WebStandardStreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
         enableJsonResponse: true,
