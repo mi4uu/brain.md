@@ -7,7 +7,7 @@ import remarkRehype from "remark-rehype";
 import rehypeHighlight from "rehype-highlight";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
-import rehypeSanitize from "rehype-sanitize";
+import { sanitize } from "hast-util-sanitize";
 import rehypeStringify from "rehype-stringify";
 import { previewSchema } from "./sanitizeSchema";
 import { parse as parseYaml } from "yaml";
@@ -22,7 +22,17 @@ import { rehypeRelativeMedia } from "./plugins/relativeMedia";
 import { rehypeHeadingIds } from "./plugins/headingIds";
 import type { Plugin } from "unified";
 import type { Root } from "mdast";
+import type { Root as HastRoot } from "hast";
 import { visit } from "unist-util-visit";
+
+// Same shape as rehypeSanitize, but lets the sanitizer-coverage test skip
+// the sanitize step (`enabled: false`) while keeping the rest of the
+// pipeline, and its generic unified() type, identical either way. The
+// option is wrapped in an object: unified treats a bare `false`/`true`
+// plugin argument as "disable"/"no options", not as a value to pass on.
+const rehypeMaybeSanitize: Plugin<[{ enabled: boolean }], HastRoot> = function ({ enabled }) {
+  return (tree) => (enabled ? (sanitize(tree, previewSchema) as HastRoot) : tree);
+};
 
 const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 
@@ -279,7 +289,7 @@ export function renderMarkdown(
   frontmatterError: string | null;
 } {
   const { data, error, body, lineOffset } = splitFrontmatter(content);
-  let processor = unified()
+  const processor = unified()
     .use(remarkParse)
     .use(remarkFrontmatter, ["yaml"])
     .use(remarkGfm)
@@ -298,14 +308,12 @@ export function renderMarkdown(
     .use(rehypeRelativeMedia, { buildMediaUrl: opts.buildMediaUrl })
     .use(rehypeHeadingIds)
     .use(rehypeHighlight, { detect: true, ignoreMissing: true })
-    .use(rehypeKatex);
-  if (renderOpts?.sanitize !== false) {
+    .use(rehypeKatex)
     // Sanitize last: strips raw HTML the user typed (or rehypeRaw parsed)
     // down to a safe subset, after our own plugins and KaTeX/highlight.js
     // have had a chance to add the classes and attributes they rely on.
-    processor = processor.use(rehypeSanitize, previewSchema);
-  }
-  processor = processor.use(rehypeStringify);
+    .use(rehypeMaybeSanitize, { enabled: renderOpts?.sanitize !== false })
+    .use(rehypeStringify);
 
   const file = processor.processSync(body);
   return { html: String(file), frontmatter: data, frontmatterError: error };
