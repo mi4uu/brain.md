@@ -1,6 +1,43 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from "react";
 import { renderMarkdown, isMediaName } from "../renderer/render";
 import { api } from "../api/client";
+import { getToken } from "../auth/token";
+
+const PROTECTED_MEDIA_SELECTOR =
+  'img[src^="/api/media-raw/"]:not([data-blob-protected]), video[src^="/api/media-raw/"]:not([data-blob-protected]), audio[src^="/api/media-raw/"]:not([data-blob-protected]), source[src^="/api/media-raw/"]:not([data-blob-protected])';
+
+// Browser-issued element requests (img/video/audio/source) don't go through
+// the patched fetch that attaches the bearer token, so with auth enabled
+// they 401. Fetch each one through the patched fetch instead and point the
+// element at a blob object URL. Created URLs are tracked in `store` so the
+// caller can revoke them once the content they belong to is gone.
+async function protectMedia(
+  container: HTMLElement,
+  isCancelled: () => boolean,
+  store: { current: string[] },
+): Promise<void> {
+  const els = container.querySelectorAll<HTMLImageElement | HTMLMediaElement>(
+    PROTECTED_MEDIA_SELECTOR,
+  );
+  for (const el of Array.from(els)) {
+    if (isCancelled()) return;
+    el.setAttribute("data-blob-protected", "");
+    const original = el.getAttribute("src");
+    if (!original) continue;
+    try {
+      const res = await fetch(original);
+      if (!res.ok || isCancelled()) continue;
+      const blob = await res.blob();
+      if (isCancelled()) return;
+      const url = URL.createObjectURL(blob);
+      store.current.push(url);
+      el.setAttribute("src", url);
+    } catch {
+      // leave the original src; the element 401s and shows broken, same as
+      // before this fix, instead of leaving the whole preview stuck
+    }
+  }
+}
 
 interface PreviewProps {
   content: string;
@@ -26,6 +63,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
   const blocksRef = useRef<Array<{ line: number; el: HTMLElement }>>([]);
   const activeLineRef = useRef<number>(-1);
   const suppressScrollRef = useRef<number>(0);
+  const mediaBlobUrlsRef = useRef<string[]>([]);
 
   const { html, frontmatter, frontmatterError } = useMemo(() => {
     const dirOf = notePath ? notePath.replace(/[^/]+$/, "") : "";
@@ -36,6 +74,24 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
         api.mediaUrl(`${dirOf}.media/${target.split("/").pop()}`),
     });
   }, [content, notePath, resolveByBasename]);
+
+  // protected media: with auth on, img/video/audio/source elements need a
+  // blob URL fetched through the patched fetch (see protectMedia above).
+  // Embeds load asynchronously and reuse mediaBlobUrlsRef too, so the
+  // revoke has to happen on cleanup (next html change or unmount), not up
+  // front, or it would race ahead of urls that effect hasn't created yet.
+  useEffect(() => {
+    const root = ref.current;
+    let cancelled = false;
+    if (root && getToken()) {
+      void protectMedia(root, () => cancelled, mediaBlobUrlsRef);
+    }
+    return () => {
+      cancelled = true;
+      for (const url of mediaBlobUrlsRef.current) URL.revokeObjectURL(url);
+      mediaBlobUrlsRef.current = [];
+    };
+  }, [html]);
 
   // collect blocks after each render
   useEffect(() => {
@@ -258,7 +314,10 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
               api.mediaUrl(`${dirOf}.media/${t.split("/").pop()}`),
           });
           const body = el.querySelector(".embed-body");
-          if (body) body.innerHTML = inner.html;
+          if (body) {
+            body.innerHTML = inner.html;
+            if (getToken()) void protectMedia(body as HTMLElement, () => cancelled, mediaBlobUrlsRef);
+          }
         } catch {
           const body = el.querySelector(".embed-body");
           if (body) body.textContent = "Could not load.";
