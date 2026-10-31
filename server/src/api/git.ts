@@ -6,6 +6,33 @@ import type { Vault } from "../vault/vault";
 import { asError } from "./errors";
 import { assertSafePath, assertMarkdown } from "../vault/paths";
 import { requireRead, requireWrite, requireOwner } from "./perm-guard";
+import { principalFor } from "./auth-middleware";
+import { isOwnerPrincipal } from "./principal";
+import { VaultError } from "../vault/types";
+
+// git matches a directory pathspec recursively, even under
+// GIT_LITERAL_PATHSPECS: a per-note permission check on a parent directory
+// (or the vault root, path=".") authorises that one synthetic path, but
+// log/show/diff then return every file underneath it, including ones the
+// same principal is denied individually. Only an owner/open principal (who
+// bypasses folder perms anyway) may pass a directory or the whole vault;
+// an agent credential must name one existing note, which requireRead then
+// checks on its own merits.
+async function requireNotePathForAgents(
+  vault: Vault,
+  request: Request,
+  path: string | undefined,
+): Promise<void> {
+  if (isOwnerPrincipal(principalFor(request))) return;
+  if (!path) {
+    throw new VaultError("path required for this credential", "FORBIDDEN");
+  }
+  assertMarkdown(path);
+  const st = await vault.stat(path);
+  if (!st.exists || st.isDir) {
+    throw new VaultError(`note not found: ${path}`, "NOT_FOUND");
+  }
+}
 
 export function gitRoutes(
   vault: Vault,
@@ -14,7 +41,16 @@ export function gitRoutes(
   settings: SettingsStore,
 ) {
   return new Elysia({ prefix: "/api/git" })
-    .get("/status", async () => {
+    .get("/status", async ({ set, request }) => {
+      try {
+        // Vault-wide (head, branch, last commit subject) with no folder
+        // scoping to filter it through, same reasoning as commit/checkpoint.
+        requireOwner(request);
+      } catch (e) {
+        const { status, body } = asError(e);
+        set.status = status;
+        return body;
+      }
       const status = await repo.status();
       return {
         ...status,
@@ -33,6 +69,7 @@ export function gitRoutes(
           // log isn't filtered per-commit here, a known gap for agent
           // credentials, see README/handoff notes.
           if (query.path) await requireRead(vault, request, query.path);
+          await requireNotePathForAgents(vault, request, query.path);
           const limit = query.limit ? Math.max(1, Math.min(500, Number(query.limit))) : 50;
           return repo.log({ path: query.path, limit });
         } catch (e) {
@@ -48,6 +85,7 @@ export function gitRoutes(
       async ({ query, set, request }) => {
         try {
           await requireRead(vault, request, query.path);
+          await requireNotePathForAgents(vault, request, query.path);
           const content = await repo.show(query.sha, query.path);
           return { content };
         } catch (e) {
@@ -63,6 +101,7 @@ export function gitRoutes(
       async ({ query, set, request }) => {
         try {
           await requireRead(vault, request, query.path);
+          await requireNotePathForAgents(vault, request, query.path);
           const patch = await repo.diff(query.sha, query.path);
           return { patch };
         } catch (e) {
@@ -75,8 +114,12 @@ export function gitRoutes(
     )
     .post(
       "/commit",
-      async ({ body, set }) => {
+      async ({ body, set, request }) => {
         try {
+          // Commits the whole working tree with no path scoping at all;
+          // an agent credential denied write on every folder could still
+          // force a commit otherwise. Owner-or-open only, like /autocommit.
+          requireOwner(request);
           const msg = body.message?.trim() || "manual";
           const sha = await repo.commitAll(msg);
           return { sha };
@@ -88,7 +131,14 @@ export function gitRoutes(
       },
       { body: t.Object({ message: t.Optional(t.String()) }) },
     )
-    .post("/flush", async () => {
+    .post("/flush", async ({ set, request }) => {
+      try {
+        requireOwner(request);
+      } catch (e) {
+        const { status, body } = asError(e);
+        set.status = status;
+        return body;
+      }
       const sha = await autocommit.flush();
       return { sha };
     })
@@ -125,8 +175,9 @@ export function gitRoutes(
     )
     .post(
       "/checkpoint",
-      async ({ body, set }) => {
+      async ({ body, set, request }) => {
         try {
+          requireOwner(request);
           const msg = body.message?.trim() || "checkpoint";
           const sha = await repo.commitAll(msg);
           const tagName = `cp-${Date.now()}`;
