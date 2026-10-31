@@ -55,6 +55,7 @@ interface StoreFile {
   providerId?: ProviderId;
   modelId?: string;
   endpoint?: string;
+  incompatible?: boolean;
   notes: NoteRowDisk[];
   tasks: TaskRowDisk[];
 }
@@ -151,6 +152,11 @@ export class RagStore {
         prev.endpoint !== cfg.endpoint)
     ) {
       this.incompatible = true;
+      // Persist immediately: this flag is the only record that the rows
+      // on disk no longer match the configured embedder. Leaving it to
+      // the next upsert's debounced write would lose it on a restart
+      // before any write happens.
+      if (this.opened) this.scheduleWrite();
     }
   }
 
@@ -207,6 +213,11 @@ export class RagStore {
               endpoint: raw.endpoint,
             };
           }
+          // Without persisting this, a restart forgets that rows were left
+          // behind by a provider switch; setExpectedConfig() on the next
+          // boot sees no *change* (expectedConfig starts matching what's
+          // on disk) and queries happily mix old and new embeddings.
+          this.incompatible = raw.incompatible ?? false;
         }
       } catch (e) {
         console.warn(
@@ -241,6 +252,7 @@ export class RagStore {
       providerId: this.expectedConfig?.providerId,
       modelId: this.expectedConfig?.modelId,
       endpoint: this.expectedConfig?.endpoint,
+      incompatible: this.incompatible,
       notes: [...this.notes.values()],
       tasks: [...this.tasks.values()],
     };

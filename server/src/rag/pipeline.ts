@@ -38,6 +38,14 @@ export class RagPipeline {
   private pending = new Map<string, PendingAction>();
   public lastIndexedAt: number | null = null;
   private cfg: RagConfig;
+  // Monotonic counter bumped every time a path is queued for write/delete,
+  // and the sequence number each path was last queued at. reindexAll()'s
+  // reconciliation pass uses this to tell "genuinely gone from the vault"
+  // apart from "written concurrently with the reindex, after the vault
+  // listing it diffs against was taken but before it diffed" — the latter
+  // must not be deleted back out.
+  private seq = 0;
+  private touchedAt = new Map<string, number>();
 
   constructor(
     private readonly vault: Vault,
@@ -122,6 +130,7 @@ export class RagPipeline {
   // leave either a dropped edit or a resurrected delete), it just records
   // that `action` should run again once the in-flight job settles.
   private async run(path: string, action: PendingAction): Promise<void> {
+    this.touchedAt.set(path, ++this.seq);
     const existing = this.jobs.get(path);
     if (existing) {
       this.pending.set(path, action);
@@ -229,6 +238,7 @@ export class RagPipeline {
   async reindexAll(): Promise<{ indexed: number; skipped: number; durationMs: number }> {
     const t0 = Date.now();
     await this.ensureRunning();
+    const reindexStartSeq = this.seq;
     const notes = await this.vault.listAllNotes();
     let indexed = 0;
     let skipped = 0;
@@ -263,12 +273,20 @@ export class RagPipeline {
     // concurrently with this reindex would be in the store but not in
     // that stale snapshot, and would get deleted right back out by this
     // very reconciliation.
+    //
+    // Codex r3 #6: re-listing isn't enough on its own, a note can be
+    // written and indexed in the gap between this listing and the
+    // distinctPaths() read just below, so it's absent from noteSet but
+    // present in the store, and would still look "stale" by that diff
+    // alone. touchedAt (bumped by every run() call) catches that: a path
+    // queued for write/delete after this reindex started is never
+    // reconciled away here, even if it raced the listing.
     const currentNotes = await this.vault.listAllNotes();
     const noteSet = new Set(currentNotes);
     const storedPaths = await this.store.distinctPaths();
     await Promise.all(
       storedPaths
-        .filter((p) => !noteSet.has(p))
+        .filter((p) => !noteSet.has(p) && (this.touchedAt.get(p) ?? 0) <= reindexStartSeq)
         .map((p) => this.run(p, "delete")),
     );
     // Codex r2 #14: only declare the store compatible with the active
