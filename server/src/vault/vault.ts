@@ -79,6 +79,31 @@ export class Vault {
     }
   }
 
+  // Public wrapper so a caller spanning several notes (rename's backlink
+  // patch pass) can hold the lock across a check-then-write on every one
+  // of them at once, rather than locking each file separately and leaving
+  // a window between checking permissions and writing where a concurrent
+  // caller could change what's safe to write.
+  async withNotesLocked<T>(paths: string[], fn: () => Promise<T>): Promise<T> {
+    return this.withPathLock(paths, fn);
+  }
+
+  // Writes a note while the caller already holds its lock (via
+  // withNotesLocked), skipping writeNoteChecked's own locking. Only safe
+  // to call from inside that lock's callback.
+  async writeNoteLocked(rel: string, content: string): Promise<NoteData> {
+    assertMarkdown(rel);
+    assertSafePath(rel);
+    const abs = this.abs(rel);
+    await assertRealContainment(this.root, abs);
+    const path = normalizeRel(rel);
+    await mkdir(dirname(abs), { recursive: true });
+    await atomicWrite(abs, content);
+    const s = await stat(abs);
+    await this.notify("write", path);
+    return { path, content, mtime: s.mtimeMs, revision: sha256Hex(content) };
+  }
+
   onMutation(l: MutationListener): () => void {
     this.listeners.add(l);
     return () => {
@@ -131,6 +156,13 @@ export class Vault {
 
   async readNote(rel: string): Promise<NoteData> {
     assertMarkdown(rel);
+    // Dot-dirs (.brain, .git, …) are control paths, not ordinary notes.
+    // Without this, .brain/trash/<stamp>/secret/a.md reads straight through
+    // with the trash entry's own (unrestricted) permission check instead of
+    // the original note's, a way around folder perms. Dedicated endpoints
+    // (trash.ts) that legitimately touch .brain/ go through Vault's other
+    // methods, not readNote.
+    assertSafePath(rel);
     const abs = this.abs(rel);
     await assertRealContainment(this.root, abs);
     try {
@@ -237,6 +269,7 @@ export class Vault {
 
   async deleteNote(rel: string): Promise<string> {
     assertMarkdown(rel);
+    assertSafePath(rel);
     const path = normalizeRel(rel);
     return this.withPathLock([path], async () => {
       const trashed = await this.trashPath(rel, false);
