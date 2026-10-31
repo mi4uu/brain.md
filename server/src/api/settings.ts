@@ -24,7 +24,19 @@ export function settingsRoutes(
   ragPipeline: RagPipeline,
 ) {
   return new Elysia({ prefix: "/api/settings" })
-    .get("/", () => redact(settings.get()))
+    .get("/", ({ request, set }) => {
+      try {
+        // Server config, not vault content: host allowlist, embedder
+        // endpoint, git settings. No per-folder scope applies to it, so
+        // it's owner-or-open only, same as the PATCH right below it.
+        requireOwner(request);
+        return redact(settings.get());
+      } catch (e) {
+        const { status, body: err } = asError(e);
+        set.status = status;
+        return err;
+      }
+    })
     .patch(
       "/",
       async ({ body, set, request }) => {

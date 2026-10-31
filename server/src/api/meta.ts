@@ -3,6 +3,7 @@ import type { Vault } from "../vault/vault";
 import { normalizeRel } from "../vault/paths";
 import { asError } from "./errors";
 import { loadFolderMeta, saveFolderMeta, withFolderMetaLock } from "./folder-perms";
+import { requireWrite, readFilterFor } from "./perm-guard";
 import { VaultError } from "../vault/types";
 
 // Icons/colors share folder-meta.json with the MCP folder permissions
@@ -12,17 +13,24 @@ import { VaultError } from "../vault/types";
 
 export function metaRoutes(vault: Vault) {
   return new Elysia({ prefix: "/api/folder-meta" })
-    .get("/", async () => {
+    .get("/", async ({ request }) => {
       const meta = await loadFolderMeta(vault);
-      return { version: meta.version, icons: meta.icons, colors: meta.colors };
+      // Folder paths here are vault content, like tree.ts's own folder
+      // listing: a path a principal can't read must not be disclosed
+      // just because it has a custom icon or colour.
+      const allowed = await readFilterFor(vault, request);
+      const visible = (m: Record<string, string>) =>
+        Object.fromEntries(Object.entries(m).filter(([path]) => allowed(`${path}/.md`)));
+      return { version: meta.version, icons: visible(meta.icons), colors: visible(meta.colors) };
     })
     .post(
       "/",
-      async ({ body, set }) => {
+      async ({ body, set, request }) => {
         try {
+          const norm = normalizeRel(body.path);
+          await requireWrite(vault, request, `${norm}/.probe`);
           const meta = await withFolderMetaLock(async () => {
             const m = await loadFolderMeta(vault);
-            const norm = normalizeRel(body.path);
             if (norm === "") {
               throw new VaultError("root folder cannot be customised", "INVALID_PATH");
             }

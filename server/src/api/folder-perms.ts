@@ -104,9 +104,19 @@ export function resolveFolderPerms(
 
 export function folderPermsRoutes(vault: Vault) {
   return new Elysia()
-    .get("/api/folder-mcp-perms", async () => {
-      const meta = await loadFolderMeta(vault);
-      return meta.mcp;
+    .get("/api/folder-mcp-perms", async ({ request, set }) => {
+      try {
+        // The full read/write map for every folder, including ones the
+        // caller itself is denied: administering agent access, not vault
+        // content, so owner-or-open only, same as the POST/DELETE below.
+        requireOwner(request);
+        const meta = await loadFolderMeta(vault);
+        return meta.mcp;
+      } catch (e) {
+        const { status, body } = asError(e);
+        set.status = status;
+        return body;
+      }
     })
     .post(
       "/api/folder-mcp-perms",
