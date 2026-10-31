@@ -120,21 +120,39 @@ export async function renameAndPatch(
   if (noop) return { patchedFiles, totalReplacements };
 
   const allNotes = await vault.listAllNotes();
-  await Promise.all(
-    allNotes.map(async (path) => {
-      let replacements = 0;
-      const result = await vault.mutateNote(path, (current) => {
-        if (current === null) return null;
-        const r = patchLinks(current, ctx);
-        replacements = r.count;
-        return r.count > 0 ? r.next : null;
-      });
-      if (result) {
-        patchedFiles.push(path);
-        totalReplacements += replacements;
+  // Hold every candidate note's lock for the whole check-then-write pass.
+  // The dry-run scan above is only a fast pre-check (so a denied rename
+  // never even moves the file); it isn't atomic with the writes below, so
+  // a link could be added to a denied note in the gap between the two.
+  // Locking all candidates together closes that window: nothing can write
+  // any of these paths while this reads them and decides what to patch,
+  // so the permission check below is authoritative, and no file is
+  // written at all if any denied one would need to change.
+  await vault.withNotesLocked(allNotes, async () => {
+    const toWrite: Array<{ path: string; next: string; count: number }> = [];
+    for (const path of allNotes) {
+      let content: string;
+      try {
+        content = (await vault.readNote(path)).content;
+      } catch {
+        continue;
       }
-    }),
-  );
+      const r = patchLinks(content, ctx);
+      if (r.count === 0) continue;
+      if (canWrite && !canWrite(path)) {
+        throw new VaultError(
+          `rename would rewrite links in a note you cannot write: ${path}`,
+          "FORBIDDEN",
+        );
+      }
+      toWrite.push({ path, next: r.next, count: r.count });
+    }
+    for (const w of toWrite) {
+      await vault.writeNoteLocked(w.path, w.next);
+      patchedFiles.push(w.path);
+      totalReplacements += w.count;
+    }
+  });
 
   return { patchedFiles, totalReplacements };
 }
