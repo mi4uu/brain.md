@@ -42,7 +42,7 @@ export class RagPipeline {
   // and the sequence number each path was last queued at. reindexAll()'s
   // reconciliation pass uses this to tell "genuinely gone from the vault"
   // apart from "written concurrently with the reindex, after the vault
-  // listing it diffs against was taken but before it diffed" — the latter
+  // listing it diffs against was taken but before it diffed"; the latter
   // must not be deleted back out.
   private seq = 0;
   private touchedAt = new Map<string, number>();
