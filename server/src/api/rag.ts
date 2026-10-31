@@ -23,7 +23,10 @@ import {
   type RagDeps,
 } from "../rag/queries";
 import { decodeWildcard } from "./wildcard";
-import { readFilterFor } from "./perm-guard";
+import { readFilterFor, requireOwner } from "./perm-guard";
+import { asError } from "./errors";
+import { principalFor } from "./auth-middleware";
+import { bypassesFolderPerms } from "./principal";
 
 // V47 / V49 / V51: RAG HTTP surface.
 // - GET  /api/similar?q=&k=        T105
@@ -46,6 +49,22 @@ export function ragRoutes(
     pipeline,
     ragEnabled: () => settings.get().rag.enabled,
   };
+  // queries.ts's mayReadPath() only bypasses folder perms for a `deps.
+  // principal` of kind "owner" (MCP's bypass rule). REST leaves
+  // `principal` unset by convention, which always falls through to the
+  // raw folder-perm map, correct for an agent credential but wrong for
+  // an owner/open REST caller, who should see everything these derived
+  // endpoints would otherwise filter as if they were folder-restricted.
+  // Mapping this request's REST bypass onto the synthetic "owner"/
+  // "apikey" kinds queries.ts already understands gets the right REST
+  // semantics without changing queries.ts's MCP-specific rule.
+  function depsFor(request: Request): RagDeps {
+    const principal = principalFor(request);
+    return {
+      ...deps,
+      principal: bypassesFolderPerms(principal) ? { kind: "owner" } : { kind: "apikey" },
+    };
+  }
   const handleErr = (e: unknown, set: { status?: unknown }) => {
     if (e instanceof RagDisabledError) {
       set.status = 503;
@@ -80,9 +99,15 @@ export function ragRoutes(
         try {
           const allowed = await readFilterFor(vault, request);
           const vec = (await pipeline.embed([q]))[0]!;
-          // Over-fetch so enough permitted hits survive the folder-perm
-          // filter below, the store has no notion of permissions itself.
-          const raw = await pipeline.store.search(vec, k + 50);
+          // The store has no notion of permissions itself, so a fixed
+          // over-fetch (e.g. k+50) can run out before k permitted hits
+          // are found if enough of the nearest neighbours are denied.
+          // search() already scores and sorts every row regardless of
+          // how many it's asked to return, so asking for everything the
+          // store holds costs nothing extra and always finds k permitted
+          // hits if that many exist.
+          const total = await pipeline.store.countAll();
+          const raw = await pipeline.store.search(vec, total);
           const hits = raw.filter((h) => allowed(h.path)).slice(0, k);
           return hits;
         } catch (e) {
@@ -122,7 +147,17 @@ export function ragRoutes(
         lastError: pipeline.lastProbeError,
       };
     })
-    .post("/api/rag/reindex", async ({ set }) => {
+    .post("/api/rag/reindex", async ({ set, request }) => {
+      try {
+        // Full-vault operation with no folder scoping, same reasoning as
+        // the git admin routes: a restricted agent could otherwise force
+        // a vault-wide reindex (cost, and disclosed via lastError/status).
+        requireOwner(request);
+      } catch (e) {
+        const { status, body } = asError(e);
+        set.status = status;
+        return body;
+      }
       const cfg = settings.get().rag;
       if (!cfg.enabled) {
         set.status = 503;
@@ -139,7 +174,7 @@ export function ragRoutes(
     // V54: derived RAG endpoints — share queries layer with MCP tools.
     .get(
       "/api/related/*",
-      async ({ params, query, set }) => {
+      async ({ params, query, set, request }) => {
         // B10 / V42: URL-decode the wildcard segment so paths with spaces,
         // `&`, or other reserved chars match what's on disk.
         const path = decodeWildcard((params as { "*"?: string })["*"] ?? "");
@@ -153,7 +188,7 @@ export function ragRoutes(
           return { error: "k must be integer in [1, 20]" };
         }
         try {
-          return await qRelated(deps, path, k);
+          return await qRelated(depsFor(request), path, k);
         } catch (e) {
           return handleErr(e, set);
         }
@@ -162,9 +197,9 @@ export function ragRoutes(
     )
     .post(
       "/api/context",
-      async ({ body, set }) => {
+      async ({ body, set, request }) => {
         try {
-          return await qContext(deps, body.q, body.budget_tokens ?? 2000);
+          return await qContext(depsFor(request), body.q, body.budget_tokens ?? 2000);
         } catch (e) {
           return handleErr(e, set);
         }
@@ -178,11 +213,11 @@ export function ragRoutes(
     )
     .get(
       "/api/orphans",
-      async ({ query, set }) => {
+      async ({ query, set, request }) => {
         const limit = Number(query.limit ?? 10);
         const minIso = Number(query.min_isolation ?? 0.35);
         try {
-          return await qOrphans(deps, limit, minIso);
+          return await qOrphans(depsFor(request), limit, minIso);
         } catch (e) {
           return handleErr(e, set);
         }
@@ -196,13 +231,13 @@ export function ragRoutes(
     )
     .get(
       "/api/digest",
-      async ({ query, set }) => {
+      async ({ query, set, request }) => {
         const since = (query.since ?? "7d").toString();
         const threshold = query.threshold
           ? Number(query.threshold)
           : 0.6;
         try {
-          return await qDigest(deps, since, threshold);
+          return await qDigest(depsFor(request), since, threshold);
         } catch (e) {
           return handleErr(e, set);
         }
@@ -216,9 +251,15 @@ export function ragRoutes(
     )
     .post(
       "/api/rag/test",
-      async ({ body, set }) => {
+      async ({ body, set, request }) => {
         const provider = body.provider;
         try {
+          // This makes the server POST to whatever baseURL the caller
+          // supplies (openai-compat): an agent credential could otherwise
+          // use it to probe or hit arbitrary network addresses from the
+          // server's own network position (SSRF). Only the owner may
+          // configure or test embedding providers.
+          requireOwner(request);
           if (provider === "local") {
             const cfg = body.local as LocalProviderConfig;
             const e = new LocalEmbedder(cfg);
@@ -234,7 +275,13 @@ export function ragRoutes(
           set.status = 400;
           return { error: "unknown provider" };
         } catch (e) {
-          set.status = e instanceof EmbedderHttpError ? e.status || 502 : 500;
+          if (e instanceof EmbedderHttpError) {
+            set.status = e.status || 502;
+          } else {
+            const { status, body: err } = asError(e);
+            set.status = status;
+            return { ok: false, ...err };
+          }
           return {
             ok: false,
             error: e instanceof Error ? e.message : String(e),
