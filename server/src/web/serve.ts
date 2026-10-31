@@ -135,20 +135,6 @@ interface TarEntryInfo {
   raw: string;
 }
 
-// Parses one line of `tar -tv` output (works for both GNU tar and
-// macOS/bsdtar): a permission string whose first character is the entry
-// type ('-' regular, 'd' directory, 'l' symlink, …), then owner/size/date
-// columns, then the path: "-> target" for a symlink, "link to target"
-// for a hardlink.
-export function parseTarVerboseLine(line: string): TarEntryInfo {
-  const typeChar = line[0] ?? "?";
-  const arrowIdx = line.indexOf(" -> ");
-  const linkIdx = line.indexOf(" link to ");
-  const namePart = arrowIdx >= 0 ? line.slice(0, arrowIdx) : linkIdx >= 0 ? line.slice(0, linkIdx) : line;
-  const fields = namePart.trim().split(/\s+/);
-  return { typeChar, name: fields[fields.length - 1] ?? "", raw: line };
-}
-
 // Only plain files and directories are safe to extract. Symlinks and
 // hardlinks (shown as "-> target" / "link to target" in verbose output,
 // regardless of typeChar) could point outside the extraction directory
@@ -160,19 +146,48 @@ export function isSafeTarEntryType(e: TarEntryInfo): boolean {
   return true;
 }
 
-async function listTarEntriesVerbose(tarPath: string): Promise<TarEntryInfo[] | null> {
-  const proc = Bun.spawn(["tar", "-tvzf", tarPath], { stderr: "pipe" });
-  const out = await new Response(proc.stdout).text();
-  const code = await proc.exited;
-  if (code !== 0) {
-    const err = await new Response(proc.stderr).text();
-    console.warn(`[web] tar listing failed (exit ${code}): ${err}`);
+// `tar -tv`'s path column can't be parsed back out reliably: a name
+// containing spaces (or ending in something that looks like a verbose
+// column) shifts the split and silently picks the wrong, truncated name.
+// `tar -tzf` prints exact entry names, one per line, with no columns to
+// misparse; `tar -tvzf` lists the same entries in the same order with
+// their type character, so matching the two listings by line index gives
+// an exact name with a trustworthy type, without parsing either text
+// format for the other's field.
+export async function listTarEntries(tarPath: string): Promise<TarEntryInfo[] | null> {
+  const [namesProc, verboseProc] = [
+    Bun.spawn(["tar", "-tzf", tarPath], { stderr: "pipe" }),
+    Bun.spawn(["tar", "-tvzf", tarPath], { stderr: "pipe" }),
+  ];
+  const [namesOut, namesErr, namesCode, verboseOut, verboseErr, verboseCode] = await Promise.all([
+    new Response(namesProc.stdout).text(),
+    new Response(namesProc.stderr).text(),
+    namesProc.exited,
+    new Response(verboseProc.stdout).text(),
+    new Response(verboseProc.stderr).text(),
+    verboseProc.exited,
+  ]);
+  if (namesCode !== 0) {
+    console.warn(`[web] tar listing failed (exit ${namesCode}): ${namesErr}`);
     return null;
   }
-  return out
-    .split("\n")
-    .filter((l) => l.trim().length > 0)
-    .map(parseTarVerboseLine);
+  if (verboseCode !== 0) {
+    console.warn(`[web] tar verbose listing failed (exit ${verboseCode}): ${verboseErr}`);
+    return null;
+  }
+  const names = namesOut.split("\n").filter((l) => l.length > 0);
+  const verboseLines = verboseOut.split("\n").filter((l) => l.trim().length > 0);
+  if (names.length !== verboseLines.length) {
+    console.warn(
+      `[web] tar name/verbose entry count mismatch (${names.length} vs ${verboseLines.length}); refusing to extract`,
+    );
+    return null;
+  }
+  return names.map((name, i) => ({
+    name,
+    typeChar: verboseLines[i]?.[0] ?? "?",
+    raw: verboseLines[i] ?? "",
+  }));
 }
 
 async function downloadAndExtract(target: string): Promise<boolean> {
@@ -223,7 +238,7 @@ async function downloadAndExtract(target: string): Promise<boolean> {
     const tarPath = join(staging, archiveName);
     await writeFile(tarPath, buf);
 
-    const entries = await listTarEntriesVerbose(tarPath);
+    const entries = await listTarEntries(tarPath);
     if (!entries) return false;
     const unsafeNames = entries.filter((e) => !isSafeTarEntry(e.name));
     if (unsafeNames.length > 0) {

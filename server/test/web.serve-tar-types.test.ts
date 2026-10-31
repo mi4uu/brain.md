@@ -1,42 +1,95 @@
 import { describe, expect, test } from "bun:test";
-import { isSafeTarEntryType, parseTarVerboseLine } from "../src/web/serve";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { isSafeTarEntry, isSafeTarEntryType, listTarEntries } from "../src/web/serve";
 
 // Regression for Codex r2 #20: the Tier-3 web bundle download only checked
 // entry *names* for traversal, never entry *types*, so a symlink or
 // hardlink inside an otherwise path-safe archive would extract as-is.
 
-describe("parseTarVerboseLine / isSafeTarEntryType", () => {
+describe("isSafeTarEntryType", () => {
   test("accepts a regular file", () => {
-    const e = parseTarVerboseLine("-rw-r--r-- user/group 123 2024-01-01 00:00 index.html");
-    expect(e.typeChar).toBe("-");
-    expect(e.name).toBe("index.html");
-    expect(isSafeTarEntryType(e)).toBe(true);
+    expect(isSafeTarEntryType({ typeChar: "-", name: "index.html", raw: "-rw-r--r-- index.html" })).toBe(true);
   });
 
   test("accepts a directory", () => {
-    const e = parseTarVerboseLine("drwxr-xr-x user/group 0 2024-01-01 00:00 assets/");
-    expect(e.typeChar).toBe("d");
-    expect(isSafeTarEntryType(e)).toBe(true);
+    expect(isSafeTarEntryType({ typeChar: "d", name: "assets/", raw: "drwxr-xr-x assets/" })).toBe(true);
   });
 
   test("rejects a symlink", () => {
-    const e = parseTarVerboseLine(
-      "lrwxrwxrwx user/group 0 2024-01-01 00:00 assets/evil.js -> /etc/passwd",
-    );
-    expect(e.typeChar).toBe("l");
-    expect(e.name).toBe("assets/evil.js");
-    expect(isSafeTarEntryType(e)).toBe(false);
+    expect(
+      isSafeTarEntryType({
+        typeChar: "l",
+        name: "assets/evil.js",
+        raw: "lrwxrwxrwx assets/evil.js -> /etc/passwd",
+      }),
+    ).toBe(false);
   });
 
   test("rejects a hardlink even when shown with a regular-file type char", () => {
-    const e = parseTarVerboseLine(
-      "-rw-r--r-- user/group 0 2024-01-01 00:00 assets/dup.js link to assets/real.js",
-    );
-    expect(isSafeTarEntryType(e)).toBe(false);
+    expect(
+      isSafeTarEntryType({
+        typeChar: "-",
+        name: "assets/dup.js",
+        raw: "-rw-r--r-- assets/dup.js link to assets/real.js",
+      }),
+    ).toBe(false);
   });
 
   test("rejects a character device", () => {
-    const e = parseTarVerboseLine("crw-rw-rw- user/group 0 2024-01-01 00:00 dev/null");
-    expect(isSafeTarEntryType(e)).toBe(false);
+    expect(isSafeTarEntryType({ typeChar: "c", name: "dev/null", raw: "crw-rw-rw- dev/null" })).toBe(false);
+  });
+});
+
+// Regression for Codex r3 #9: parsing the filename out of `tar -tv`'s
+// whitespace-separated columns picked the last field, so a name ending in
+// something that looks like a trailing column (or just containing spaces)
+// was silently truncated, and a `../` prefix slipped straight past the
+// traversal check still attached to the wrong, truncated "safe" name.
+describe("listTarEntries", () => {
+  test("reports the exact entry name for a name with spaces and a traversal prefix", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "brainmd-tar-"));
+    try {
+      const fileName = "a file.txt";
+      await writeFile(join(dir, fileName), "hi");
+      const tarPath = join(dir, "out.tar.gz");
+      // bsdtar/GNU tar's -s rewrites the in-archive name without needing
+      // an actual path on disk called "../escape harmless.js" (which the
+      // filesystem wouldn't allow as a direct child anyway).
+      const proc = Bun.spawn(
+        ["tar", "-czf", tarPath, "-s", ",^a file.txt$,../escape harmless.js,", "-C", dir, fileName],
+        { stderr: "pipe" },
+      );
+      const code = await proc.exited;
+      expect(code).toBe(0);
+
+      const entries = await listTarEntries(tarPath);
+      expect(entries).not.toBeNull();
+      expect(entries!).toHaveLength(1);
+      const entry = entries![0]!;
+      expect(entry.name).toBe("../escape harmless.js");
+      expect(isSafeTarEntry(entry.name)).toBe(false);
+      expect(isSafeTarEntryType(entry)).toBe(true); // regular file; name is the only thing wrong with it
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("still reports an ordinary name correctly", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "brainmd-tar-"));
+    try {
+      await writeFile(join(dir, "index.html"), "<html></html>");
+      const tarPath = join(dir, "out.tar.gz");
+      const proc = Bun.spawn(["tar", "-czf", tarPath, "-C", dir, "index.html"], { stderr: "pipe" });
+      expect(await proc.exited).toBe(0);
+
+      const entries = await listTarEntries(tarPath);
+      expect(entries).not.toBeNull();
+      expect(entries![0]!.name).toBe("index.html");
+      expect(isSafeTarEntry(entries![0]!.name)).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
