@@ -3,7 +3,7 @@ import type { AuthStore } from "../auth/store";
 import type { OAuthStore } from "../auth/oauth-store";
 import type { OAuthClientStore, ClientRegistrationRequest } from "../auth/oauth-clients";
 import type { TokenStore } from "../auth/tokens";
-import type { LoginConfig } from "../auth/login-config";
+import { hasExternalProvider, type LoginConfig } from "../auth/login-config";
 import type { LoginLimiter } from "../auth/login-limiter";
 import { checkOwnerPassword } from "../auth/password-policy";
 import { getClientIp } from "./client-ip";
@@ -311,15 +311,19 @@ export function oauthFlowRoutes(
             return redirectWithError(redirectUri, state, "invalid_scope", `unknown scope: ${unknown}`);
           }
 
-          // If no vault password is configured, refuse to issue tokens. We
-          // can't prove the consenting agent is the vault owner without
-          // some shared secret.
-          if (!authStore.isConfigured()) {
+          // Refuse to issue tokens when nothing can prove the consenting
+          // agent is the vault owner: no vault password AND no external
+          // provider either. An IdP-only deployment (password login off,
+          // no password ever set) still has a valid path: the POST
+          // handler accepts an already-valid web-app session from that
+          // IdP login. Enforcement stays on POST; this only decides
+          // whether the consent page itself is worth serving.
+          if (!authStore.isConfigured() && !hasExternalProvider(loginConfig)) {
             set.status = 503;
             return {
               error: "server_error",
               error_description:
-                "OAuth requires a vault password. Open Settings → Security and set one before connecting MCP clients.",
+                "OAuth requires a vault password or an external login provider. Open Settings → Security and set one up before connecting MCP clients.",
             };
           }
 

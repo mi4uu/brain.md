@@ -230,6 +230,105 @@ describe("POST /oauth/authorize: shares the login password policy", () => {
   });
 });
 
+// Regression: GET /oauth/authorize used to 503 whenever authStore.isConfigured()
+// was false, even when an external provider was configured and could
+// authenticate the consenting human instead. That left consent.js never
+// served at all to an IdP-only deployment, so there was no way to even
+// reach the "log in with the provider, then approve" path, despite POST
+// already accepting a session token from that login.
+describe("GET /oauth/authorize: IdP-only deployments (no password ever set)", () => {
+  async function appIdpOnly(): Promise<{ handle: AppHandle; dir: string }> {
+    const d = await mkdtemp(join(tmpdir(), "brain-consent-idp-only-"));
+    const h = createApp({
+      vaultDir: d,
+      gitAutocommit: false,
+      loginConfig: {
+        passwordLogin: false,
+        publicUrl: "http://localhost",
+        github: { clientId: "gh-client", clientSecret: "gh-secret" },
+        allowedEmails: ["owner@example.com"],
+        allowedDomains: [],
+      },
+    });
+    return { handle: h, dir: d };
+  }
+
+  async function registerOn(h: AppHandle): Promise<string> {
+    const res = await h.app.handle(
+      new Request("http://localhost/oauth/register", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ client_name: "test client", redirect_uris: ["https://example.com/cb"] }),
+      }),
+    );
+    const { client_id } = await res.json();
+    return client_id;
+  }
+
+  function authorizeUrl(clientId: string, form: ReturnType<typeof authorizeParams>["form"]): string {
+    return (
+      `http://localhost/oauth/authorize?response_type=code&client_id=${clientId}` +
+      `&redirect_uri=${encodeURIComponent(form.redirect_uri)}&code_challenge=${form.code_challenge}` +
+      `&code_challenge_method=S256&resource=${encodeURIComponent(form.resource)}`
+    );
+  }
+
+  test("the consent page is served (not a 503) with no password configured", async () => {
+    const { handle: h, dir: d } = await appIdpOnly();
+    try {
+      const clientId = await registerOn(h);
+      const { form } = authorizeParams(clientId);
+      const res = await h.app.handle(new Request(authorizeUrl(clientId, form)));
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain('<script src="/oauth/consent.js"></script>');
+    } finally {
+      await rm(d, { recursive: true, force: true });
+    }
+  });
+
+  test("submission still requires either a password or a valid session, serving the page is not itself auth", async () => {
+    const { handle: h, dir: d } = await appIdpOnly();
+    try {
+      const clientId = await registerOn(h);
+      const { form } = authorizeParams(clientId);
+      const res = await h.app.handle(
+        new Request("http://localhost/oauth/authorize", {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ ...form, decision: "allow" }).toString(),
+        }),
+      );
+      expect(res.status).toBe(302);
+      const location = new URL(res.headers.get("location")!);
+      expect(location.searchParams.get("error")).toBe("server_error");
+    } finally {
+      await rm(d, { recursive: true, force: true });
+    }
+  });
+
+  test("no password AND no external provider still 503s, same as before", async () => {
+    const d = await mkdtemp(join(tmpdir(), "brain-consent-noauth-"));
+    const h = createApp({
+      vaultDir: d,
+      gitAutocommit: false,
+      loginConfig: {
+        passwordLogin: true,
+        allowedEmails: [],
+        allowedDomains: [],
+      },
+    });
+    try {
+      const clientId = await registerOn(h);
+      const { form } = authorizeParams(clientId);
+      const res = await h.app.handle(new Request(authorizeUrl(clientId, form)));
+      expect(res.status).toBe(503);
+    } finally {
+      await rm(d, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("GET /oauth/authorize: the consent page's script is same-origin, not inline", () => {
   // CSP is script-src 'self' with no nonce (api.security-headers.test.ts
   // covers the header itself); an inline <script> would be silently
