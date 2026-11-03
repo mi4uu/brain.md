@@ -3,6 +3,7 @@ import type { AuthStore } from "../auth/store";
 import type { OAuthStore } from "../auth/oauth-store";
 import type { OAuthClientStore, ClientRegistrationRequest } from "../auth/oauth-clients";
 import { CimdResolver, isCimdClientId, type ClientMetadata } from "../auth/cimd";
+import { CSP } from "../web/serve";
 
 // V63 step 2: /oauth/authorize + /oauth/token endpoints.
 //
@@ -291,6 +292,7 @@ export function oauthFlowRoutes(
           }
 
           set.headers["content-type"] = "text/html; charset=utf-8";
+          set.headers["content-security-policy"] = CSP;
           return consentPage({
             clientId,
             clientName: resolved.name,
@@ -349,6 +351,7 @@ export function oauthFlowRoutes(
           const ok = await Bun.password.verify(password, hash);
           if (!ok) {
             set.headers["content-type"] = "text/html; charset=utf-8";
+            set.headers["content-security-policy"] = CSP;
             return consentPage({
               clientId, clientName: resolved.name, redirectUri, scope, state, codeChallenge, resource,
               error: "Incorrect password. Try again.",

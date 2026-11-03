@@ -49,9 +49,10 @@ function mimeFor(path: string): string {
 // renderer. CSP is the backstop if that sanitisation ever has a gap:
 // no inline/external script beyond our own bundle can run, nothing can
 // be <object>/<embed>ed, and the page can't be framed or have its <base>
-// hijacked. style-src allows 'unsafe-inline' because KaTeX and
-// highlight.js generate inline styles; img-src allows data:/blob: for
-// the same (KaTeX glyphs, pasted/rendered images).
+// hijacked. style-src allows 'unsafe-inline' because CodeMirror 6's
+// style-mod injects rules via a dynamic <style> element (no nonce support),
+// and KaTeX/highlight.js generate inline styles too; img-src allows
+// data:/blob: for the same (KaTeX glyphs, pasted/rendered images).
 export const CSP =
   "default-src 'self'; " +
   "script-src 'self'; " +
@@ -66,6 +67,7 @@ export const CSP =
   "worker-src 'self' blob:; " +
   "object-src 'none'; " +
   "base-uri 'self'; " +
+  "form-action 'self'; " +
   "frame-ancestors 'none'";
 
 // Where Tier 3 caches downloaded bundles.
