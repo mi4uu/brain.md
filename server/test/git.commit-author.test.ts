@@ -47,9 +47,23 @@ describe("GitRepo.commitAll: author + trailers", () => {
 
   test("trailers are appended after a blank line", async () => {
     await writeFile(join(dir, "a.md"), "x");
-    await repo.commitAll("msg", { trailers: { "On-Behalf-Of": "apikey:1", Agent: "ci-bot" } });
+    await repo.commitAll("msg", {
+      trailers: [{ key: "On-Behalf-Of", value: "apikey:1" }, { key: "Agent", value: "ci-bot" }],
+    });
     const [, , body] = (await rawLog()).split("\x1f");
     expect(body).toContain("msg\n\nOn-Behalf-Of: apikey:1\nAgent: ci-bot");
+  });
+
+  test("the same trailer key can repeat, one line per entry", async () => {
+    await writeFile(join(dir, "a.md"), "x");
+    await repo.commitAll("msg", {
+      trailers: [
+        { key: "Changed-by", value: "a.md Alice" },
+        { key: "Changed-by", value: "b.md Bob" },
+      ],
+    });
+    const [, , body] = (await rawLog()).split("\x1f");
+    expect(body).toContain("msg\n\nChanged-by: a.md Alice\nChanged-by: b.md Bob");
   });
 
   test("paths option stages only the given pathspecs, leaving others pending", async () => {
@@ -73,7 +87,7 @@ describe("GitRepo.commitAll: author + trailers", () => {
   test("a trailer value with newlines can't forge a second trailer line", async () => {
     await writeFile(join(dir, "a.md"), "x");
     await repo.commitAll("inj", {
-      trailers: { Agent: "Helper\nOn-Behalf-Of: forged-owner\nSigned-off-by: someone" },
+      trailers: [{ key: "Agent", value: "Helper\nOn-Behalf-Of: forged-owner\nSigned-off-by: someone" }],
     });
     const [, , body] = (await rawLog()).split("\x1f");
     expect(body).not.toContain("\nOn-Behalf-Of: forged-owner");
@@ -84,7 +98,7 @@ describe("GitRepo.commitAll: author + trailers", () => {
 
   test("a trailer key with newlines can't inject its own line either", async () => {
     await writeFile(join(dir, "a.md"), "x");
-    await repo.commitAll("inj", { trailers: { "Agent\nSigned-off-by": "someone" } });
+    await repo.commitAll("inj", { trailers: [{ key: "Agent\nSigned-off-by", value: "someone" }] });
     const [, , body] = (await rawLog()).split("\x1f");
     expect(body).not.toContain("\nSigned-off-by: someone");
   });

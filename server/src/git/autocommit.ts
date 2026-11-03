@@ -1,4 +1,4 @@
-import { GitRepo } from "./git";
+import { GitRepo, type CommitTrailer } from "./git";
 import type { Identity } from "../auth/identity";
 
 export interface AutocommitOpts {
@@ -11,13 +11,53 @@ export interface AutocommitOpts {
 // pre-identity code produced.
 const FALLBACK_IDENTITY: Identity = { sub: "local", name: "brain.md", kind: "human" };
 
+// A failed flush retries on a fixed delay, but not forever: a path that is
+// persistently uncommittable (e.g. a permissions error, or the test
+// directory itself having been removed) must not wedge a live setTimeout
+// forever, which keeps the process' event loop non-idle and never lets it
+// exit. See the module comment on Autocommit.flush() for the incident this
+// closes.
+const MAX_RETRIES = 5;
+const RETRY_DELAY_MS = 50;
+
+// Design: one commit per flush(), not one commit per actor.
+//
+// An earlier version split a flush window into one commit per distinct
+// actor that touched a path in it, built through a private isolated git
+// index so the actors' commits wouldn't step on each other's staged
+// content, with a "reconcile the real index afterwards" step and its own
+// retry-and-queue machinery. That needed four rounds of race-closing fixes
+// (excludeIfClaimed rechecked at three separate points, a real-index
+// reconcile with its own retry) and still had an open one: flush()'s own
+// retry at the bottom of this file was an unbounded, un-cancellable,
+// un-awaited `setTimeout`. If a commit kept failing the same way forever
+// (e.g. the test directory it points at no longer exists, see dispose()
+// below), the retry rescheduled itself every 50ms forever, which keeps
+// Bun's event loop non-idle: a test run can print a clean final pass/fail
+// summary and then just sit there, still forking `git` every ~50ms,
+// because nothing ever cancels that chain.
+//
+// One commit per flush removes the reason for all of it: there is only
+// ever one `git add` + one `git commit` in flight per flush, already
+// serialized by GitRepo itself (see git.ts), so there is nothing for a
+// second actor's commit to race. When every path in the flush came from
+// the same actor, that actor is the author, same as before. When paths
+// came from more than one actor, the commit is attributed to the owner
+// (the pre-identity default author), with one "Changed-by: <path> <actor>"
+// trailer line per path, naming exactly who touched what. That keeps a
+// complete, path-level audit trail (arguably easier to grep than hunting
+// across several commits for one flush) without needing an isolated index
+// or a real-index reconcile step at all.
 export class Autocommit {
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
   // Keyed by path so a later write to the same path before flush replaces
   // its actor, matching who actually made the LAST change to that path.
   private pendingPaths = new Map<string, Identity>();
   private inFlight = false;
   private rerun = false;
+  private retryCount = 0;
+  private disposed = false;
 
   constructor(
     private readonly repo: GitRepo,
@@ -26,21 +66,44 @@ export class Autocommit {
 
   setEnabled(v: boolean) {
     this.opts = { ...this.opts, enabled: v };
-    if (!v && this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
+    if (!v) this.clearTimers();
   }
 
   setDebounceMs(ms: number) {
     this.opts = { ...this.opts, debounceMs: Math.max(500, ms) };
   }
 
+  private clearTimers() {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+  }
+
+  // Stops this instance for good: cancels the debounce timer and any
+  // pending retry, and makes every later notify()/flush() a no-op.
+  // Must be called by test teardown (`afterEach`) before the test's own
+  // temp directory is removed, so a retry scheduled against a now-deleted
+  // directory can't keep firing after the test that owned it has ended.
+  // Nothing in production currently calls this (the server process holds
+  // one Autocommit for its whole lifetime), but the same guarantee matters
+  // there too: a persistently uncommittable path must stop retrying
+  // instead of wedging the event loop forever, which MAX_RETRIES above
+  // already bounds even without an explicit dispose() call.
+  dispose() {
+    this.disposed = true;
+    this.clearTimers();
+  }
+
   // board-plan Part B: identity is captured HERE, at notify time (inside
   // the request that made the mutation), not at flush time (the debounce
   // timer fires outside any request, with no identity of its own).
   notify(path: string, identity?: Identity) {
-    if (!this.opts.enabled) return;
+    if (this.disposed || !this.opts.enabled) return;
     this.pendingPaths.set(path, identity ?? FALLBACK_IDENTITY);
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => {
@@ -48,23 +111,26 @@ export class Autocommit {
     }, this.opts.debounceMs);
   }
 
-  // Returns the last commit sha made (or null if nothing was dirty). A
-  // single flush can produce more than one commit, see groupByActor.
+  // Returns the commit sha made (or null if nothing was dirty).
   //
   // Design: snapshot pendingPaths synchronously right here, before any
-  // await, then stage and commit exactly those snapshotted paths per
-  // actor (never a sweeping `git add -A`). A notify() landing on a path
-  // already claimed by this snapshot can't happen (that path left
-  // pendingPaths the moment it was snapshotted), so there's nothing to
-  // race there. A notify() for any OTHER path can land at any later await
-  // in this method, including inside a group's own commit: it's simply
-  // left in pendingPaths for the fallback and the next flush to respect,
-  // see fallbackCommit() and the retry scheduled at the end of this
-  // method.
+  // await, then stage and commit exactly those snapshotted paths in one
+  // commit (never a sweeping `git add -A` for the whole vault). A
+  // notify() landing on a path already claimed by this snapshot can't
+  // happen (that path left pendingPaths the moment it was snapshotted),
+  // so there's nothing to race there. A notify() for any OTHER path can
+  // land at any later await in this method: it's simply left in
+  // pendingPaths for the retry/next flush to pick up, see the scheduling
+  // at the end of this method.
   async flush(): Promise<string | null> {
+    if (this.disposed) return null;
     if (this.timer !== null) {
       clearTimeout(this.timer);
       this.timer = null;
+    }
+    if (this.retryTimer !== null) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
     }
     if (this.inFlight) {
       this.rerun = true;
@@ -76,150 +142,120 @@ export class Autocommit {
     const snapshot = new Map(this.pendingPaths);
     this.pendingPaths.clear();
     this.inFlight = true;
-    let lastSha: string | null = null;
+    let sha: string | null = null;
+    let failed = false;
     try {
       const dirty = await this.repo.hasChanges();
       // A notify() that landed while the hasChanges() await above was in
       // flight is still sitting in pendingPaths right now (notify() only
       // clears via a flush's own snapshot). Fold it into THIS flush's
-      // snapshot instead of leaving it for the zero-groups fallback below
-      // to sweep up unattributed, or leaving it queued for a later flush
-      // to repeat the same race against.
+      // snapshot instead of leaving the fallback-author case below to
+      // sweep it up unattributed.
       if (this.pendingPaths.size > 0) {
         for (const [path, identity] of this.pendingPaths) snapshot.set(path, identity);
         this.pendingPaths.clear();
       }
-      if (!dirty && snapshot.size === 0) return null;
 
-      const groups = groupByActor(snapshot);
-      let anyGroupFailed = false;
-      for (const group of groups) {
-        try {
-          const sha = await this.repo.commitAll(commitMessage(group.paths), {
-            paths: group.paths,
-            author: { name: group.identity.name, email: group.identity.email ?? "agent@brain.local" },
-            trailers: trailersFor(group.identity),
-            // Must-fix: ownership was captured once, in this flush's
-            // opening snapshot, and never checked again. If a different
-            // actor overwrites one of this group's paths and notifies
-            // while this commit is still staging (git.ts's own awaits
-            // between picking candidates and actually running `git add`),
-            // the write already landed on disk under the new actor, but
-            // this commit's `git add -A` reads the working tree as it is
-            // NOW, so it would stage and commit their text under THIS
-            // group's author. pendingPaths holds the live truth: notify()
-            // writes straight into it, and flush() only clears it via its
-            // own snapshot at the top of this method, so any entry
-            // present here was added after that snapshot was taken, i.e.
-            // by someone else. Dropping that path here leaves it in
-            // pendingPaths under its new owner, for the next flush (the
-            // retry scheduled at the end of this method) to commit
-            // properly, instead of folding it into this one under the
-            // wrong name.
-            excludeIfClaimed: (p) => this.pendingPaths.has(p),
-          });
-          if (sha) lastSha = sha;
-        } catch (e) {
-          // A group's commit can fail for reasons --ignore-errors in
-          // git.ts doesn't cover (disk full, a lock held by another
-          // process). Put its paths back instead of dropping them: a
-          // later flush (notify() debounce, or the retry below) gets
-          // another shot instead of silently losing the change. git.ts
-          // unstages this group's own paths on that failure, so the next
-          // group below starts from a clean index instead of inheriting
-          // this one's staged-but-uncommitted files.
-          console.warn("[autocommit] group commit failed, will retry:", e);
-          anyGroupFailed = true;
-          for (const path of group.paths) {
-            if (!this.pendingPaths.has(path)) this.pendingPaths.set(path, group.identity);
-          }
+      // Regression (v0.4.12): flush() must still commit a dirty repo even
+      // with nothing queued (an external edit, a restart that lost
+      // pendingPaths, or a direct flush() call) — but only the paths that
+      // are ACTUALLY dirty, scoped by pathspec, never a blanket `git add
+      // -A` that would also sweep in anything a notified actor is still
+      // mid-write on.
+      const paths = new Set(snapshot.keys());
+      if (dirty) {
+        for (const p of await this.repo.dirtyPaths()) {
+          if (!snapshot.has(p)) paths.add(p);
         }
       }
-      // Every group above staged and committed exactly its own snapshotted
-      // paths, by pathspec, never a sweeping `git add -A`. Anything still
-      // dirty after all of them belongs to no notified actor at all (an
-      // external edit, a restart that lost pendingPaths, or a direct
-      // flush() call with nothing queued, same as v0.4.12's always-commit
-      // behaviour): one fallback commit for it under the default author.
-      // Skipped whenever a group failed: its paths are still dirty too,
-      // queued above for the retry this method schedules below, and the
-      // fallback can't yet tell its dirt apart from theirs.
-      if (!anyGroupFailed) {
-        const sha = await this.fallbackCommit();
-        if (sha) lastSha = sha;
+      if (paths.size === 0) return null;
+
+      const { author, trailers } = describeCommit(snapshot);
+      try {
+        sha = await this.repo.commitAll(commitMessage(Array.from(paths)), {
+          paths: Array.from(paths),
+          author,
+          trailers,
+        });
+      } catch (e) {
+        // A transient commit failure (a lock held by another process, a
+        // rejecting hook) must not drop these paths: put them back for a
+        // later flush (notify()'s own debounce, or the bounded retry
+        // below) to try again, instead of silently losing the change.
+        console.warn("[autocommit] commit failed, will retry:", e);
+        failed = true;
+        for (const [path, identity] of snapshot) {
+          if (!this.pendingPaths.has(path)) this.pendingPaths.set(path, identity);
+        }
       }
     } finally {
       this.inFlight = false;
     }
+
+    if (failed) {
+      this.retryCount++;
+      if (this.retryCount > MAX_RETRIES) {
+        console.warn(
+          `[autocommit] giving up after ${MAX_RETRIES} retries, ${this.pendingPaths.size} path(s) left pending; ` +
+            "they'll be picked up by the next notify()'d write or an explicit flush().",
+        );
+        return null;
+      }
+      this.retryTimer = setTimeout(() => void this.flush(), RETRY_DELAY_MS);
+      return null;
+    }
+    this.retryCount = 0;
     if (this.rerun || this.pendingPaths.size > 0) {
       this.rerun = false;
-      setTimeout(() => void this.flush(), 50);
+      this.retryTimer = setTimeout(() => void this.flush(), RETRY_DELAY_MS);
     }
-    return lastSha;
-  }
-
-  // Commits whatever is dirty on disk right now but claimed by no actor,
-  // under the default author. Must-fix regression (f7618a5): a blanket
-  // `commitAll('auto')` here (no `paths`, so it staged everything with
-  // `git add -A`) could not tell an unclaimed path apart from one that
-  // arrived in this.pendingPaths mid-flush, queued for its own actor's
-  // commit a moment later (notify() doesn't check inFlight, so a request's
-  // mutation can land at any point during this method's own awaits, or
-  // during the per-group commits above). That swept the newcomer's change
-  // into the fallback commit under the wrong author; its pendingPaths
-  // entry then survived to be "retried" against a file already committed.
-  // Re-reading the queue right here, right before staging, closes that:
-  // dirtyPaths() lists every dirty path, and anything already in
-  // pendingPaths is left for the flush that queued it to commit under its
-  // own author, explicit pathspec, never a sweep.
-  private async fallbackCommit(): Promise<string | null> {
-    const dirty = await this.repo.dirtyPaths();
-    const candidates = dirty.filter((p) => !this.pendingPaths.has(p));
-    if (candidates.length === 0) return null;
-    return this.repo.commitAll("auto", {
-      paths: candidates,
-      author: { name: FALLBACK_IDENTITY.name, email: FALLBACK_IDENTITY.email ?? "agent@brain.local" },
-      // Must-fix: this candidate list is picked here, but commitAll()
-      // still has its own serialisation queue + filterStageable() to
-      // await before it actually stages anything (git.ts). A notify() for
-      // one of these exact paths (a real actor's write landing after the
-      // dirty scan above, during those awaits) used to have nothing
-      // checking for it again, so it got staged and committed under the
-      // fallback author anyway, and that actor's own retry afterwards had
-      // nothing left to commit. excludeIfClaimed is called again right as
-      // git.ts is about to stage, the last synchronous point before it
-      // does, closing that gap instead of only checking it here.
-      excludeIfClaimed: (p) => this.pendingPaths.has(p),
-    });
+    return sha;
   }
 }
 
-interface ActorGroup {
-  identity: Identity;
-  paths: string[];
-}
-
-// One group per distinct subject that touched a path in this flush window,
-// so each actor gets their own commit (board-plan: "split into one commit
-// per actor" rather than one commit crediting whoever happened to flush).
-// Keyed by kind + credentialId (not just sub): a password-authenticated
+// One combined commit per flush: if every path in `pendingPaths` came from
+// the same actor (by kind + credentialId, see the note below), that actor
+// is the author and there's nothing more to say. Otherwise the commit is
+// attributed to the owner (whichever human touched this flush, there is
+// only ever one per vault; the hardcoded local fallback if no human did),
+// with one "Changed-by: <path> <actor>" trailer per path so the audit
+// trail still names exactly who touched what, without needing a commit
+// per actor.
+//
+// Grouped by kind + credentialId (not just sub): a password-authenticated
 // human session and an MCP client consented with that same password both
 // end up with sub === LOCAL_SUB, and distinct MCP clients consented that
-// way all share it too, see Identity.credentialId. Without the kind/
-// credentialId split they'd merge into one commit under whichever
-// identity happened to be recorded first.
-function groupByActor(pendingPaths: Map<string, Identity>): ActorGroup[] {
-  const byKey = new Map<string, ActorGroup>();
-  for (const [path, identity] of pendingPaths) {
-    const key = `${identity.kind}:${identity.credentialId ?? identity.sub}`;
-    let g = byKey.get(key);
-    if (!g) {
-      g = { identity, paths: [] };
-      byKey.set(key, g);
-    }
-    g.paths.push(path);
+// way all share it too, see Identity.credentialId. Comparing sub alone
+// would merge all of them into "one actor" and lose the distinction this
+// trailer exists to preserve.
+function describeCommit(
+  pendingPaths: Map<string, Identity>,
+): { author?: { name: string; email: string }; trailers?: CommitTrailer[] } {
+  const actorKey = (id: Identity) => `${id.kind}:${id.credentialId ?? id.sub}`;
+  const distinctActors = new Set(Array.from(pendingPaths.values(), actorKey));
+
+  if (distinctActors.size <= 1) {
+    const identity = pendingPaths.values().next().value as Identity | undefined;
+    if (!identity) return {};
+    return {
+      author: { name: identity.name, email: identity.email ?? "agent@brain.local" },
+      trailers: trailersFor(identity),
+    };
   }
-  return Array.from(byKey.values());
+
+  const trailers: CommitTrailer[] = [];
+  for (const [path, identity] of pendingPaths) {
+    trailers.push({ key: "Changed-by", value: `${path} ${actorDescription(identity)}` });
+  }
+  const owner = Array.from(pendingPaths.values()).find((id) => id.kind === "human") ?? FALLBACK_IDENTITY;
+  return {
+    author: { name: owner.name, email: owner.email ?? "agent@brain.local" },
+    trailers,
+  };
+}
+
+function actorDescription(identity: Identity): string {
+  return identity.kind === "human" ? identity.name : (identity.clientName ?? identity.name);
 }
 
 function commitMessage(paths: string[]): string {
@@ -232,10 +268,10 @@ function commitMessage(paths: string[]): string {
 // who they acted for; a human (password login, or the back-compat
 // unconfigured case) IS the owner, so there's nothing to say "on behalf
 // of": the author line already covers it.
-function trailersFor(identity: Identity): Record<string, string> | undefined {
+function trailersFor(identity: Identity): CommitTrailer[] | undefined {
   if (identity.kind === "human") return undefined;
-  return {
-    "On-Behalf-Of": identity.sub,
-    Agent: identity.clientName ?? identity.name,
-  };
+  return [
+    { key: "On-Behalf-Of", value: identity.sub },
+    { key: "Agent", value: identity.clientName ?? identity.name },
+  ];
 }

@@ -8,6 +8,7 @@ import { localIdentity } from "../src/auth/identity";
 
 let dir: string;
 let repo: GitRepo;
+let ac: Autocommit | undefined;
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "brain-autocommit-paths-"));
@@ -16,6 +17,9 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  // See autocommit.ts's module comment: an undisposed instance can hold a
+  // live retry timer that must not outlive this test's temp directory.
+  ac?.dispose();
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -27,7 +31,7 @@ describe("Autocommit: transient paths within one flush window", () => {
   test("a rename chain's intermediate path doesn't discard the batch", async () => {
     const owner = localIdentity("Owner", "owner@brain.local");
     await writeFile(join(dir, "a.md"), "a1");
-    const ac = new Autocommit(repo, { enabled: true, debounceMs: 50 });
+    ac = new Autocommit(repo, { enabled: true, debounceMs: 50 });
     ac.notify("a.md", owner);
     await ac.flush();
 
@@ -69,16 +73,16 @@ describe("Autocommit: a group that fails to commit is kept for retry", () => {
         return repo.commitAll(message, opts);
       },
     };
-    const ac = new Autocommit(failOnce as unknown as GitRepo, { enabled: true, debounceMs: 50 });
+    ac = new Autocommit(failOnce as unknown as GitRepo, { enabled: true, debounceMs: 50 });
     ac.notify("a.md", owner);
 
     const first = await ac.flush();
     expect(first).toBeNull();
     expect(calls).toBe(1);
 
-    // flush() schedules its own retry (setTimeout(..., 50)) because the
-    // failed group's paths are still pending; wait past it rather than
-    // calling flush() again, to exercise that retry path too.
+    // flush() schedules its own bounded retry (setTimeout(..., 50))
+    // because the failed commit's paths are still pending; wait past it
+    // rather than calling flush() again, to exercise that retry path too.
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(calls).toBe(2);
 

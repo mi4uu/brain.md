@@ -48,7 +48,11 @@ interface Fixture {
 }
 
 const openDirs: string[] = [];
+const openHandles: AppHandle[] = [];
 afterEach(async () => {
+  // See autocommit.ts's module comment: an undisposed instance can hold a
+  // live retry timer that must not outlive its fixture's temp directory.
+  for (const h of openHandles.splice(0)) h.autocommit.dispose();
   await Promise.all(openDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 
@@ -81,6 +85,7 @@ async function makeFixture(kind: PrincipalKind): Promise<Fixture> {
   const dir = await mkdtemp(join(tmpdir(), `brain-matrix-${kind}-`));
   openDirs.push(dir);
   const handle = createApp({ vaultDir: dir, gitAutocommit: true, gitDebounceMs: 20 });
+  openHandles.push(handle);
   await handle.repo.ensure();
 
   await handle.vault.writeNote("secret/a.md", "top secret body\n- [ ] secret task\n#secrettag\n");

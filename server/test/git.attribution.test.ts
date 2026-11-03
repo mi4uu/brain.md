@@ -172,7 +172,11 @@ describe("git commit author from identity", () => {
     expect(commit!.body).toContain("On-Behalf-Of: oauth-sub-1");
   });
 
-  test("several actors in one flush window → one commit per actor", async () => {
+  // Design: several actors in one flush window land in exactly ONE
+  // commit, not one per actor, see autocommit.ts's module comment. The
+  // commit is attributed to the owner, with a Changed-by trailer per
+  // path naming who actually touched it.
+  test("several actors in one flush window → one commit, owner-attributed, with Changed-by trailers", async () => {
     await setPassword("hunter2hunter2");
     const ownerToken = await login("hunter2hunter2");
     const keyToken = await createApiKey(ownerToken, "ci-bot");
@@ -184,13 +188,10 @@ describe("git commit author from identity", () => {
 
     const log = await gitLog();
     const autoCommits = log.filter((c) => c.body.startsWith("auto:"));
-    expect(autoCommits.length).toBe(2);
-    const owners = autoCommits.filter((c) => c.authorName === "brain.md owner");
-    const bots = autoCommits.filter((c) => c.authorName === "ci-bot");
-    expect(owners.length).toBe(1);
-    expect(bots.length).toBe(1);
-    expect(owners[0]!.body).not.toContain("On-Behalf-Of:");
-    expect(bots[0]!.body).toContain("Agent: ci-bot");
+    expect(autoCommits.length).toBe(1);
+    expect(autoCommits[0]!.authorName).toBe("brain.md owner");
+    expect(autoCommits[0]!.body).toContain("Changed-by: owner-file.md brain.md owner");
+    expect(autoCommits[0]!.body).toContain("Changed-by: bot-file.md ci-bot");
   });
 
   // Regression: app.ts's vault.onMutation listener only passed e.path

@@ -15,6 +15,9 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  // See autocommit.ts's module comment: an undisposed instance can hold a
+  // live retry timer that must not outlive this test's temp directory.
+  h.autocommit.dispose();
   await rm(dir, { recursive: true, force: true });
 });
 
