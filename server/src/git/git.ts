@@ -122,6 +122,16 @@ export class GitRepo {
     await run(this.root, ["add", "-A", "--", "."]);
   }
 
+  // Of the given pathspecs, keeps only the ones git can stage: tracked
+  // (so a deletion still gets staged even though the file is gone from
+  // disk) or present on disk (a new or modified file). `ls-files` never
+  // errors on an unmatched pathspec, it just omits it, unlike `add`.
+  private async filterStageable(paths: string[]): Promise<string[]> {
+    const r = await run(this.root, ["ls-files", "-z", "--", ...paths], { allowFail: true });
+    const tracked = new Set(r.stdout.split("\0").filter(Boolean));
+    return paths.filter((p) => tracked.has(p) || existsSync(join(this.root, p)));
+  }
+
   // `paths`: stage only these (pathspecs), instead of everything under
   // the tree. Used to split one flush window into one commit per actor
   // (board-plan Part B) without sweeping another actor's still-pending
@@ -136,12 +146,27 @@ export class GitRepo {
   ): Promise<string | null> {
     return this.serialize(async () => {
       if (opts.paths && opts.paths.length > 0) {
-        await run(this.root, ["add", "-A", "--", ...opts.paths]);
+        // A path that's neither tracked nor on disk any more (a
+        // transient rename's intermediate name: created and renamed
+        // away again before this flush ran) makes `git add` reject the
+        // WHOLE pathspec with "did not match any files", staging
+        // nothing at all, not just skipping that one path. --ignore-errors
+        // doesn't help here, it only covers per-file errors AFTER
+        // pathspec matching. Filter to paths git can actually act on
+        // first, so the other paths in the same rename chain (the
+        // original, now-deleted name; the final, now-existing name)
+        // still get staged.
+        const stageable = await this.filterStageable(opts.paths);
+        if (stageable.length > 0) {
+          await run(this.root, ["add", "-A", "--", ...stageable]);
+        }
       } else {
         await this.stageAll();
       }
       const trailerLines = opts.trailers
-        ? Object.entries(opts.trailers).map(([k, v]) => `${k}: ${v}`)
+        ? Object.entries(opts.trailers).map(
+            ([k, v]) => `${sanitizeAuthorPart(k)}: ${sanitizeAuthorPart(v)}`,
+          )
         : [];
       const fullMessage = trailerLines.length > 0 ? `${message}\n\n${trailerLines.join("\n")}` : message;
       const args = ["commit", "--quiet", "--allow-empty-message", "-m", fullMessage];
@@ -252,8 +277,11 @@ function parseCommit(line: string): GitCommit {
 // --author takes one argv string ("Name <email>"); strip newlines and the
 // angle brackets a hostile key/client name could use to inject a second
 // "<email>" pair, rather than relying on git to reject a malformed value.
+// Also used to sanitise trailer keys/values: a trailer line is just text
+// in the commit message, so a name containing "\nSigned-off-by: x" would
+// otherwise inject a second, forged trailer line verbatim.
 function sanitizeAuthorPart(s: string): string {
-  return s.replace(/[\r\n<>]/g, " ").trim();
+  return s.replace(/[\x00-\x1f\x7f<>]/g, " ").trim();
 }
 
 function assertSha(sha: string): void {

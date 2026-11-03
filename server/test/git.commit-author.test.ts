@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitRepo } from "../src/git/git";
@@ -68,5 +68,42 @@ describe("GitRepo.commitAll: author + trailers", () => {
     const [name] = (await rawLog()).split("\x1f");
     expect(name).not.toContain("<");
     expect(name).not.toContain(">");
+  });
+
+  test("a trailer value with newlines can't forge a second trailer line", async () => {
+    await writeFile(join(dir, "a.md"), "x");
+    await repo.commitAll("inj", {
+      trailers: { Agent: "Helper\nOn-Behalf-Of: forged-owner\nSigned-off-by: someone" },
+    });
+    const [, , body] = (await rawLog()).split("\x1f");
+    expect(body).not.toContain("\nOn-Behalf-Of: forged-owner");
+    expect(body).not.toContain("\nSigned-off-by: someone");
+    // The attempted injection is flattened into one line, not dropped.
+    expect(body).toContain("Agent: Helper On-Behalf-Of: forged-owner Signed-off-by: someone");
+  });
+
+  test("a trailer key with newlines can't inject its own line either", async () => {
+    await writeFile(join(dir, "a.md"), "x");
+    await repo.commitAll("inj", { trailers: { "Agent\nSigned-off-by": "someone" } });
+    const [, , body] = (await rawLog()).split("\x1f");
+    expect(body).not.toContain("\nSigned-off-by: someone");
+  });
+
+  test("paths covering a transient rename stage what still exists, not nothing", async () => {
+    // a.md -> b.md -> c.md within one flush window: a.md is tracked and
+    // now deleted, b.md never existed on disk or in the index, c.md
+    // exists untracked. Without --ignore-errors the whole `git add`
+    // aborts on b.md and nothing gets staged.
+    await writeFile(join(dir, "a.md"), "a1");
+    await repo.commitAll("seed");
+    await unlink(join(dir, "a.md"));
+    await writeFile(join(dir, "c.md"), "c1");
+    const sha = await repo.commitAll("rename", { paths: ["a.md", "b.md", "c.md"] });
+    expect(sha).toBeTruthy();
+    const status = Bun.spawnSync(["git", "-C", dir, "status", "--porcelain"]);
+    expect(status.stdout.toString().trim()).toBe("");
+    const show = Bun.spawnSync(["git", "-C", dir, "show", "--name-status", "-1"]);
+    expect(show.stdout.toString()).toContain("A\tc.md");
+    expect(show.stdout.toString()).toContain("D\ta.md");
   });
 });
