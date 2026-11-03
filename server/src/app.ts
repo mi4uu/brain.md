@@ -40,7 +40,7 @@ import { AuthStore } from "./auth/store";
 import { TokenStore } from "./auth/tokens";
 import { LoginLimiter } from "./auth/login-limiter";
 import { HandoffCodeStore } from "./auth/handoff-codes";
-import { loadLoginConfig, validateLoginConfig, type LoginConfig } from "./auth/login-config";
+import { loadLoginConfig, validateLoginConfig, hasExternalProvider, type LoginConfig } from "./auth/login-config";
 import { idpAuthRoutes } from "./api/idp-auth";
 import { securityHeadersMiddleware } from "./api/security-headers";
 import { identityContext } from "./auth/identity";
@@ -124,10 +124,15 @@ export function createApp(opts: AppOptions = {}) {
       }),
     )
     .use(
-      authMiddleware(authStore, tokenStore, oauthStore, apiKeys, oauthClients, {
-        name: config.ownerName,
-        email: config.ownerEmail,
-      }),
+      authMiddleware(
+        authStore,
+        tokenStore,
+        oauthStore,
+        apiKeys,
+        oauthClients,
+        { name: config.ownerName, email: config.ownerEmail },
+        hasExternalProvider(loginConfig),
+      ),
     )
     .get("/health", () => ({ ok: true, vaultDir: vault.root }))
     // V64: OAuth discovery surface, served before everything else so it's

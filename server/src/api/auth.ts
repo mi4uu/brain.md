@@ -2,7 +2,7 @@ import { Elysia, t } from "elysia";
 import type { AuthStore } from "../auth/store";
 import type { TokenStore } from "../auth/tokens";
 import type { LoginLimiter } from "../auth/login-limiter";
-import type { LoginConfig } from "../auth/login-config";
+import { hasExternalProvider, type LoginConfig } from "../auth/login-config";
 import { hashPassword, verifyPassword } from "../auth/hasher";
 import { requireOwner } from "./perm-guard";
 import { getClientIp } from "./client-ip";
@@ -51,8 +51,11 @@ export function authRoutes(
       request.headers.forEach((v, k) => (headers[k.toLowerCase()] = v));
       const tok = bearer(headers);
       return {
-        configured: auth.isConfigured(),
-        authenticated: auth.isConfigured() ? tokens.validate(tok) : true,
+        // "configured" means "auth is required", which an external login
+        // provider forces even when no password hash has ever been set
+        // (BRAINMD_PASSWORD_LOGIN=off, OIDC/GitHub only).
+        configured: auth.isConfigured() || hasExternalProvider(loginConfig),
+        authenticated: auth.isConfigured() || hasExternalProvider(loginConfig) ? tokens.validate(tok) : true,
       };
     })
     .post(

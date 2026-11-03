@@ -920,6 +920,7 @@ export function App() {
       open={auth.configured && !auth.authenticated && !auth.loading}
       onLogin={auth.login}
       error={auth.error}
+      loginMethods={auth.loginMethods}
     />
     <div className="shell">
       <header className="topbar">

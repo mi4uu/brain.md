@@ -102,6 +102,11 @@ export function authMiddleware(
   keys?: APIKeyStore,
   oauthClients?: OAuthClientStore,
   owner: { name: string; email: string } = { name: "brain.md owner", email: "owner@brain.local" },
+  // board-plan Part B: an external login provider can be the ONLY way in
+  // (BRAINMD_PASSWORD_LOGIN=off), in which case auth.isConfigured() (the
+  // password hash store) stays empty forever. Without this flag the
+  // bearer checks below would never run and the vault would be wide open.
+  externalLoginConfigured: boolean = false,
 ) {
   return new Elysia().onRequest(({ request, set }) => {
     const url = new URL(request.url);
@@ -130,9 +135,16 @@ export function authMiddleware(
       );
     }
 
-    if (!auth.isConfigured()) {
+    if (!auth.isConfigured() && !externalLoginConfigured) {
       principals.set(request, { kind: "open" });
       return; // no auth required
+    }
+    // Initial password setup must stay reachable even when an external
+    // provider is configured and the password hash store is still empty,
+    // otherwise an owner who wants password login ALONGSIDE a provider
+    // has no bearer token yet to get past the gate below and set one.
+    if (path === "/api/auth/set" && !auth.isConfigured()) {
+      return;
     }
     const isProtected =
       path.startsWith("/api/") || path === "/mcp" || path.startsWith("/mcp/");
