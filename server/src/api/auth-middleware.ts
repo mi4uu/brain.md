@@ -3,7 +3,9 @@ import type { AuthStore } from "../auth/store";
 import type { TokenStore } from "../auth/tokens";
 import type { OAuthStore } from "../auth/oauth-store";
 import type { APIKeyStore } from "../auth/api-keys";
+import type { OAuthClientStore } from "../auth/oauth-clients";
 import type { Principal } from "./principal";
+import { identityContext, localIdentity, apiKeyIdentity, oauthClientIdentity } from "../auth/identity";
 
 // Who authenticated a given request, keyed by the exact Request instance
 // Elysia hands to onRequest, the same object flows through to route
@@ -84,10 +86,19 @@ export function authMiddleware(
   tokens: TokenStore,
   oauth?: OAuthStore,
   keys?: APIKeyStore,
+  oauthClients?: OAuthClientStore,
+  owner: { name: string; email: string } = { name: "brain.md owner", email: "owner@brain.local" },
 ) {
   return new Elysia().onRequest(({ request, set }) => {
     const url = new URL(request.url);
     const path = url.pathname;
+
+    // Identity plumbing (board-plan P2): default every request to the
+    // local owner's identity before any credential check, so paths that
+    // skip the bearer checks below (unconfigured auth, open paths) still
+    // give autocommit.notify() something sane to attribute a commit to.
+    // Overwritten further down once a specific credential resolves.
+    identityContext.enterWith(localIdentity(owner.name, owner.email));
 
     // BRAINMD_LOG_OAUTH=1 enables verbose tracing of every /oauth/* and
     // /.well-known/* request so we can diagnose what spec-incompliant
@@ -121,6 +132,8 @@ export function authMiddleware(
     // it bypasses per-folder MCP permissions everywhere.
     if (tokens.validate(tok)) {
       principals.set(request, { kind: "owner" });
+      const sub = tokens.subFor(tok);
+      if (sub) identityContext.enterWith(localIdentity(owner.name, owner.email, sub));
       return;
     }
 
@@ -129,9 +142,13 @@ export function authMiddleware(
     // key can drive the HTTP API and the MCP transport from the same
     // Claude Desktop / curl config. Treated as an agent credential: full
     // read/write scope, but subject to per-folder MCP permissions.
-    if (keys && keys.validate(tok)) {
-      principals.set(request, { kind: "apikey" });
-      return;
+    if (keys) {
+      const rec = keys.validate(tok);
+      if (rec) {
+        principals.set(request, { kind: "apikey" });
+        identityContext.enterWith(apiKeyIdentity(rec.sub, rec.name));
+        return;
+      }
     }
 
     // V63: OAuth access token — audience-bound to this MCP resource.
@@ -146,6 +163,8 @@ export function authMiddleware(
         const write = scopes.includes("vault:write");
         if (read || write) {
           principals.set(request, { kind: "oauth", read, write });
+          const clientName = oauthClients?.get(v.clientId)?.client_name ?? v.clientId;
+          identityContext.enterWith(oauthClientIdentity(v.sub, clientName));
           return;
         }
       }

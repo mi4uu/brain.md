@@ -40,6 +40,7 @@ import { AuthStore } from "./auth/store";
 import { TokenStore } from "./auth/tokens";
 import { LoginLimiter } from "./auth/login-limiter";
 import { securityHeadersMiddleware } from "./api/security-headers";
+import { identityContext } from "./auth/identity";
 import { createMcp, mcpRoutes } from "./mcp/server";
 
 export interface AppOptions {
@@ -59,7 +60,10 @@ export function createApp(opts: AppOptions = {}) {
     enabled: opts.gitAutocommit ?? config.gitAutocommit,
     debounceMs: opts.gitDebounceMs ?? config.gitDebounceMs,
   });
-  vault.onMutation((e) => autocommit.notify(e.path));
+  // Identity is read from identityContext HERE, synchronously inside the
+  // request that triggered the mutation — the debounce timer autocommit
+  // fires on later has no request (and no identity) of its own.
+  vault.onMutation((e) => autocommit.notify(e.path, identityContext.getStore()));
   // Centralised index maintenance (V-concurrency #18): every vault mutation
   // REST writes, MCP write_note/append_note, trash restore, git restore
   // via vault.notifyWrite, flows through this one subscription instead of
@@ -107,7 +111,12 @@ export function createApp(opts: AppOptions = {}) {
         credentials: false,
       }),
     )
-    .use(authMiddleware(authStore, tokenStore, oauthStore, apiKeys))
+    .use(
+      authMiddleware(authStore, tokenStore, oauthStore, apiKeys, oauthClients, {
+        name: config.ownerName,
+        email: config.ownerEmail,
+      }),
+    )
     .get("/health", () => ({ ok: true, vaultDir: vault.root }))
     // V64: OAuth discovery surface, served before everything else so it's
     // reachable even when auth.json gates the rest of the API.
