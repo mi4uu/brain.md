@@ -33,9 +33,12 @@ export class OidcProvider {
     this.cfg = cfg;
   }
 
-  // Fetched once at startup and cached for the process lifetime, the
-  // discovery document practically never changes, and refetching it on
-  // every login would add a round trip to the critical path for nothing.
+  // Fetched lazily on first use (not at startup: OidcProvider is
+  // constructed eagerly but nothing calls discover() until the first
+  // login attempt needs it) and cached for the process lifetime after
+  // that. The discovery document practically never changes, and
+  // refetching it on every login would add a round trip to the critical
+  // path for nothing.
   //
   // Issuer is validated here, before the document is cached or handed to
   // ANY caller, including buildAuthorizationUrl: that one only wants a
