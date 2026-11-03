@@ -1,8 +1,10 @@
 import { Elysia, t } from "elysia";
 import type { AuthStore } from "../auth/store";
 import type { TokenStore } from "../auth/tokens";
+import type { LoginLimiter } from "../auth/login-limiter";
 import { hashPassword, verifyPassword } from "../auth/hasher";
 import { requireOwner } from "./perm-guard";
+import { getClientIp } from "./client-ip";
 
 // V53: auth routes.
 // - GET  /api/auth/status        always open
@@ -11,6 +13,9 @@ import { requireOwner } from "./perm-guard";
 //                                requires currentPassword once configured
 // - POST /api/auth/clear         requires currentPassword
 // - POST /api/auth/logout        requires the token in the body
+//
+// /login is rate limited by auth/login-limiter.ts (per-IP sliding window +
+// a small global backoff) before the password is ever checked.
 //
 // The middleware (auth-middleware.ts) handles bearer enforcement on
 // everything else.
@@ -22,7 +27,7 @@ function bearer(headers: Record<string, string | undefined>): string | undefined
   return m ? m[1] : undefined;
 }
 
-export function authRoutes(auth: AuthStore, tokens: TokenStore) {
+export function authRoutes(auth: AuthStore, tokens: TokenStore, loginLimiter: LoginLimiter) {
   return new Elysia()
     .get("/api/auth/status", ({ request }) => {
       const headers: Record<string, string> = {};
@@ -93,16 +98,27 @@ export function authRoutes(auth: AuthStore, tokens: TokenStore) {
     )
     .post(
       "/api/auth/login",
-      async ({ body, set }) => {
+      async ({ body, set, request, server }) => {
+        const ip = getClientIp(request, server);
+        const gate = loginLimiter.check(ip);
+        if (!gate.allowed) {
+          set.status = 429;
+          set.headers["retry-after"] = String(gate.retryAfterSeconds);
+          return { error: "too many failed attempts, try again later", code: "RATE_LIMITED" };
+        }
+        await loginLimiter.globalBackoff();
+
         if (!auth.isConfigured()) {
           set.status = 409;
           return { error: "auth not configured" };
         }
         const ok = await verifyPassword(body.password, auth.getHash() ?? "");
         if (!ok) {
+          loginLimiter.recordFailure(ip);
           set.status = 401;
           return { error: "invalid password" };
         }
+        loginLimiter.recordSuccess(ip);
         const { token, expiresAt } = tokens.issue();
         return { token, expiresAt };
       },

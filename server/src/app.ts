@@ -38,6 +38,8 @@ import { apiKeyRoutes } from "./api/api-keys";
 import { folderPermsRoutes } from "./api/folder-perms";
 import { AuthStore } from "./auth/store";
 import { TokenStore } from "./auth/tokens";
+import { LoginLimiter } from "./auth/login-limiter";
+import { securityHeadersMiddleware } from "./api/security-headers";
 import { createMcp, mcpRoutes } from "./mcp/server";
 
 export interface AppOptions {
@@ -78,6 +80,7 @@ export function createApp(opts: AppOptions = {}) {
 
   const authStore = new AuthStore(vault);
   const tokenStore = new TokenStore();
+  const loginLimiter = new LoginLimiter();
   const oauthStore = new OAuthStore();
   oauthStore.startSweeper();
   const oauthClients = new OAuthClientStore();
@@ -88,6 +91,7 @@ export function createApp(opts: AppOptions = {}) {
   const allowedHostsSet = buildAllowedHostsSet(allowedHosts);
 
   const app = new Elysia()
+    .use(securityHeadersMiddleware())
     .use(hostMiddleware(allowedHosts, authStore))
     // The default `cors()` reflects back whatever Origin a request sends,
     // which is "allow any origin" in practice. Restrict Access-Control-
@@ -111,7 +115,7 @@ export function createApp(opts: AppOptions = {}) {
     // V63 step 2+3 + V67: authorize + token + register endpoints
     // (PKCE + DCR + CIMD).
     .use(oauthFlowRoutes(authStore, oauthStore, oauthClients, cimdResolver))
-    .use(authRoutes(authStore, tokenStore))
+    .use(authRoutes(authStore, tokenStore, loginLimiter))
     .use(apiKeyRoutes(apiKeys))
     .use(treeRoutes(vault))
     .use(noteRoutes(vault, index))
@@ -152,6 +156,7 @@ export function createApp(opts: AppOptions = {}) {
     ragPipeline,
     authStore,
     tokenStore,
+    loginLimiter,
     apiKeys,
     oauthStore,
     mcp,
