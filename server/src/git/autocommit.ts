@@ -69,17 +69,29 @@ export class Autocommit {
       const dirty = await this.repo.hasChanges();
       if (!dirty) return null;
       for (const group of groups) {
-        const sha = await this.repo.commitAll(commitMessage(group.paths), {
-          paths: group.paths,
-          author: { name: group.identity.name, email: group.identity.email ?? "agent@brain.local" },
-          trailers: trailersFor(group.identity),
-        });
-        if (sha) lastSha = sha;
+        try {
+          const sha = await this.repo.commitAll(commitMessage(group.paths), {
+            paths: group.paths,
+            author: { name: group.identity.name, email: group.identity.email ?? "agent@brain.local" },
+            trailers: trailersFor(group.identity),
+          });
+          if (sha) lastSha = sha;
+        } catch (e) {
+          // A group's commit can fail for reasons --ignore-errors in
+          // git.ts doesn't cover (disk full, a lock held by another
+          // process). Put its paths back instead of dropping them: a
+          // later flush (notify() debounce, or the retry below) gets
+          // another shot instead of silently losing the change.
+          console.warn("[autocommit] group commit failed, will retry:", e);
+          for (const path of group.paths) {
+            if (!this.pendingPaths.has(path)) this.pendingPaths.set(path, group.identity);
+          }
+        }
       }
     } finally {
       this.inFlight = false;
     }
-    if (this.rerun) {
+    if (this.rerun || this.pendingPaths.size > 0) {
       this.rerun = false;
       setTimeout(() => void this.flush(), 50);
     }
