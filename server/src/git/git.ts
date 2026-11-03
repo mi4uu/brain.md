@@ -122,14 +122,33 @@ export class GitRepo {
     await run(this.root, ["add", "-A", "--", "."]);
   }
 
-  commitAll(message: string): Promise<string | null> {
+  // `paths`: stage only these (pathspecs), instead of everything under
+  // the tree — used to split one flush window into one commit per actor
+  // (board-plan Part B) without sweeping another actor's still-pending
+  // changes into this commit.
+  // `author`: --author override; committer config (brain.md/brain@local)
+  // never changes, only who the change is attributed to.
+  // `trailers`: appended as plain "Key: value" lines after a blank line,
+  // same convention `git interpret-trailers` reads, without requiring it.
+  commitAll(
+    message: string,
+    opts: { paths?: string[]; author?: { name: string; email: string }; trailers?: Record<string, string> } = {},
+  ): Promise<string | null> {
     return this.serialize(async () => {
-      await this.stageAll();
-      const r = await run(
-        this.root,
-        ["commit", "--quiet", "--allow-empty-message", "-m", message],
-        { allowFail: true },
-      );
+      if (opts.paths && opts.paths.length > 0) {
+        await run(this.root, ["add", "-A", "--", ...opts.paths]);
+      } else {
+        await this.stageAll();
+      }
+      const trailerLines = opts.trailers
+        ? Object.entries(opts.trailers).map(([k, v]) => `${k}: ${v}`)
+        : [];
+      const fullMessage = trailerLines.length > 0 ? `${message}\n\n${trailerLines.join("\n")}` : message;
+      const args = ["commit", "--quiet", "--allow-empty-message", "-m", fullMessage];
+      if (opts.author) {
+        args.push("--author", `${sanitizeAuthorPart(opts.author.name)} <${sanitizeAuthorPart(opts.author.email)}>`);
+      }
+      const r = await run(this.root, args, { allowFail: true });
       if (r.code !== 0) {
         if (r.stdout.includes("nothing to commit") || r.stderr.includes("nothing to commit")) {
           return null;
@@ -228,6 +247,13 @@ function parseCommit(line: string): GitCommit {
     ts: Number(parts[2] ?? "0") * 1000,
     author: parts[3] ?? "",
   };
+}
+
+// --author takes one argv string ("Name <email>"); strip newlines and the
+// angle brackets a hostile key/client name could use to inject a second
+// "<email>" pair, rather than relying on git to reject a malformed value.
+function sanitizeAuthorPart(s: string): string {
+  return s.replace(/[\r\n<>]/g, " ").trim();
 }
 
 function assertSha(sha: string): void {
