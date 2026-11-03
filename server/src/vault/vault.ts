@@ -64,6 +64,7 @@ export class Vault {
   // sorted order so two callers locking the same pair of paths never
   // deadlock on each other.
   protected async withPathLock<T>(paths: string[], fn: () => Promise<T>): Promise<T> {
+    await this.beforeWithPathLock(paths);
     const sorted = Array.from(new Set(paths.map((p) => normalizeRel(p)))).sort();
     let release!: () => void;
     const gate = new Promise<void>((res) => {
@@ -81,6 +82,15 @@ export class Vault {
       release();
     }
   }
+
+  // Test-only seam, no-op in production. The real race between two
+  // concurrent mutateNote calls happens earlier (each does a real fs await
+  // in assertRealContainment before it ever gets here), so tests that want
+  // a deterministic interleaving override this to hold a caller here and
+  // release callers in a chosen order, forcing which one reaches the
+  // atomic lock-acquisition section first instead of leaving it to fs
+  // scheduling (see vault.test.ts).
+  protected async beforeWithPathLock(_paths: string[]): Promise<void> {}
 
   // Public wrapper so a caller spanning several notes (rename's backlink
   // patch pass) can hold the lock across a check-then-write on every one

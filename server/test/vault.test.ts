@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, readdir, rm, stat, symlink, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { Vault } from "../src/vault/vault";
 import { VaultError } from "../src/vault/types";
+import type { NoteData } from "../src/vault/types";
 
 let dir: string;
 let vault: Vault;
@@ -249,8 +251,102 @@ describe("V-concurrency: per-path locking (#10, #12)", () => {
     expect(b).not.toBeNull();
     const final = await vault.readNote("mutate.md");
     // Each mutation only ever sees the other's completed result, never a
-    // torn read, so both substitutions land, nothing is overwritten.
+    // torn read, so both substitutions land, nothing is overwritten. Which
+    // one lands first depends on fs scheduling before the lock is taken,
+    // not call order, so accept either valid interleaving (see the
+    // deterministic variants below for the mechanism itself).
+    expect(["[[A]] and [[B]]", "[[B]] and [[A]]"]).toContain(final.content);
+  });
+
+  // Vault subclass that hooks the no-op `beforeWithPathLock` test seam to
+  // gate every labelled call on its own promise, so the test controls the
+  // lock-acquisition order explicitly. Identity is carried through
+  // AsyncLocalStorage rather than call order or hook-arrival order: the
+  // real race (assertRealContainment's lstat, before withPathLock is ever
+  // reached) decides which of two concurrent mutateNote calls arrives at
+  // this hook first, so an index assigned by arrival order would just be
+  // that same uncontrolled race wearing a different hat. AsyncLocalStorage
+  // keeps each call's "A"/"B" label attached to it regardless of which
+  // fs call the kernel happens to resolve first.
+  class OrderedLockVault extends Vault {
+    private armed = false;
+    private readonly label = new AsyncLocalStorage<string>();
+    private readonly arrived = new Set<string>();
+    private readonly releasers = new Map<string, () => void>();
+
+    // Only gates calls made after setup (writeNote's own seeding write
+    // goes through the same hook and must not block on it).
+    arm(): void {
+      this.armed = true;
+    }
+
+    mutateNoteAs(
+      callLabel: string,
+      rel: string,
+      fn: (current: string | null) => string | null,
+    ): Promise<NoteData | null> {
+      return this.label.run(callLabel, () => this.mutateNote(rel, fn));
+    }
+
+    protected override async beforeWithPathLock(_paths: string[]): Promise<void> {
+      if (!this.armed) return;
+      const callLabel = this.label.getStore();
+      if (!callLabel) return;
+      this.arrived.add(callLabel);
+      await new Promise<void>((res) => {
+        this.releasers.set(callLabel, res);
+      });
+    }
+
+    hasArrived(callLabel: string): boolean {
+      return this.arrived.has(callLabel);
+    }
+
+    releaseCall(callLabel: string): void {
+      this.releasers.get(callLabel)?.();
+    }
+  }
+
+  async function waitForArrivals(v: OrderedLockVault, labels: string[]): Promise<void> {
+    while (!labels.every((l) => v.hasArrived(l))) {
+      await new Promise((res) => setImmediate(res));
+    }
+  }
+
+  test("mutateNote applies both edits when the first mutation wins the lock race", async () => {
+    const ordered = new OrderedLockVault(dir);
+    await ordered.writeNote("mutate.md", "[[Old]] and [[Old]]");
+    ordered.arm();
+    const callA = ordered.mutateNoteAs("A", "mutate.md", (c) => (c ? c.replace("[[Old]]", "[[A]]") : null));
+    const callB = ordered.mutateNoteAs("B", "mutate.md", (c) => (c ? c.replace("[[Old]]", "[[B]]") : null));
+    await waitForArrivals(ordered, ["A", "B"]);
+    // Release A first: it reaches the atomic lock section first.
+    ordered.releaseCall("A");
+    ordered.releaseCall("B");
+    const [a, b] = await Promise.all([callA, callB]);
+    expect(a).not.toBeNull();
+    expect(b).not.toBeNull();
+    const final = await ordered.readNote("mutate.md");
     expect(final.content).toBe("[[A]] and [[B]]");
+  });
+
+  test("mutateNote applies both edits when the second mutation wins the lock race", async () => {
+    const ordered = new OrderedLockVault(dir);
+    await ordered.writeNote("mutate.md", "[[Old]] and [[Old]]");
+    ordered.arm();
+    const callA = ordered.mutateNoteAs("A", "mutate.md", (c) => (c ? c.replace("[[Old]]", "[[A]]") : null));
+    const callB = ordered.mutateNoteAs("B", "mutate.md", (c) => (c ? c.replace("[[Old]]", "[[B]]") : null));
+    await waitForArrivals(ordered, ["A", "B"]);
+    // Release B first: it reaches the atomic lock section first,
+    // reproducing the interleaving that the old hardcoded assertion
+    // ("[[A]] and [[B]]") would have failed on every single time.
+    ordered.releaseCall("B");
+    ordered.releaseCall("A");
+    const [a, b] = await Promise.all([callA, callB]);
+    expect(a).not.toBeNull();
+    expect(b).not.toBeNull();
+    const final = await ordered.readNote("mutate.md");
+    expect(final.content).toBe("[[B]] and [[A]]");
   });
 });
 
