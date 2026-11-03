@@ -12,6 +12,7 @@ import {
 } from "../src/rag/queries";
 import type { SearchHit, TaskHit } from "../src/rag/types";
 import type { TaskDoneFilter } from "../src/rag/store";
+import { join } from "node:path";
 
 // V54: queries layer unit tests with hand-rolled deps. We deliberately
 // avoid spinning up LanceDB or a real embedder — we only need to verify
@@ -47,10 +48,14 @@ function makeDeps(opts: {
       if (!n) throw new Error(`stub vault: missing ${rel}`);
       return { content: n.body, mtime: n.mtime ?? 0 };
     },
-    // The folder-perm loader reads `.brain/folders.json`; without that
-    // file the loader returns `{ mcp: {} }`, which means default perms
-    // (read/write true) for every path — exactly what most tests want.
+    // The folder-perm loader reads `.brain/folder-meta.json` via
+    // vault.abs(); without that file on disk, loadFolderMeta's ENOENT
+    // branch returns `{ mcp: {} }`, default perms (read/write true) for
+    // every path — exactly what most tests want. A genuinely missing
+    // `abs()` would instead hit loadFolderMeta's fail-closed branch (see
+    // folder-perms.ts), denying everything, so the stub needs a real one.
     root: "/tmp/nonexistent-brain-queries-test",
+    abs: (rel: string) => join("/tmp/nonexistent-brain-queries-test", rel),
   } as unknown as RagDeps["vault"];
 
   const entries = opts.notes.map((n) => ({
