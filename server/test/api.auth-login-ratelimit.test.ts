@@ -73,4 +73,23 @@ describe("POST /api/auth/login — brute-force protection", () => {
     const r = await login("correct-password", "5.5.5.5");
     expect(r.status).toBe(200);
   });
+
+  // Regression: checkOwnerPassword used to check-then-verify-then-record
+  // with no reservation in between, so N concurrent wrong guesses from
+  // one IP could all pass the gate and all get verified before any of
+  // them called recordFailure(), well past MAX_FAILURES=5 by the time
+  // any landed.
+  test("12 concurrent wrong passwords from one IP: only 5 get verified, the rest are rejected outright", async () => {
+    const results = await Promise.all(
+      Array.from({ length: 12 }, () => login("wrong", "6.6.6.6")),
+    );
+    const statuses = results.map((r) => r.status).sort((a, b) => a - b);
+    expect(statuses.filter((s) => s === 401).length).toBe(5);
+    expect(statuses.filter((s) => s === 429).length).toBe(7);
+
+    // Confirms the limit held: a correct password right after is still
+    // blocked, same as the sequential case above.
+    const blocked = await login("correct-password", "6.6.6.6");
+    expect(blocked.status).toBe(429);
+  });
 });

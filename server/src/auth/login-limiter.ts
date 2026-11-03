@@ -29,11 +29,63 @@ export interface LoginGate {
   retryAfterSeconds?: number;
 }
 
+export interface AttemptReservation {
+  allowed: boolean;
+  retryAfterSeconds?: number;
+  // No-op when `allowed` is false. Always call this once the attempt is
+  // done (success, failure, or abandoned), in a finally, or the slot
+  // stays reserved forever.
+  release(): void;
+}
+
 export class LoginLimiter {
   private readonly failuresByIp = new Map<string, number[]>();
+  // Attempts that passed `check()` and are currently verifying, keyed by
+  // IP. Counted alongside recorded failures so a burst of concurrent
+  // attempts can't all pass the gate before any of them calls
+  // recordFailure(), see `reserve()`.
+  private readonly inFlightByIp = new Map<string, number>();
   private globalFailures: number[] = [];
 
   check(ip: string, now: number = Date.now()): LoginGate {
+    const count = this.activeFailureCount(ip, now) + (this.inFlightByIp.get(ip) ?? 0);
+    if (count < MAX_FAILURES) return { allowed: true };
+    const list = this.failuresByIp.get(ip) ?? [];
+    const oldest = list[0];
+    const retryAfterSeconds =
+      oldest === undefined ? 1 : Math.max(1, Math.ceil((oldest + WINDOW_MS - now) / 1000));
+    return { allowed: false, retryAfterSeconds };
+  }
+
+  // Atomically checks the gate and, if it passes, reserves a slot for
+  // the attempt before the caller awaits password verification. This
+  // closes the race check() alone leaves open: without a synchronous
+  // reservation, N concurrent requests from the same IP can all observe
+  // "under the limit", all get verified, and only afterwards call
+  // recordFailure() N times, well past the limit by the time any of them
+  // lands. Reserving the slot here, synchronously, means the (N+1)th
+  // concurrent attempt sees the reservation and is rejected immediately,
+  // never reaching password verification at all.
+  reserve(ip: string, now: number = Date.now()): AttemptReservation {
+    const gate = this.check(ip, now);
+    if (!gate.allowed) {
+      return { allowed: false, retryAfterSeconds: gate.retryAfterSeconds, release: () => {} };
+    }
+    this.inFlightByIp.set(ip, (this.inFlightByIp.get(ip) ?? 0) + 1);
+    let released = false;
+    return {
+      allowed: true,
+      release: () => {
+        if (released) return;
+        released = true;
+        const cur = this.inFlightByIp.get(ip) ?? 0;
+        if (cur <= 1) this.inFlightByIp.delete(ip);
+        else this.inFlightByIp.set(ip, cur - 1);
+      },
+    };
+  }
+
+  private activeFailureCount(ip: string, now: number): number {
     if (this.failuresByIp.size >= SWEEP_THRESHOLD) this.sweep(now);
     const list = this.pruned(this.failuresByIp.get(ip), now, WINDOW_MS);
     if (list.length === 0) {
@@ -41,10 +93,7 @@ export class LoginLimiter {
     } else {
       this.failuresByIp.set(ip, list);
     }
-    if (list.length < MAX_FAILURES) return { allowed: true };
-    const oldest = list[0] as number;
-    const retryAfterSeconds = Math.max(1, Math.ceil((oldest + WINDOW_MS - now) / 1000));
-    return { allowed: false, retryAfterSeconds };
+    return list.length;
   }
 
   recordFailure(ip: string, now: number = Date.now()): void {

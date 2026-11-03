@@ -58,6 +58,48 @@ describe("LoginLimiter — per-IP sliding window", () => {
   });
 });
 
+describe("LoginLimiter.reserve — closes the check-then-verify-then-record race", () => {
+  test("only MAX_FAILURES reservations are granted before any is released", () => {
+    const limiter = new LoginLimiter();
+    const now = 1_000_000;
+    const reservations = Array.from({ length: 12 }, () => limiter.reserve("1.2.3.4", now));
+    expect(reservations.filter((r) => r.allowed).length).toBe(5);
+    expect(reservations.filter((r) => !r.allowed).length).toBe(7);
+  });
+
+  test("releasing a reservation without recording a failure frees the slot again", () => {
+    const limiter = new LoginLimiter();
+    const now = 1_000_000;
+    const r1 = limiter.reserve("1.2.3.4", now);
+    expect(r1.allowed).toBe(true);
+    r1.release();
+    // The slot is free again: a 5th-in-a-row reservation still succeeds.
+    for (let i = 0; i < 4; i++) limiter.reserve("1.2.3.4", now);
+    expect(limiter.reserve("1.2.3.4", now).allowed).toBe(true);
+  });
+
+  test("an in-flight reservation plus recorded failures together hit the limit", () => {
+    const limiter = new LoginLimiter();
+    const now = 1_000_000;
+    for (let i = 0; i < 4; i++) limiter.recordFailure("1.2.3.4", now);
+    const reserved = limiter.reserve("1.2.3.4", now);
+    expect(reserved.allowed).toBe(true);
+    // 4 recorded + 1 reserved = 5: a 6th concurrent attempt is rejected
+    // even though recordFailure() for the 5th hasn't run yet.
+    expect(limiter.reserve("1.2.3.4", now).allowed).toBe(false);
+  });
+
+  test("release() is idempotent", () => {
+    const limiter = new LoginLimiter();
+    const now = 1_000_000;
+    const r1 = limiter.reserve("1.2.3.4", now);
+    r1.release();
+    r1.release();
+    for (let i = 0; i < 4; i++) limiter.reserve("1.2.3.4", now);
+    expect(limiter.reserve("1.2.3.4", now).allowed).toBe(true);
+  });
+});
+
 describe("LoginLimiter — global backoff", () => {
   test("no delay under the global failure threshold", async () => {
     const limiter = new LoginLimiter();
