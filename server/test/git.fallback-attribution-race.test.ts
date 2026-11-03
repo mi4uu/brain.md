@@ -33,6 +33,13 @@ async function authorOf(sha: string): Promise<string> {
   return out;
 }
 
+async function bodyOf(sha: string): Promise<string> {
+  const proc = Bun.spawn(["git", "-C", dir, "log", "-1", "--format=%B", sha], { stdout: "pipe" });
+  const out = (await new Response(proc.stdout).text()).trim();
+  await proc.exited;
+  return out;
+}
+
 describe("git.ts dirtyPaths(): untracked directories", () => {
   // Must-fix regression: without --untracked-files=all, `git status`
   // collapses a wholly-untracked directory into one line for the
@@ -101,6 +108,32 @@ describe("Autocommit: one combined commit per flush, dirty-but-unclaimed paths i
     expect(show.stdout.toString()).toContain("stray.md");
     expect(show.stdout.toString()).toContain("bob.md");
     expect(await authorOf(sha!)).toBe("Bob");
+  });
+});
+
+describe("Autocommit: a single known actor never silently absorbs an unclaimed path", () => {
+  // Must-fix regression: describeCommit() used to decide "one actor, no
+  // trailers needed" from pendingPaths alone, so a path dirtyPaths()
+  // added to the commit that nobody notified (see the describe block
+  // above) landed under that one actor's name with zero trailer telling
+  // the two apart, even though the actual committed path set had two
+  // sources. Every unclaimed path must now get its own "Changed-by"
+  // trailer no matter how few actors notify()'d.
+  test("Bob's notified file plus an independently-dirty, unnotified file: commit is Bob's, stray gets its own trailer", async () => {
+    ac = new Autocommit(repo, { enabled: true, debounceMs: 50 });
+    const bob = localIdentity("Bob", "bob@brain.local");
+
+    await writeFile(join(dir, "bob-file.md"), "bob's note");
+    ac.notify("bob-file.md", bob);
+    await writeFile(join(dir, "stray.md"), "nobody's file");
+
+    const sha = await ac.flush();
+    expect(sha).toBeTruthy();
+    expect(await authorOf(sha!)).toBe("Bob");
+    const body = await bodyOf(sha!);
+    // The unclaimed path must be named explicitly, never silently folded
+    // into Bob's authorship with no trace it wasn't his.
+    expect(body).toContain("Changed-by: stray.md");
   });
 });
 

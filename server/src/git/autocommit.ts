@@ -158,7 +158,7 @@ export class Autocommit {
 
       // Regression (v0.4.12): flush() must still commit a dirty repo even
       // with nothing queued (an external edit, a restart that lost
-      // pendingPaths, or a direct flush() call) — but only the paths that
+      // pendingPaths, or a direct flush() call), but only the paths that
       // are ACTUALLY dirty, scoped by pathspec, never a blanket `git add
       // -A` that would also sweep in anything a notified actor is still
       // mid-write on.
@@ -170,7 +170,7 @@ export class Autocommit {
       }
       if (paths.size === 0) return null;
 
-      const { author, trailers } = describeCommit(snapshot);
+      const { author, trailers } = describeCommit(snapshot, paths);
       try {
         sha = await this.repo.commitAll(commitMessage(Array.from(paths)), {
           paths: Array.from(paths),
@@ -213,14 +213,21 @@ export class Autocommit {
   }
 }
 
-// One combined commit per flush: if every path in `pendingPaths` came from
-// the same actor (by kind + credentialId, see the note below), that actor
-// is the author and there's nothing more to say. Otherwise the commit is
-// attributed to the owner (whichever human touched this flush, there is
-// only ever one per vault; the hardcoded local fallback if no human did),
-// with one "Changed-by: <path> <actor>" trailer per path so the audit
-// trail still names exactly who touched what, without needing a commit
-// per actor.
+// One combined commit per flush: if every path actually committed came
+// from the same actor (by kind + credentialId, see the note below), that
+// actor is the author and there's nothing more to say. Otherwise the
+// commit is attributed to the owner (whichever human touched this flush,
+// there is only ever one per vault; the hardcoded local fallback if no
+// human did), with one "Changed-by: <path> <actor>" trailer per path so
+// the audit trail still names exactly who touched what, without needing a
+// commit per actor.
+//
+// `paths` is the full committed set, which can be wider than
+// `pendingPaths`: a path dirtyPaths() picked up that nobody notify()'d
+// (see flush() above). Each such path gets its own actor key, keyed by
+// the path itself, so it can never silently merge into the one known
+// actor's identity and skip the Changed-by trailer that would otherwise
+// be the only record that nobody claimed it.
 //
 // Grouped by kind + credentialId (not just sub): a password-authenticated
 // human session and an MCP client consented with that same password both
@@ -230,27 +237,41 @@ export class Autocommit {
 // trailer exists to preserve.
 function describeCommit(
   pendingPaths: Map<string, Identity>,
+  paths: Set<string>,
 ): { author?: { name: string; email: string }; trailers?: CommitTrailer[] } {
-  const actorKey = (id: Identity) => `${id.kind}:${id.credentialId ?? id.sub}`;
-  const distinctActors = new Set(Array.from(pendingPaths.values(), actorKey));
+  const actorKey = (path: string, id: Identity) =>
+    pendingPaths.has(path) ? `${id.kind}:${id.credentialId ?? id.sub}` : `unattributed:${path}`;
+  const distinctActors = new Set(
+    Array.from(paths, (p) => actorKey(p, pendingPaths.get(p) ?? FALLBACK_IDENTITY)),
+  );
 
   if (distinctActors.size <= 1) {
     const identity = pendingPaths.values().next().value as Identity | undefined;
     if (!identity) return {};
-    return {
-      author: { name: identity.name, email: identity.email ?? "agent@brain.local" },
-      trailers: trailersFor(identity),
-    };
+    return singleActorCommitOpts(identity);
   }
 
   const trailers: CommitTrailer[] = [];
-  for (const [path, identity] of pendingPaths) {
+  for (const path of paths) {
+    const identity = pendingPaths.get(path) ?? FALLBACK_IDENTITY;
     trailers.push({ key: "Changed-by", value: `${path} ${actorDescription(identity)}` });
   }
   const owner = Array.from(pendingPaths.values()).find((id) => id.kind === "human") ?? FALLBACK_IDENTITY;
   return {
     author: { name: owner.name, email: owner.email ?? "agent@brain.local" },
     trailers,
+  };
+}
+
+// Shared with other single-identity commit sites (e.g. the /restore API
+// route) so a commit made by one known actor always gets the same
+// author/trailer shape, instead of git.ts routes re-deriving it by hand.
+export function singleActorCommitOpts(
+  identity: Identity,
+): { author: { name: string; email: string }; trailers?: CommitTrailer[] } {
+  return {
+    author: { name: identity.name, email: identity.email ?? "agent@brain.local" },
+    trailers: trailersFor(identity),
   };
 }
 
