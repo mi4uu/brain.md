@@ -38,7 +38,7 @@
     "build": "bun --cwd web run build",
     "start": "bun --cwd server run start",
     "test": "bun --cwd server test",
-    "typecheck": "bun --cwd server run typecheck && bun --cwd web run typecheck"
+    "typecheck": "bun --cwd=server run typecheck && bun --cwd=web run typecheck"
   },
   "devDependencies": {
     "typescript": "^5.6.3"
