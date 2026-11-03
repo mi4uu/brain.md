@@ -61,8 +61,8 @@ export function createApp(opts: AppOptions = {}) {
     debounceMs: opts.gitDebounceMs ?? config.gitDebounceMs,
   });
   // Identity is read from identityContext HERE, synchronously inside the
-  // request that triggered the mutation — the debounce timer autocommit
-  // fires on later has no request (and no identity) of its own.
+  // request that triggered the mutation. The debounce timer autocommit
+  // fires on later has no request, and no identity, of its own.
   vault.onMutation((e) => autocommit.notify(e.path, identityContext.getStore()));
   // Centralised index maintenance (V-concurrency #18): every vault mutation
   // REST writes, MCP write_note/append_note, trash restore, git restore

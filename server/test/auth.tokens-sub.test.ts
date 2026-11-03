@@ -21,7 +21,7 @@ function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-describe("TokenStore — sub plumbing", () => {
+describe("TokenStore: sub plumbing", () => {
   test("issue() defaults sub to local; subFor() returns it", () => {
     const t = new TokenStore();
     const { token } = t.issue();

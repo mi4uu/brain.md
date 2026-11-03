@@ -33,7 +33,7 @@ interface LogEntry {
   body: string;
 }
 
-// Independent of GitRepo.log() (which doesn't surface email/body) — reads
+// Independent of GitRepo.log() (which doesn't surface email/body), reads
 // the raw commits this test actually needs to assert on.
 async function gitLog(): Promise<LogEntry[]> {
   const proc = Bun.spawn(
@@ -177,7 +177,7 @@ describe("git commit author from identity", () => {
     const ownerToken = await login("hunter2hunter2");
     const keyToken = await createApiKey(ownerToken, "ci-bot");
 
-    // Both writes land before any flush — same debounce window.
+    // Both writes land before any flush, same debounce window.
     await put("/api/note/owner-file.md", "from owner", ownerToken);
     await put("/api/note/bot-file.md", "from bot", keyToken);
     await handle.autocommit.flush();

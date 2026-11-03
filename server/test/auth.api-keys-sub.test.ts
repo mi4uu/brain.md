@@ -21,7 +21,7 @@ function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-describe("APIKeyStore — sub plumbing", () => {
+describe("APIKeyStore: sub plumbing", () => {
   test("a newly created key gets its own stable subject", () => {
     const s = new APIKeyStore();
     const k1 = s.create({ name: "bot-1" });

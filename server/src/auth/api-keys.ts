@@ -110,7 +110,7 @@ export class APIKeyStore {
           };
         } else if (typeof k.token === "string") {
           // Pre-hash format: migrate to a hash-only record on next flush.
-          // No sub predates this format either — same "local" default.
+          // No sub predates this format either, same "local" default.
           rec = {
             id: k.id,
             tokenHash: hashToken(k.token),
@@ -177,7 +177,7 @@ export class APIKeyStore {
         : null;
     const name = args.name.slice(0, 200) || "Unnamed key";
     // Each new key gets its own stable subject, unlike migrated legacy keys
-    // (which default to "local" — they were never distinguishable from the
+    // (which default to "local", they were never distinguishable from the
     // owner before this field existed).
     const sub = `apikey:${id}`;
     const rec: StoredAPIKey = {

@@ -39,7 +39,7 @@ interface PersistedFile {
   tokens: Array<{ tokenHash: string; expiresAt: number; sub: string }>;
 }
 
-// Pre-migration on-disk shape (plaintext token, and/or no `sub` — identity
+// Pre-migration on-disk shape (plaintext token, and/or no `sub`: identity
 // plumbing postdates this file, so every record before it is "local").
 interface LegacyPersistedFile {
   version: 1;

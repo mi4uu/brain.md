@@ -7,7 +7,7 @@ function pkce(verifier: string): string {
   return createHash("sha256").update(verifier).digest("base64url");
 }
 
-describe("OAuthStore — sub plumbing", () => {
+describe("OAuthStore: sub plumbing", () => {
   test("issueCode defaults sub to local; consumeCode returns it", () => {
     const store = new OAuthStore();
     const verifier = "verifier-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";

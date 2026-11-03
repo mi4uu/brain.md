@@ -7,7 +7,7 @@ export interface AutocommitOpts {
 }
 
 // Fallback for a mutation notified with no identity in scope (a background
-// process, or a test calling notify() directly) — same author as the
+// process, or a test calling notify() directly). Same author as the
 // pre-identity code produced.
 const FALLBACK_IDENTITY: Identity = { sub: "local", name: "brain.md", kind: "human" };
 
@@ -49,7 +49,7 @@ export class Autocommit {
   }
 
   // Returns the last commit sha made (or null if nothing was dirty). A
-  // single flush can produce more than one commit — see groupByActor.
+  // single flush can produce more than one commit, see groupByActor.
   async flush(): Promise<string | null> {
     if (this.timer !== null) {
       clearTimeout(this.timer);
@@ -117,7 +117,7 @@ function commitMessage(paths: string[]): string {
 // Agent credentials (API keys, MCP OAuth clients) get trailers recording
 // who they acted for; a human (password login, or the back-compat
 // unconfigured case) IS the owner, so there's nothing to say "on behalf
-// of" — the author line already covers it.
+// of": the author line already covers it.
 function trailersFor(identity: Identity): Record<string, string> | undefined {
   if (identity.kind === "human") return undefined;
   return {

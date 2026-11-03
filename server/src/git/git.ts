@@ -123,7 +123,7 @@ export class GitRepo {
   }
 
   // `paths`: stage only these (pathspecs), instead of everything under
-  // the tree — used to split one flush window into one commit per actor
+  // the tree. Used to split one flush window into one commit per actor
   // (board-plan Part B) without sweeping another actor's still-pending
   // changes into this commit.
   // `author`: --author override; committer config (brain.md/brain@local)

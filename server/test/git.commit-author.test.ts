@@ -26,7 +26,7 @@ async function rawLog(): Promise<string> {
   return out;
 }
 
-describe("GitRepo.commitAll — author + trailers", () => {
+describe("GitRepo.commitAll: author + trailers", () => {
   test("no opts keeps the previous behaviour (committer config as author)", async () => {
     await writeFile(join(dir, "a.md"), "x");
     await repo.commitAll("plain");

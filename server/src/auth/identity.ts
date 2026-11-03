@@ -2,9 +2,9 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 // board-plan Part B / P2: who made a change, threaded through the request
 // without passing it down every call site. auth-middleware.ts resolves an
-// Identity once per request (after the bearer check) and enters it here;
-// anything downstream — including vault.onMutation listeners, which never
-// see the Request object — reads it back with currentIdentity().
+// Identity once per request (after the bearer check) and enters it here.
+// Anything downstream, including vault.onMutation listeners, which never
+// see the Request object, reads it back with currentIdentity().
 //
 // kind stays coarse on purpose: "human" is the single owner (password
 // login or the back-compat unauthenticated case), "apikey" and
@@ -24,7 +24,7 @@ export interface Identity {
   clientName?: string;
 }
 
-// Credential records predating this change have no `sub` of their own —
+// Credential records predating this change have no `sub` of their own,
 // they were all indistinguishable from the single owner. Every store's
 // migration defaults a missing sub to this value.
 export const LOCAL_SUB = "local";

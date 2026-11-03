@@ -26,7 +26,7 @@ async function commitCount(): Promise<number> {
   return Number(out.trim());
 }
 
-describe("Autocommit — identity grouping", () => {
+describe("Autocommit: identity grouping", () => {
   test("notify() with no identity falls back to the pre-identity default author", async () => {
     const ac = new Autocommit(repo, { enabled: true, debounceMs: 50 });
     await writeFile(join(dir, "a.md"), "x");
