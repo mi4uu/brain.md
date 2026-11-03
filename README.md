@@ -4,7 +4,7 @@
 
 # brain.md
 
-**A local-first second brain for you — and for your AI agents.**
+**A local-first second brain for you, and for your AI agents.**
 
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Runtime: Bun](https://img.shields.io/badge/runtime-Bun-black.svg)](https://bun.com)
@@ -24,14 +24,14 @@
 
 | | |
 |---|---|
-| 📝 &nbsp; **Obsidian-compatible markdown** | Wikilinks, embeds, callouts, math, mermaid, tasks, frontmatter, aliases. Open your existing Obsidian vault — it just works. |
+| 📝 &nbsp; **Obsidian-compatible markdown** | Wikilinks, embeds, callouts, math, mermaid, tasks, frontmatter, aliases. Open your existing Obsidian vault and it just works. |
 | ⚡ &nbsp; **Live editor + preview** | CodeMirror 6 with cursor-anchored scroll sync, autosave, instant tooltips, command palette, quick switcher. |
 | 🔍 &nbsp; **Semantic search built in** | Per-vault embedded vector store (pure JS, no external DB). Notes are chunked, embedded and indexed on every save. |
-| 🤖 &nbsp; **Pluggable embedders** | Default: `bge-small-en-v1.5` running locally via **bundled WASM ONNX** — works in the prebuilt single binary, zero native deps. Or point at **Ollama**, **LM Studio**, **OpenAI** — anything with `/v1/embeddings`. |
-| 🛰️ &nbsp; **MCP server (streamable HTTP)** | 17 tools + 2 resources mounted on the same port. Claude Desktop, Claude Code, Cursor and any MCP-compliant agent can read, search, query and write your notes. |
+| 🤖 &nbsp; **Pluggable embedders** | Default: `bge-small-en-v1.5` running locally via **bundled WASM ONNX**, works in the prebuilt single binary, zero native deps. Or point at **Ollama**, **LM Studio**, or **OpenAI**: anything with `/v1/embeddings`. |
+| 🛰️ &nbsp; **MCP server (streamable HTTP)** | 17 tools and 2 resources mounted on the same port. Claude Desktop, Claude Code, Cursor and any MCP-compliant agent can read, search, query and write your notes. |
 | 🔒 &nbsp; **Per-folder agent permissions** | Right-click a folder → set `{read, write}` for the MCP surface. Keep `Journal/Private/` out of agent reach without locking down the vault. |
-| 🔑 &nbsp; **Optional password auth** | argon2id, bearer tokens, 24-hour TTL — gates both HTTP API and MCP. Off by default, on with one click. |
-| 📜 &nbsp; **Git autocommit** | Every save lands in git. Full history, diff, restore, manual checkpoints. The vault is a real git repo on disk. |
+| 🔑 &nbsp; **Optional password auth** | argon2id, bearer tokens, 24-hour TTL, gates both HTTP API and MCP. Off by default, on with one click. |
+| 📜 &nbsp; **Git autocommit with a full audit trail** | Every save lands in git, attributed to whoever (or whichever agent) made it. Full history, diff, restore, manual checkpoints. The vault is a real git repo on disk. |
 | 🌍 &nbsp; **No vendor lock-in** | Your vault is a folder of `.md` files. Open it in VSCode, Obsidian, `cat`, anything. brain.md is just one more way to view and query it. |
 | 💸 &nbsp; **Zero API keys required** | Out of the box it runs fully offline. Cloud embedders are an opt-in, not a default. |
 
@@ -40,7 +40,7 @@
 ## Why brain.md
 
 LLMs are only as smart as the context you give them. **brain.md** turns
-your notes into that context — without dragging them into someone
+your notes into that context, without dragging them into someone
 else's cloud, without locking them inside a proprietary format, and
 without asking you to plumb a vector database yourself.
 
@@ -51,15 +51,16 @@ You write markdown. brain.md gives you:
   highlights, tasks, frontmatter, aliases),
 - a per-vault embedded vector store (pure JS, ships in the single
   binary) with a local `bge-small-en-v1.5` embedder by default
-  running via bundled WASM ONNX — switch to **Ollama**,
+  running via bundled WASM ONNX. Switch to **Ollama**,
   **LM Studio**, **OpenAI**, or anything else with a `/v1/embeddings`
   endpoint with one toggle,
 - an **MCP server** (streamable HTTP) mounted on the same port, so
   Claude Desktop (or any MCP client) can read, search and write your
-  notes safely — with **per-folder read/write permissions** for the
+  notes safely, with **per-folder read/write permissions** for the
   agent surface,
-- optional **password auth** and **git autocommit / restore** for the
-  whole vault.
+- optional **password auth** (or login via Google, GitHub, Keycloak or
+  Authentik) and **git autocommit / restore** with a per-path audit
+  trail for the whole vault.
 
 Everything runs on your machine. The vault is a plain folder of `.md`
 files you can open in any editor at any time.
@@ -71,11 +72,11 @@ files you can open in any editor at any time.
 | License                                 | Proprietary             | AGPL-3.0        | Proprietary        | **AGPL-3.0**           |
 | Local-first vault on disk               | ✓                       | ✓               | ✗ (cloud)          | **✓**                  |
 | Plain `.md` files (no proprietary db)   | ✓                       | ✓ (block model) | ✗                  | **✓**                  |
-| Built-in MCP server                     | ✗ (3rd-party plugin)    | ✗               | ✗                  | **✓ — 17 tools**       |
-| Vector RAG built-in                     | ✗ (paid plugin)         | ✗               | ✓ (cloud only)     | **✓ — embedded, local** |
+| Built-in MCP server                     | ✗ (3rd-party plugin)    | ✗               | ✗                  | **✓ (17 tools)**       |
+| Vector RAG built-in                     | ✗ (paid plugin)         | ✗               | ✓ (cloud only)     | **✓ (embedded, local)** |
 | Per-folder agent permissions            | n/a                     | n/a             | n/a                | **✓**                  |
-| Single binary, no Electron              | ✗ (Electron)            | ✗ (Electron)    | n/a                | **✓ — `bun --compile`** |
-| Works fully offline (incl. embeddings)  | ✓ (no AI)               | ✓ (no AI)       | ✗                  | **✓ — bundled WASM ONNX** |
+| Single binary, no Electron              | ✗ (Electron)            | ✗ (Electron)    | n/a                | **✓ (`bun --compile`)** |
+| Works fully offline (incl. embeddings)  | ✓ (no AI)               | ✓ (no AI)       | ✗                  | **✓ (bundled WASM ONNX)** |
 
 brain.md is *not* trying to replace Obsidian's plugin ecosystem or
 Notion's databases. It's narrower on purpose: a markdown vault
@@ -99,6 +100,7 @@ Model Context Protocol.
   - [Per-folder permissions](#-per-folder-permissions)
   - [Optional password auth](#-optional-password-auth)
   - [Login with Google, GitHub, Keycloak or Authentik](#-login-with-google-github-keycloak-or-authentik)
+  - [Audit trail](#-audit-trail)
 - [CLI](#-cli)
 - [Defaults & paths](#-defaults--paths)
 - [Architecture](#-architecture)
@@ -110,7 +112,7 @@ Model Context Protocol.
 
 ## ⚡ Quick start
 
-One line. No clone, no Bun, no Node — the installer detects your OS +
+One line, no clone, no Bun, no Node: the installer detects your OS and
 arch, downloads the matching prebuilt binary from the latest GitHub
 release, drops it in `~/.local/bin` (or `%USERPROFILE%\.brain.md\bin`
 on Windows), and verifies it runs.
@@ -141,7 +143,7 @@ the equivalent on Windows).
 To enable semantic search and the MCP `similar_notes` tool, open
 **Settings → AI / RAG** and flip the switch. Default embedder is
 `bge-small-en-v1.5` running locally via bundled WASM ONNX (one-time
-~34 MB quantized model download, then fully offline — no Ollama, no
+~34 MB quantized model download, then fully offline, no Ollama, no
 Python, no native deps).
 
 > **Want a tour?** Point brain.md at the demo vault that ships with
@@ -155,7 +157,7 @@ Python, no native deps).
 
 ## 📦 Install
 
-### Option A — install script *(recommended, see [Quick start](#-quick-start))*
+### Option A: install script *(recommended, see [Quick start](#-quick-start))*
 
 ```sh
 # macOS / Linux
@@ -172,7 +174,7 @@ matches before installing anything, writes the binary to
 chmod's it, and verifies it boots. Pin a version with
 `BRAIN_VERSION=v0.1.0`, change the install dir with `BRAIN_INSTALL=…`.
 
-### Option B — download the binary manually
+### Option B: download the binary manually
 
 Every release ships a **single-file executable** per platform with
 the web UI embedded inside it, plus a `SHA256SUMS` file to verify them
@@ -184,16 +186,16 @@ Grab the file for your machine from the latest release:
 
 | Platform                          | Architecture | Asset                                                                                                          |
 |-----------------------------------|--------------|----------------------------------------------------------------------------------------------------------------|
-| 🍎 &nbsp; macOS — Apple Silicon  | `arm64`      | [`brain-md-darwin-arm64`](https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-darwin-arm64)    |
-| 🍎 &nbsp; macOS — Intel          | `x64`        | [`brain-md-darwin-x64`](https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-darwin-x64)        |
+| 🍎 &nbsp; macOS (Apple Silicon)  | `arm64`      | [`brain-md-darwin-arm64`](https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-darwin-arm64)    |
+| 🍎 &nbsp; macOS (Intel)          | `x64`        | [`brain-md-darwin-x64`](https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-darwin-x64)        |
 | 🐧 &nbsp; Linux                   | `x64`        | [`brain-md-linux-x64`](https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-linux-x64)          |
 | 🐧 &nbsp; Linux                   | `arm64`      | [`brain-md-linux-arm64`](https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-linux-arm64)      |
 | 🪟 &nbsp; Windows                  | `x64`        | [`brain-md-windows-x64.exe`](https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-windows-x64.exe) |
 
-#### One-liner — macOS / Linux
+#### One-liner: macOS / Linux
 
 ```sh
-# macOS Apple Silicon — swap the URL suffix for your platform from the table above
+# macOS Apple Silicon: swap the URL suffix for your platform from the table above
 curl -L -o brainmd \
   https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-darwin-arm64
 chmod +x brainmd
@@ -208,7 +210,7 @@ brainmd --port 4000                      # custom port
 brainmd --vault-dir ~/notes/my-vault     # custom vault location
 ```
 
-#### One-liner — Windows (PowerShell)
+#### One-liner: Windows (PowerShell)
 
 ```powershell
 iwr https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-windows-x64.exe `
@@ -224,11 +226,11 @@ iwr https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-windows-
 > [`example/vault/`](example/) and pass it with
 > `brain --vault-dir ./vault`.
 
-> Untagged commits also produce binaries — they live as build
+> Untagged commits also produce binaries; they live as build
 > artifacts on the [Actions page](https://github.com/mi4uu/brain.md/actions)
 > with 30-day retention.
 
-### Option C — from source
+### Option C: from source
 
 ```sh
 git clone https://github.com/mi4uu/brain.md.git
@@ -248,7 +250,7 @@ If you run `bun run start` from a fresh source checkout (no compiled
 binary, no `web/dist`), the server downloads the matching web bundle
 from the GitHub release into
 `$XDG_CACHE_HOME/brain.md/web/<version>/` on first request and serves
-from there. To always work offline, run `bun --cwd web run build`
+from there. To always work offline, run `bun run --cwd web build`
 once.
 
 > Requires [Bun ≥ 1.3](https://bun.com). brain.md uses `Bun.password`
@@ -275,8 +277,8 @@ The right rail collects **Bookmarks · Vault · Tags · Outline ·
 Backlinks · Related**. Each section is collapsible and remembers its
 state per device (`localStorage`). The **Tags** panel splits into
 *In this note* and *Other tags* the moment you open a note. The
-**Related** panel powers itself from the RAG index — same engine the
-agents use — and after every save brain.md quietly suggests up to three
+**Related** panel powers itself from the RAG index, the same engine the
+agents use, and after every save brain.md quietly suggests up to three
 tags borrowed from your closest semantic neighbours.
 
 ### Markdown that actually does things
@@ -299,8 +301,8 @@ tags borrowed from your closest semantic neighbours.
 
 ### Command palette + quick switcher
 
-- **⌘P / Ctrl+P** — search across titles and bodies
-- **⌘O / Ctrl+O** — fuzzy quick switcher
+- **⌘P / Ctrl+P**: search across titles and bodies
+- **⌘O / Ctrl+O**: fuzzy quick switcher
 
 Both are powered by [cmdk](https://cmdk.paco.me) inside a Radix Dialog.
 
@@ -320,18 +322,24 @@ Every save is auto-committed to git in the background (debounced,
 ~15 s). Open any note's **History** panel to see every prior
 revision, side-by-side unified diffs, and a one-click **Restore
 this version**. Filter by the current note or by the whole vault.
-No "save as", no daily snapshots cron — the vault is a real git
+No "save as", no daily snapshots cron: the vault is a real git
 repo on disk, so `git log`, `git blame`, `git diff` all work from
 the terminal too.
+
+A restore only touches the one file you asked for and commits only
+that path, never a sweep of whatever else happened to be dirty in the
+vault at the time. See [Audit trail](#-audit-trail) for who a commit
+is attributed to when more than one person or agent wrote to the vault
+in the same save window.
 
 ![Note history with unified diff and one-click restore](docs/img/gitautoversioninghistry.png)
 
 ### 📱 Mobile
 
 brain.md is not a desktop-only tool. The same vault, the same
-self-hosted instance, the same editor — usable from your phone over
+self-hosted instance, the same editor work from your phone too, over
 LAN, Tailscale, or a **Cloudflare Tunnel** (Zero Trust, no public
-port, no DDNS). The server itself is tiny — a single Bun binary
+port, no DDNS). The server itself is tiny, a single Bun binary
 that runs comfortably on the free tier of **Oracle Cloud** or
 **AWS** (ARM micro instances, ≤1 vCPU / ≤1 GB RAM). Drop the binary
 on a $0/month VPS, route a hostname to it through Cloudflare, and
@@ -348,9 +356,9 @@ bottom tab, the topbar scrolls horizontally with a sticky brand +
 hamburger, the sidebar slides in as a drawer.
 
 <p align="center">
-  <img src="docs/img/mobile1.jpeg" alt="brain.md mobile — preview" width="30%" />
-  <img src="docs/img/mobile2.jpeg" alt="brain.md mobile — editor" width="30%" />
-  <img src="docs/img/mobile3.jpeg" alt="brain.md mobile — sidebar drawer" width="30%" />
+  <img src="docs/img/mobile1.jpeg" alt="brain.md mobile, preview" width="30%" />
+  <img src="docs/img/mobile2.jpeg" alt="brain.md mobile, editor" width="30%" />
+  <img src="docs/img/mobile3.jpeg" alt="brain.md mobile, sidebar drawer" width="30%" />
 </p>
 
 Real phone, not a Chrome DevTools emulator. Captures notes on the
@@ -367,19 +375,19 @@ This is what makes brain.md more than another markdown editor.
 When a note is saved, brain.md chunks it (≤ 512 tokens, ~64-token
 overlap, paragraph-aligned, frontmatter excluded), embeds each chunk,
 and upserts the vectors into a per-vault embedded store at
-`<VAULT>/.brain/vectors.json` (pure JS, brute-force cosine — well
+`<VAULT>/.brain/vectors.json` (pure JS, brute-force cosine, well
 under 10ms for typical vaults).
 
 | Provider                | Model                                       | dim   | Local? | API key |
 |-------------------------|---------------------------------------------|------:|:------:|:-------:|
-| Local *(default)*       | `bge-small-en-v1.5` (WASM)                  |   384 |   ✓    |   —     |
-| Ollama                  | e.g. `nomic-embed-text`                     |   768 |   ✓    |   —     |
-| LM Studio               | any served GGUF embedder                    | varies|   ✓    |   —     |
-| OpenRouter *(free tier)*| `nvidia/llama-nemotron-embed-vl-1b-v2:free` |  2048 |   —    |   ✓     |
-| OpenAI                  | `text-embedding-3-small`                    |  1536 |   —    |   ✓     |
+| Local *(default)*       | `bge-small-en-v1.5` (WASM)                  |   384 |   ✓    |   no    |
+| Ollama                  | e.g. `nomic-embed-text`                     |   768 |   ✓    |   no    |
+| LM Studio               | any served GGUF embedder                    | varies|   ✓    |   no    |
+| OpenRouter *(free tier)*| `nvidia/llama-nemotron-embed-vl-1b-v2:free` |  2048 |   no    |   yes     |
+| OpenAI                  | `text-embedding-3-small`                    |  1536 |   no    |   yes     |
 
 > **Out of the box, in the prebuilt binary.** The local embedder ships
-> as bundled WASM ONNX with a hand-rolled BERT tokenizer — no
+> as bundled WASM ONNX with a hand-rolled BERT tokenizer: no
 > `onnxruntime-node`, no `sharp`, no platform-specific `.node`
 > bindings. Toggle **Enable RAG** in Settings → AI / RAG, brain.md
 > fetches the ~34 MB quantized model once and works fully offline
@@ -387,7 +395,7 @@ under 10ms for typical vaults).
 > existing Ollama or hosted endpoint? Switch to *OpenAI-compatible*
 > in the same panel.
 
-#### OpenRouter — free embeddings, zero local deps
+#### OpenRouter: free embeddings, zero local deps
 
 If the WASM model doesn't fit your machine (constrained RAM / no
 disk space for the cache) and you don't want to run Ollama either,
@@ -402,20 +410,20 @@ In **Settings → AI / RAG**:
 | Base URL   | `https://openrouter.ai/api/v1/`             |
 | Model      | `nvidia/llama-nemotron-embed-vl-1b-v2:free` |
 | DIM        | `2048`                                      |
-| API Key    | from [openrouter.ai/keys](https://openrouter.ai/keys) — no credit card required for `:free` models |
+| API Key    | from [openrouter.ai/keys](https://openrouter.ai/keys), no credit card required for `:free` models |
 
 Click **Test connection**, then **Reindex vault**. Indexes the whole
 vault in seconds, multilingual, multimodal-aware (works on notes
 mixing languages). Trade-offs: data leaves your machine on every
 embed call; free tier has rate limits; works only when online.
 
-> **Heads-up — same applies to Ollama / OpenAI / any HTTP embedder.**
+> **Heads-up: the same applies to Ollama, OpenAI, or any HTTP embedder.**
 > Switching `Base URL`, `API Key`, or `DIM` while staying on the same
-> provider+model takes effect immediately as of v0.3.1 / v0.4.0
+> provider and model takes effect immediately as of v0.3.1 / v0.4.0
 > ([B17](https://github.com/mi4uu/brain.md/commit/511cc69)). Older
 > binaries needed a server restart for those fields to apply.
 
-![Settings — AI / RAG](docs/img/settings-rag.png)
+![Settings, AI / RAG](docs/img/settings-rag.png)
 
 REST surface:
 
@@ -436,7 +444,7 @@ The same engine the agents use also powers a **Related** panel in the
 sidebar. Open any note → the panel lists semantically close neighbours
 with score, line range and a snippet preview. Click jumps you there.
 
-![Related sidebar panel with 8 semantically close notes](docs/img/related-sidebar.png)
+![Related sidebar panel, 8 semantically close notes](docs/img/related-sidebar.png)
 
 #### Tag suggestions on save
 
@@ -444,17 +452,17 @@ After every save, brain.md quietly looks at the closest neighbours'
 frontmatter `tags` and suggests up to three you haven't used yet.
 One click drops the tag into your frontmatter.
 
-![Suggested tags toast appearing after a save — three chip buttons](docs/img/tag-suggest.png)
+![Suggested tags toast appearing after a save, three chip buttons](docs/img/tag-suggest.png)
 
 ### 🛰️ MCP server
 
 brain.md mounts a **Model Context Protocol** server on the same Elysia
 app at `POST /mcp`. Transport is the **2024-11-05 streamable HTTP**
-variant in **stateless JSON-response mode** — one POST returns the
+variant in **stateless JSON-response mode**: one POST returns the
 full JSON-RPC response in a single round trip, no SSE stream, a fresh
-`McpServer` + transport per request. Sounds wasteful, but it's the
-only mode that survives clients that open and close a transport per
-tool call (Claude Desktop and LM Studio both do this).
+`McpServer` and transport per request. That sounds wasteful, but it's
+the only mode that survives clients that open and close a transport
+per tool call. Claude Desktop and LM Studio both do this.
 
 ![MCP Server page in brain.md](docs/img/mcp-server-page.png)
 
@@ -482,12 +490,12 @@ Tools (17):
 
 Resources (2):
 
-- `vault://tree` — JSON `{folders, notes}` filtered by read perms
-- `vault://note/<path>` — markdown body
+- `vault://tree`: JSON `{folders, notes}` filtered by read perms
+- `vault://note/<path>`: markdown body
 
 Drop this into the MCP config of any client that speaks **streamable
-HTTP natively** — Claude Code, Cursor, Continue, Cline, Zed, the
-official `@modelcontextprotocol/inspector`, etc.:
+HTTP natively**: Claude Code, Cursor, Continue, Cline, Zed, the
+official `@modelcontextprotocol/inspector`, and others.
 
 ```json
 {
@@ -502,10 +510,10 @@ official `@modelcontextprotocol/inspector`, etc.:
 
 Restart the client; the tools appear.
 
-#### Claude Desktop — stdio bridge required
+#### Claude Desktop needs a stdio bridge
 
-The Claude Desktop app (macOS / Windows) only speaks **stdio** —
-streamable HTTP and SSE are not supported as of writing. Bridge it
+The Claude Desktop app (macOS / Windows) only speaks **stdio**.
+Streamable HTTP and SSE are not supported as of writing. Bridge it
 through [`mcp-remote`](https://github.com/geelen/mcp-remote), which
 runs as a stdio child of Claude Desktop and forwards every JSON-RPC
 call over HTTP to your brain.md server:
@@ -552,7 +560,7 @@ endpoints. Password is hashed with **argon2id** (Bun's built-in
 `Bun.password`, no native crypto build needed); tokens live in memory
 with a 24-hour TTL.
 
-![Settings — Security](docs/img/settings-security.png)
+![Settings, Security](docs/img/settings-security.png)
 
 #### MCP config when auth is enabled
 
@@ -577,7 +585,7 @@ field for it:
 }
 ```
 
-**Claude Desktop (stdio-only — needs `mcp-remote` bridge)**:
+**Claude Desktop (stdio-only, needs the `mcp-remote` bridge)**:
 
 ```json
 {
@@ -596,8 +604,8 @@ field for it:
 ```
 
 **How to get a token.** brain.md issues tokens through
-`POST /api/auth/login`. You can do it from anywhere — most useful
-is a quick `curl`:
+`POST /api/auth/login`. You can do it from anywhere; a quick `curl`
+is the easiest way:
 
 ```sh
 curl -X POST https://brainmd.example.com/api/auth/login \
@@ -608,11 +616,12 @@ curl -X POST https://brainmd.example.com/api/auth/login \
 Paste the returned token into the `headers.Authorization` field
 above, restart the MCP client, done.
 
-> **Heads-up.** Tokens have a 24-hour TTL and are stored in memory only
-> — a server restart invalidates every token. If your agent suddenly
-> starts seeing `401 Unauthorized`, get a fresh token. Long-term: pin
-> the token on the client and let your agent re-login on 401 (most
-> MCP clients don't do this yet — patches welcome).
+> **Heads-up.** Tokens have a 24-hour TTL and are persisted to
+> `<VAULT>/.brain/tokens.json` (only the SHA-256 hash, never the
+> plaintext), so a server restart does not log you out. If your agent
+> ever sees `401 Unauthorized`, the token simply expired: get a fresh
+> one. Long-term: let your agent re-login on 401 instead of hardcoding
+> a token (most MCP clients don't do this yet, patches welcome).
 
 If you're embedding the URL itself anywhere persistent, prefer a
 secret-manager / `.env` over hard-coding the bearer string.
@@ -632,8 +641,8 @@ in the Claude.ai Custom Connector dialog:
 |---|---|
 | Name | `brain.md` (or anything you like) |
 | Remote MCP server URL | `https://your-brainmd.example.com/mcp` |
-| OAuth Client ID | leave empty — DCR will mint one |
-| OAuth Client Secret | leave empty — we use PKCE-only public clients |
+| OAuth Client ID | leave empty, DCR mints one |
+| OAuth Client Secret | leave empty, PKCE-only public clients need none |
 
 Claude.ai will:
 1. Hit `GET /.well-known/oauth-protected-resource` and discover the
@@ -644,16 +653,17 @@ Claude.ai will:
 4. Redirect back with `?code=...`, exchange at `/oauth/token` with
    PKCE verifier, get an access token + refresh token.
 5. Use the access token for `/mcp` calls. Tokens are audience-bound
-   (RFC 8707) — a token issued for brain.md cannot be used elsewhere.
+   (RFC 8707): a token issued for brain.md cannot be used elsewhere.
 
 Scopes advertised: `vault:read`, `vault:write`. Per-folder permissions
-(set in the web UI) still apply on top — scope grants the surface,
-folder-perms grant the path. The narrower of the two always wins.
+(set in the web UI) still apply on top. Scope grants the surface,
+folder permissions grant the path, and the narrower of the two always
+wins.
 
-Same flow works with any spec-compliant MCP client: Cursor, ChatGPT
-Apps, future Anthropic clients, etc. Claude Code / Claude Desktop
-have shipped before the spec stabilised so they still want a static
-bearer or the `mcp-remote` stdio bridge — both documented above.
+The same flow works with any spec-compliant MCP client: Cursor,
+ChatGPT Apps, and future Anthropic clients. Claude Code and Claude
+Desktop shipped before the spec stabilised, so they still want a
+static bearer or the `mcp-remote` stdio bridge, both documented above.
 
 ### 🔐 Login with Google, GitHub, Keycloak or Authentik
 
@@ -737,6 +747,35 @@ session token password login does. Nothing about the rest of the app
 changes, per-folder MCP permissions and the owner-only admin routes
 work the same regardless of which door someone came in through.
 
+### 📒 Audit trail
+
+Every autocommit names who actually made the change, not just that
+something changed. Each save window makes exactly one commit. When
+every file in that window came from the same person or agent, that
+identity is the git author directly: your name, an API key's name, or
+an OAuth client's name. When a window mixes actors (you edit one note
+while an agent writes another, in the same few seconds), the commit
+is attributed to you, the owner, and carries one `Changed-by: <path>
+<actor>` trailer per file, naming exactly who touched what:
+
+```
+auto: notes/plan.md, notes/log.md
+
+Changed-by: notes/plan.md Michał
+Changed-by: notes/log.md ci-bot
+```
+
+An API key or OAuth client also gets `Agent:` and `On-Behalf-Of:`
+trailers on its own commits, so `git log` tells you which credential
+acted and for which subject, without a separate audit log to check.
+History, diff and restore in the **History** panel read straight off
+this git log, so the attribution you see there is the same one
+`git blame` would give you from the terminal.
+
+A restore commit touches only the one file you restored and names
+only that path, never a blanket commit of whatever else happened to
+be dirty in the vault at the time.
+
 ---
 
 ## ⌨️ CLI
@@ -762,8 +801,8 @@ stderr error + exit 2.
 | Vault    | `XDG_DATA_HOME`    | `$HOME/.local/share/brain.md/vault`         |
 | Settings | `XDG_CONFIG_HOME`  | `$HOME/.config/brain.md/`                   |
 
-Same logic on macOS, Linux, Windows — no OS branching. The vault dir
-is `mkdir -p`-ed on first run.
+Same logic on macOS, Linux and Windows, no OS branching. The vault
+dir is `mkdir -p`-ed on first run.
 
 Per-vault state lives under `<VAULT>/.brain/`:
 
@@ -778,7 +817,8 @@ Per-vault state lives under `<VAULT>/.brain/`:
     ├── index.json          # mtime-based search index
     ├── settings.json       # bookmarks, dailyDir, git autocommit, rag config
     ├── folder-meta.json    # icons, colors, per-folder MCP perms
-    ├── auth.json           # argon2id hash — absent when auth is off
+    ├── auth.json           # argon2id hash, absent when auth is off
+    ├── tokens.json         # session tokens (hashed), survives a restart
     ├── vectors.json        # embedded RAG store (vectors + metadata), git-ignored
     └── trash/<ts>/...      # recoverable deletes
 ```
@@ -789,8 +829,8 @@ Every env knob:
 |--------------------------------|---------|-------------------------------------------|
 | `VAULT_DIR`                    | XDG     | Overridden by `--vault-dir`.              |
 | `PORT`                         | `3000`  | Overridden by `--port`.                   |
-| `XDG_DATA_HOME`                | —       | Base for default vault location.          |
-| `XDG_CONFIG_HOME`              | —       | Base for default settings location.       |
+| `XDG_DATA_HOME`                | none    | Base for default vault location.          |
+| `XDG_CONFIG_HOME`              | none    | Base for default settings location.       |
 | `GIT_AUTOCOMMIT`               | `1`     | `1` / `0`. Bootstrap default only.        |
 | `GIT_AUTOCOMMIT_DEBOUNCE_MS`   | `15000` | Bootstrap default only.                   |
 | `ALLOWED_HOSTS`                | none    | Comma-separated extra hostnames accepted on the Host header without a password, beyond `localhost`/`127.0.0.1`/`[::1]`. Not needed once a password is set. See [Mobile](#-mobile). |
@@ -829,9 +869,9 @@ Every env knob:
   highlight.js + KaTeX + mermaid (lazy) + Radix UI primitives +
   Tailwind tokens (CSS vars under the hood)
 - **Vector store**: embedded pure-JS store (JSON-on-disk, brute-force
-  cosine) — no native binding, ships in the single binary
-- **Embedder**: bundled `onnxruntime-web` (WASM) + hand-rolled BERT
-  WordPiece tokenizer — no `onnxruntime-node`, no `sharp`, no Python
+  cosine), no native binding, ships in the single binary
+- **Embedder**: bundled `onnxruntime-web` (WASM) plus a hand-rolled
+  BERT WordPiece tokenizer, no `onnxruntime-node`, no `sharp`, no Python
 - **MCP transport**: `@modelcontextprotocol/sdk`
   `WebStandardStreamableHTTPServerTransport`
 - **Auth**: `Bun.password` (argon2id, no native build)
@@ -880,7 +920,7 @@ docs and review.
 
 Contributions welcome.
 
-1. Open an issue first for anything non-trivial — a quick design
+1. Open an issue first for anything non-trivial. A quick design
    sketch saves a long PR rewrite.
 2. Write the test before the implementation. Server tests run with
    `bun test`; keep the suite green.
@@ -892,33 +932,32 @@ Contributions welcome.
 
 [![Star History Chart](https://api.star-history.com/svg?repos=mi4uu/brain.md&type=Date)](https://star-history.com/#mi4uu/brain.md&Date)
 
-Found brain.md useful? A ⭐ helps other people running local-first
+Found brain.md useful? A star helps other people running local-first
 agent workflows discover it. No newsletter, no tracking, no
-follow-up email — just a signal that this exists.
+follow-up email, just a signal that this exists.
 
 ---
 
 ## 📄 License
 
-**GNU Affero General Public License v3.0 or later** — see
+**GNU Affero General Public License v3.0 or later**, see
 [LICENSE](LICENSE).
 
 brain.md is, and will stay, free / libre / open-source. The AGPL was
-picked over weaker permissive licenses for two specific reasons:
+picked over weaker permissive licenses for two specific reasons.
 
-1. **It closes the SaaS loophole.** If you modify brain.md and run
-   it as a network service for others — hosted, multi-tenant,
-   rebranded, whatever — you must publish your modified source under
-   the same AGPL. Strong copyleft for a server-side tool means the
-   community always gets the improvements back.
-2. **It can't be relicensed under a permissive license downstream.**
-   Forks stay open forever. Nobody can scoop the project, slap a new
-   logo on it, and ship a proprietary "Pro" cut.
+It closes the SaaS loophole: if you modify brain.md and run it as a
+network service for others, hosted, multi-tenant, rebranded, whatever,
+you must publish your modified source under the same AGPL. Strong
+copyleft for a server-side tool means the community always gets the
+improvements back. It also can't be relicensed under a permissive
+license downstream, so forks stay open forever. Nobody can scoop the
+project, slap a new logo on it, and ship a proprietary "Pro" cut.
 
 You're free to:
 
 - run brain.md, personally or commercially, without limits;
-- fork, modify, redistribute, even rebrand — provided your fork stays
+- fork, modify, redistribute, even rebrand, provided your fork stays
   under the AGPL and you publish the source you're running.
 
 You're **not** free to:
@@ -931,7 +970,7 @@ You're **not** free to:
 
 The name **brain.md** and the brain.md logo are *not* covered by the
 AGPL. If you fork the project, you're welcome to do almost anything
-with the code — but please use your own name and your own mark for
+with the code, but please use your own name and your own mark for
 your fork so users aren't confused about which project they're
 running.
 
@@ -939,7 +978,7 @@ running.
 
 <div align="center">
 
-**brain.md** — your notes, your machine, your agents.
+**brain.md**: your notes, your machine, your agents.
 
 Built by **[Michał Lipiński](https://lipinski.work/)**
 &nbsp;·&nbsp; [github.com/mi4uu/brain.md](https://github.com/mi4uu/brain.md)
