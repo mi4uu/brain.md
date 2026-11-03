@@ -138,4 +138,98 @@ describe("Autocommit: fallback commit vs. a path claimed since the dirty scan", 
     expect(bobSha).toBeTruthy();
     expect(await authorOf(bobSha!)).toBe("Bob");
   });
+
+  // Must-fix regression: the prior fix's excludeIfClaimed recheck ran
+  // once, before the isolated index's own `read-tree` await, which is
+  // itself async (spawns a git subprocess). A notify() landing in that
+  // one await, after the check but before `git add` runs, was never
+  // rechecked again and still got staged and committed under the
+  // fallback author. Reproduced by intercepting the `read-tree` git
+  // invocation and firing the notify() exactly there.
+  test("a notify() landing during the isolated index's own read-tree still excludes that path", async () => {
+    const ac = new Autocommit(repo, { enabled: true, debounceMs: 50 });
+    const bob = localIdentity("Bob", "bob@brain.local");
+
+    await writeFile(join(dir, "stray.md"), "nobody's file");
+    await writeFile(join(dir, "bob.md"), "will become bob's");
+
+    const originalSpawn = Bun.spawn.bind(Bun);
+    let fired = false;
+    (Bun as unknown as { spawn: typeof Bun.spawn }).spawn = ((cmd: unknown, opts: unknown) => {
+      const args = cmd as string[];
+      if (!fired && args[1] === "read-tree") {
+        fired = true;
+        // Simulates Bob's real write + notify landing while the fallback
+        // commit's temp index is still being initialised from HEAD, well
+        // after fallbackCommit() already picked "bob.md" as unclaimed.
+        ac.notify("bob.md", bob);
+      }
+      return originalSpawn(cmd as never, opts as never);
+    }) as typeof Bun.spawn;
+
+    try {
+      const sha = await ac.flush();
+      expect(sha).toBeTruthy();
+
+      const show = Bun.spawnSync(["git", "-C", dir, "show", "--name-status", "-1", sha!]);
+      expect(show.stdout.toString()).toContain("stray.md");
+      expect(show.stdout.toString()).not.toContain("bob.md");
+      expect(await authorOf(sha!)).toBe("brain.md");
+    } finally {
+      (Bun as unknown as { spawn: typeof Bun.spawn }).spawn = originalSpawn;
+    }
+
+    const bobSha = await ac.flush();
+    expect(bobSha).toBeTruthy();
+    expect(await authorOf(bobSha!)).toBe("Bob");
+    const bobShow = Bun.spawnSync(["git", "-C", dir, "show", "--name-status", "-1", bobSha!]);
+    expect(bobShow.stdout.toString()).toContain("bob.md");
+  });
+});
+
+describe("Autocommit: a group's own commit vs. a path claimed by a different actor since the flush snapshot", () => {
+  // Must-fix regression: per-actor group commits (unlike the fallback)
+  // never rechecked ownership at all, only the opening snapshot taken at
+  // the top of flush(). If Bob overwrites a path Alice's group was about
+  // to commit, and notifies, while that commit is still staging (git.ts's
+  // own awaits between picking candidates and `git add` actually running),
+  // the write already landed on disk, so Alice's commit (which stages
+  // from the working tree) picks up Bob's text and credits it to Alice.
+  test("Bob overwriting Alice's queued file mid-commit is excluded from Alice's commit, not credited to her", async () => {
+    const ac = new Autocommit(repo, { enabled: true, debounceMs: 50 });
+    const alice = localIdentity("Alice", "alice@brain.local");
+    const bob = localIdentity("Bob", "bob@brain.local");
+
+    await writeFile(join(dir, "shared.md"), "alice's text");
+    ac.notify("shared.md", alice);
+
+    const originalCommitAll = repo.commitAll.bind(repo);
+    let patched = false;
+    (repo as unknown as { commitAll: typeof repo.commitAll }).commitAll = (message, opts) => {
+      if (!patched && opts?.author?.name === "Alice") {
+        patched = true;
+        // Bob's overwrite + notify, landing after Alice's group was
+        // already chosen from the flush snapshot but before her commit
+        // finishes staging.
+        Bun.spawnSync(["sh", "-c", `printf "%s" "bob's text" > ${JSON.stringify(join(dir, "shared.md"))}`]);
+        ac.notify("shared.md", bob);
+      }
+      return originalCommitAll(message, opts);
+    };
+
+    const aliceSha = await ac.flush();
+    // Alice had nothing left to commit: her only path got reclaimed.
+    expect(aliceSha).toBeNull();
+
+    const bobSha = await ac.flush();
+    expect(bobSha).toBeTruthy();
+    expect(await authorOf(bobSha!)).toBe("Bob");
+    const show = Bun.spawnSync(["git", "-C", dir, "show", `${bobSha}:shared.md`]);
+    expect(show.stdout.toString()).toBe("bob's text");
+
+    // No commit anywhere in history is attributed to Alice with Bob's text.
+    const log = Bun.spawnSync(["git", "-C", dir, "log", "--all", "--format=%an"]);
+    const authors = log.stdout.toString().trim().split("\n");
+    expect(authors).not.toContain("Alice");
+  });
 });

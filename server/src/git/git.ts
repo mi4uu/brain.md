@@ -72,6 +72,11 @@ async function run(
 
 export class GitRepo {
   private writeChain: Promise<unknown> = Promise.resolve();
+  // Paths whose real-index reconcile failed after a successful commit
+  // (see reconcileRealIndex). Retried opportunistically at the start of
+  // the next isolated-index commit, any actor's, instead of left stale
+  // forever.
+  private unreconciled = new Set<string>();
 
   constructor(public readonly root: string) {}
 
@@ -160,9 +165,27 @@ export class GitRepo {
   // (so a deletion still gets staged even though the file is gone from
   // disk) or present on disk (a new or modified file). `ls-files` never
   // errors on an unmatched pathspec, it just omits it, unlike `add`.
+  //
+  // Should-fix: "tracked" used to mean only "in the real index". The real
+  // index is reconciled after each isolated-index commit (see
+  // commitWithIsolatedIndex) and that reconcile can itself fail (a
+  // post-commit hook holding index.lock) and leave the real index stale,
+  // still missing a path HEAD already has. A later deletion of that same
+  // path then looked untracked AND absent from disk, so it was dropped
+  // from `candidates` entirely and never staged: the delete silently
+  // never made it into any commit. Checking HEAD's tree too, not only the
+  // real index, makes that call correct regardless of real-index
+  // staleness, since commitWithIsolatedIndex always rebuilds its working
+  // index from HEAD anyway.
   private async filterStageable(paths: string[]): Promise<string[]> {
-    const r = await run(this.root, ["ls-files", "-z", "--", ...paths], { allowFail: true });
-    const tracked = new Set(r.stdout.split("\0").filter(Boolean));
+    const [idx, head] = await Promise.all([
+      run(this.root, ["ls-files", "-z", "--", ...paths], { allowFail: true }),
+      run(this.root, ["ls-tree", "-z", "-r", "--name-only", "HEAD", "--", ...paths], { allowFail: true }),
+    ]);
+    const tracked = new Set([
+      ...idx.stdout.split("\0").filter(Boolean),
+      ...head.stdout.split("\0").filter(Boolean),
+    ]);
     return paths.filter((p) => tracked.has(p) || existsSync(join(this.root, p)));
   }
 
@@ -174,12 +197,15 @@ export class GitRepo {
   // never changes, only who the change is attributed to.
   // `trailers`: appended as plain "Key: value" lines after a blank line,
   // same convention `git interpret-trailers` reads, without requiring it.
-  // `excludeIfClaimed`: called once, synchronously, as the very last check
-  // before anything is staged (see commitWithIsolatedIndex): a path it
-  // says yes to is dropped before `git add` ever touches it. Autocommit's
-  // fallback commit passes this to re-test "is this path still unclaimed"
-  // right up against the staging call, closing the gap between choosing
-  // the candidate list and acting on it.
+  // `excludeIfClaimed`: rechecked twice inside commitWithIsolatedIndex,
+  // immediately before `git add` and again immediately before `git
+  // commit` (each itself an async git call, so a notify() can still land
+  // in the gap after either check): a path it says yes to at either point
+  // is dropped before anything irreversible happens to it. Both
+  // autocommit's per-actor group commits and its fallback commit pass
+  // this to re-test "is this path still mine" right up against the
+  // staging and committing calls, closing the gap between choosing the
+  // candidate list and acting on it.
   commitAll(
     message: string,
     opts: {
@@ -267,23 +293,43 @@ export class GitRepo {
       excludeIfClaimed?: (path: string) => boolean;
     },
   ): Promise<string | null> {
-    // head and the stageable filter are independent of each other: run
-    // them together so no await separates the final exclusion check below
-    // from the git commands that immediately follow it.
+    if (this.unreconciled.size > 0) {
+      const retry = Array.from(this.unreconciled);
+      this.unreconciled.clear();
+      await this.reconcileRealIndex(retry);
+    }
     const [candidates, head] = await Promise.all([this.filterStageable(paths), this.headSha()]);
-    // Last synchronous step before any staging happens. Nothing can
-    // observe or mutate pendingPaths between this line and the `run()`
-    // call right after it (no await in between), so a path reclaimed by
-    // another actor's notify() since `paths` was chosen is dropped here,
-    // not staged under this call's author.
-    const stageable = opts.excludeIfClaimed ? candidates.filter((p) => !opts.excludeIfClaimed!(p)) : candidates;
-    if (stageable.length === 0) return null;
+    if (candidates.length === 0) return null;
 
     const tmpIndex = join(this.root, ".git", `brainmd-index.${randomBytes(8).toString("hex")}`);
     const tmpEnv = { GIT_INDEX_FILE: tmpIndex };
     try {
       await run(this.root, head ? ["read-tree", head] : ["read-tree", "--empty"], { env: tmpEnv });
+      // Must-fix regression (fallback attribution race, not actually
+      // closed by the earlier fix): the previous version did this check
+      // once, before the read-tree await above, so a notify() landing
+      // during that one await was never seen and still got swept into
+      // this commit under the wrong author. This is the latest
+      // synchronous point before `git add` runs.
+      let stageable = opts.excludeIfClaimed ? candidates.filter((p) => !opts.excludeIfClaimed!(p)) : candidates;
+      if (stageable.length === 0) return null;
       await run(this.root, ["add", "-A", "--", ...stageable], { env: tmpEnv });
+      // `add -A` is itself async, so recheck once more right before the
+      // commit that makes it permanent. Anything reclaimed during the add
+      // is force-removed from THIS isolated index only: it never touches
+      // the real index or the working tree, so there's nothing to undo if
+      // the removal itself fails other than retrying the removal.
+      if (opts.excludeIfClaimed) {
+        const reclaimed = stageable.filter((p) => opts.excludeIfClaimed!(p));
+        if (reclaimed.length > 0) {
+          await run(this.root, ["update-index", "--force-remove", "--", ...reclaimed], {
+            env: tmpEnv,
+            allowFail: true,
+          });
+          stageable = stageable.filter((p) => !reclaimed.includes(p));
+          if (stageable.length === 0) return null;
+        }
+      }
       const args = this.buildCommitArgs(message, opts);
       // Hooks (pre-commit, commit-msg) still fire normally: `git commit`
       // runs them as a subprocess inheriting this env, including
@@ -299,12 +345,72 @@ export class GitRepo {
         throw new Error(r.stderr || r.stdout);
       }
       const sha = await this.headSha();
-      // Catch the real index up for exactly these paths, matching what
-      // just got committed. Paths outside this call are never touched.
-      await run(this.root, ["add", "-A", "--", ...stageable], { allowFail: true });
+      await this.reconcileRealIndex(stageable);
       return sha;
     } finally {
       await rm(tmpIndex, { force: true }).catch(() => undefined);
+    }
+  }
+
+  // Catches the real index up for exactly `paths`, matching what the
+  // isolated-index commit above just committed. Paths outside this call
+  // are never touched.
+  //
+  // Must-fix: the old code did this with a single `git add -A`, fired and
+  // forgotten (`allowFail: true`, result ignored). A post-commit hook
+  // holding index.lock makes it fail, and nothing noticed: the real index
+  // is left stale (still missing a path HEAD now has), which is exactly
+  // the staleness filterStageable() has to tolerate above. Retrying a
+  // few times, and queuing anything still unreconciled for the next
+  // commit to retry, means a transient lock heals itself instead of
+  // leaving the real index permanently wrong.
+  //
+  // Should-fix: `git add -A` also reads the CURRENT working tree, not the
+  // tree that was just committed, so an edit landing between the commit
+  // above and this call got staged into the real index too, as if it
+  // were already committed. Feeding `update-index --index-info` the
+  // blob/mode straight from the committed tree reconciles exactly what
+  // was committed, regardless of anything written to disk since.
+  private async reconcileRealIndex(paths: string[]): Promise<void> {
+    const attempt = async () => {
+      const r = await run(this.root, ["ls-tree", "-r", "-z", "HEAD", "--", ...paths]);
+      const present = new Map<string, string>(); // path -> "<mode> <sha>"
+      for (const entry of r.stdout.split("\0").filter(Boolean)) {
+        const tab = entry.indexOf("\t");
+        if (tab === -1) continue;
+        const meta = entry.slice(0, tab).split(" "); // mode type sha
+        const path = entry.slice(tab + 1);
+        present.set(path, `${meta[0]} ${meta[2]}`);
+      }
+      const indexInfo = paths
+        .filter((p) => present.has(p))
+        .map((p) => `${present.get(p)}\t${p}`)
+        .join("\n");
+      if (indexInfo) {
+        await run(this.root, ["update-index", "--index-info"], { input: indexInfo + "\n" });
+      }
+      const missing = paths.filter((p) => !present.has(p));
+      if (missing.length > 0) {
+        await run(this.root, ["update-index", "--force-remove", "--", ...missing]);
+      }
+    };
+    for (let i = 0; i < 3; i++) {
+      try {
+        await attempt();
+        return;
+      } catch (e) {
+        if (i === 2) {
+          // Recover rather than block: leave these paths queued so the
+          // next isolated-index commit (any actor's) retries reconciling
+          // them before doing its own work. The committed history is
+          // already correct either way; this only affects what
+          // status()/dirtyPaths() report off the real index meanwhile.
+          console.warn("[git] failed to reconcile real index after commit, will retry on next commit:", e);
+          for (const p of paths) this.unreconciled.add(p);
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
     }
   }
 

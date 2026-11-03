@@ -99,6 +99,24 @@ export class Autocommit {
             paths: group.paths,
             author: { name: group.identity.name, email: group.identity.email ?? "agent@brain.local" },
             trailers: trailersFor(group.identity),
+            // Must-fix: ownership was captured once, in this flush's
+            // opening snapshot, and never checked again. If a different
+            // actor overwrites one of this group's paths and notifies
+            // while this commit is still staging (git.ts's own awaits
+            // between picking candidates and actually running `git add`),
+            // the write already landed on disk under the new actor, but
+            // this commit's `git add -A` reads the working tree as it is
+            // NOW, so it would stage and commit their text under THIS
+            // group's author. pendingPaths holds the live truth: notify()
+            // writes straight into it, and flush() only clears it via its
+            // own snapshot at the top of this method, so any entry
+            // present here was added after that snapshot was taken, i.e.
+            // by someone else. Dropping that path here leaves it in
+            // pendingPaths under its new owner, for the next flush (the
+            // retry scheduled at the end of this method) to commit
+            // properly, instead of folding it into this one under the
+            // wrong name.
+            excludeIfClaimed: (p) => this.pendingPaths.has(p),
           });
           if (sha) lastSha = sha;
         } catch (e) {
