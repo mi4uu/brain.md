@@ -32,7 +32,7 @@ function hashToken(token: string): string {
 interface TokenRecord {
   expiresAt: number;
   sub: string;
-  // Set for tokens issued to an external (OIDC/GitHub) login — the git
+  // Set for tokens issued to an external (OIDC/GitHub) login, the git
   // "Author:" line should say who actually logged in, not the owner
   // config fallback localIdentity() uses for the password-login case.
   // Undefined means "local owner", same as every pre-login-provider token.
@@ -145,7 +145,7 @@ export class TokenStore {
     }
   }
 
-  // `identity` is only set for external (OIDC/GitHub) logins — password
+  // `identity` is only set for external (OIDC/GitHub) logins, password
   // login keeps calling issue(sub) with no third argument, same as before.
   issue(
     sub: string = LOCAL_SUB,
@@ -174,7 +174,7 @@ export class TokenStore {
     return this.lookup(token)?.sub;
   }
 
-  // Full identity resolution for tokens issued to an external login —
+  // Full identity resolution for tokens issued to an external login,
   // undefined name/email means "fall back to the configured owner",
   // same as every token issued before login providers existed.
   identityFor(token: string | undefined): { sub: string; name?: string; email?: string } | undefined {

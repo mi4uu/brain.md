@@ -117,7 +117,7 @@ export function validateLoginConfig(cfg: LoginConfig): void {
       cfg.allowedEmails.length > 0 || cfg.allowedDomains.length > 0 || hasGroupAllowlist;
     if (!hasAllowlist) {
       throw new LoginConfigError(
-        "an external login provider is configured but no allowlist is set — set BRAINMD_OAUTH_ALLOWED_EMAILS, BRAINMD_OAUTH_ALLOWED_DOMAINS, or BRAINMD_OIDC_GROUPS_CLAIM + BRAINMD_OIDC_ALLOWED_GROUPS",
+        "an external login provider is configured but no allowlist is set, set BRAINMD_OAUTH_ALLOWED_EMAILS, BRAINMD_OAUTH_ALLOWED_DOMAINS, or BRAINMD_OIDC_GROUPS_CLAIM + BRAINMD_OIDC_ALLOWED_GROUPS",
       );
     }
   }

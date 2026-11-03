@@ -50,7 +50,7 @@ const OPEN_PATHS = new Set([
 
 const OPEN_PREFIXES = [
   "/oauth/", // /oauth/authorize, /oauth/token, /oauth/register
-  // board-plan Part B: external login start/callback/exchange — a human
+  // board-plan Part B: external login start/callback/exchange, a human
   // hitting these has no session yet by definition.
   "/api/auth/idp/",
 ];

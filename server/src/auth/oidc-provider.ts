@@ -33,7 +33,7 @@ export class OidcProvider {
     this.cfg = cfg;
   }
 
-  // Fetched once at startup and cached for the process lifetime — the
+  // Fetched once at startup and cached for the process lifetime, the
   // discovery document practically never changes, and refetching it on
   // every login would add a round trip to the critical path for nothing.
   async discover(): Promise<DiscoveryDocument> {

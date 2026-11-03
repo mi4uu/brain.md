@@ -359,7 +359,7 @@ export function oauthFlowRoutes(
 
           // Two ways to prove "the consenting human is allowed to grant
           // this": the vault password (unchanged, default mode), or an
-          // already-valid web-app session token — which covers a human
+          // already-valid web-app session token, which covers a human
           // who logged in via an external provider (board-plan Part B)
           // just as much as one who already typed the password once this
           // browser session. Password is tried first so the default

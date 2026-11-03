@@ -10,7 +10,7 @@
 // only breaks your own login attempt.
 
 const COOKIE_NAME = "brainmd_idp_flow";
-const MAX_AGE_SECONDS = 600; // 10 min — generous for a redirect round trip
+const MAX_AGE_SECONDS = 600; // 10 min, generous for a redirect round trip
 
 export interface LoginFlowState {
   provider: string;

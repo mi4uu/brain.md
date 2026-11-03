@@ -37,7 +37,7 @@ export function authRoutes(
   return new Elysia()
     // board-plan Part B: tells the login page which methods to render,
     // before anyone is authenticated. Deliberately leaves out issuer
-    // URLs, client IDs, allowlists — a provider name and its button
+    // URLs, client IDs, allowlists, a provider name and its button
     // label are all the UI needs.
     .get("/api/auth/config", () => ({
       password: loginConfig.passwordLogin,

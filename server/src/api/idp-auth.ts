@@ -23,12 +23,12 @@ import { serializeFlowCookie, clearFlowCookie, readFlowCookie } from "../auth/lo
 //                                            token, same shape as password
 //                                            login's response
 //
-// Errors during the flow never surface details to the browser — only a
+// Errors during the flow never surface details to the browser, only a
 // generic message, via a redirect back to the login page. Anything worth
 // debugging goes to server logs instead, same as the OAuth 2.1 consent
 // flow already does for password mismatches.
 
-// Mirrors auth-middleware.ts's originOf — see the long comment there for
+// Mirrors auth-middleware.ts's originOf, see the long comment there for
 // why Cloudflare Tunnel needs the cf-visitor special case. Kept as its
 // own copy rather than a shared export: each caller depends on it for a
 // slightly different reason (audience binding vs. a redirect URI here),
@@ -81,7 +81,7 @@ export function idpAuthRoutes(
 
   function redirectUriFor(provider: string): string {
     // BRAINMD_PUBLIC_URL is required and validated at startup whenever a
-    // provider is configured — see login-config.ts.
+    // provider is configured, see login-config.ts.
     return `${loginConfig.publicUrl}/api/auth/idp/${provider}/callback`;
   }
 
@@ -130,7 +130,7 @@ export function idpAuthRoutes(
       const provider = params.provider;
       const origin = originOf(request);
       const secure = origin.startsWith("https://");
-      // Clear the flow cookie unconditionally — it's single-use regardless
+      // Clear the flow cookie unconditionally, it's single-use regardless
       // of whether this callback succeeds.
       set.headers["set-cookie"] = clearFlowCookie(secure);
 
