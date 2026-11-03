@@ -98,6 +98,7 @@ Model Context Protocol.
   - [MCP server](#-mcp-server)
   - [Per-folder permissions](#-per-folder-permissions)
   - [Optional password auth](#-optional-password-auth)
+  - [Login with Google, GitHub, Keycloak or Authentik](#-login-with-google-github-keycloak-or-authentik)
 - [CLI](#-cli)
 - [Defaults & paths](#-defaults--paths)
 - [Architecture](#-architecture)
@@ -653,6 +654,88 @@ Same flow works with any spec-compliant MCP client: Cursor, ChatGPT
 Apps, future Anthropic clients, etc. Claude Code / Claude Desktop
 have shipped before the spec stabilised so they still want a static
 bearer or the `mcp-remote` stdio bridge — both documented above.
+
+### 🔐 Login with Google, GitHub, Keycloak or Authentik
+
+Password auth above is one human sharing one secret. If more than one
+person needs to sign in to the web app, or you want MFA without
+rolling your own, point brain.md at an identity provider instead. It
+is optional and sits next to password login, not instead of it:
+password login stays the default and keeps working unless you
+explicitly turn it off.
+
+Every provider is an environment variable away. Set these, restart
+the server:
+
+| Variable | Required | Notes |
+|---|---|---|
+| `BRAINMD_PASSWORD_LOGIN` | no | `on` (default) or `off`. Refuses to start if `off` and no provider below is configured. |
+| `BRAINMD_PUBLIC_URL` | only with a provider | e.g. `https://brainmd.example.com`. Builds the redirect URI (`<public-url>/api/auth/idp/<provider>/callback`), register that exact URL with the provider. |
+| `BRAINMD_OIDC_ISSUER` | for OIDC | e.g. `https://accounts.google.com`. |
+| `BRAINMD_OIDC_CLIENT_ID`, `BRAINMD_OIDC_CLIENT_SECRET` | for OIDC | from the provider's console. |
+| `BRAINMD_OIDC_NAME` | no | button label, e.g. `Google`, `Keycloak`. Defaults to `SSO`. |
+| `BRAINMD_OIDC_SCOPES` | no | default `openid email profile`. |
+| `BRAINMD_OIDC_GROUPS_CLAIM`, `BRAINMD_OIDC_ALLOWED_GROUPS` | no | e.g. claim `groups`, allowed `staff,family`. Counts as an allowlist on its own. |
+| `BRAINMD_GITHUB_CLIENT_ID`, `BRAINMD_GITHUB_CLIENT_SECRET` | for GitHub | from a GitHub OAuth App. |
+| `BRAINMD_OAUTH_ALLOWED_EMAILS` | see below | comma list, e.g. `me@example.com,partner@example.com`. |
+| `BRAINMD_OAUTH_ALLOWED_DOMAINS` | see below | comma list, e.g. `example.com`. |
+
+A provider with no allowlist at all (no allowed emails, domains or
+OIDC groups) refuses to start, brain.md will not let in anyone who
+can simply reach the login page.
+
+**Google** (OIDC): Google Cloud Console → APIs & Services →
+Credentials → Create OAuth client ID → Web application. Authorized
+redirect URI: `https://brainmd.example.com/api/auth/idp/oidc/callback`.
+Issuer is `https://accounts.google.com`.
+
+```sh
+BRAINMD_OIDC_ISSUER=https://accounts.google.com
+BRAINMD_OIDC_CLIENT_ID=...
+BRAINMD_OIDC_CLIENT_SECRET=...
+BRAINMD_OIDC_NAME=Google
+BRAINMD_OAUTH_ALLOWED_EMAILS=you@gmail.com
+BRAINMD_PUBLIC_URL=https://brainmd.example.com
+```
+
+**GitHub**: GitHub → Settings → Developer settings → OAuth Apps →
+New OAuth App. Authorization callback URL:
+`https://brainmd.example.com/api/auth/idp/github/callback`.
+
+```sh
+BRAINMD_GITHUB_CLIENT_ID=...
+BRAINMD_GITHUB_CLIENT_SECRET=...
+BRAINMD_OAUTH_ALLOWED_EMAILS=you@example.com
+BRAINMD_PUBLIC_URL=https://brainmd.example.com
+```
+
+**Keycloak / Authentik** (both OIDC): create a client (confidential,
+standard flow / authorization_code), redirect URI
+`https://brainmd.example.com/api/auth/idp/oidc/callback`, issuer is
+the realm/application's OpenID discovery base, e.g.
+`https://keycloak.example.com/realms/<realm>` or
+`https://authentik.example.com/application/o/<slug>`.
+
+```sh
+BRAINMD_OIDC_ISSUER=https://keycloak.example.com/realms/home
+BRAINMD_OIDC_CLIENT_ID=...
+BRAINMD_OIDC_CLIENT_SECRET=...
+BRAINMD_OIDC_NAME=Keycloak
+BRAINMD_OIDC_GROUPS_CLAIM=groups
+BRAINMD_OIDC_ALLOWED_GROUPS=staff
+BRAINMD_PUBLIC_URL=https://brainmd.example.com
+```
+
+> **MFA** is the identity provider's job, not brain.md's. Turn it on
+> in Google/Keycloak/Authentik/GitHub itself and every login through
+> that provider inherits it.
+
+What happens on login: brain.md redirects to the provider, validates
+the ID token (OIDC) or looks up the verified primary email (GitHub),
+checks it against your allowlist, then issues the exact same kind of
+session token password login does. Nothing about the rest of the app
+changes, per-folder MCP permissions and the owner-only admin routes
+work the same regardless of which door someone came in through.
 
 ---
 

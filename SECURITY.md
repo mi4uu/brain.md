@@ -50,20 +50,33 @@ compromise other than the one you're running yourself.
 
 **Auth modes** (can be combined or left off for strictly local/loopback
 use):
-- **Password** — a single owner password (scrypt-hashed), issuing bearer
-  session tokens for the web UI. This is the default and stays available
-  regardless of what else is configured.
-- **API keys** — long-lived named tokens for scripts/MCP clients, scoped
+- **Password**: a single owner password (argon2id-hashed via
+  `Bun.password`), issuing bearer session tokens for the web UI. This is
+  the default and stays available unless `BRAINMD_PASSWORD_LOGIN=off` is
+  set explicitly.
+- **External login** (optional, `BRAINMD_OIDC_*` / `BRAINMD_GITHUB_*`):
+  OIDC (Google, Keycloak, Authentik, Microsoft Entra ID, etc.) or GitHub,
+  with a required allowlist (emails, domains or OIDC groups). Validates
+  the ID token's issuer, audience, expiry and signature (JWKS) for OIDC,
+  or the account's verified primary email for GitHub, then issues the
+  same session token the password path does. MFA is the identity
+  provider's job, brain.md trusts whatever it asserts. Can run alongside
+  password login or replace it entirely.
+- **API keys**: long-lived named tokens for scripts/MCP clients, scoped
   like an agent (subject to per-folder MCP permissions).
-- **OAuth 2.1** (optional) — authorization-code + PKCE for MCP clients,
-  gated by the same owner password at the consent screen. Dynamic client
-  registration is open (RFC 7591); trust comes from the password gate, not
-  from pre-registration.
+- **OAuth 2.1** (optional): authorization-code + PKCE for MCP clients,
+  gated at the consent screen by the owner password or an already
+  logged-in web session (password or external login, either counts).
+  Dynamic client registration is open (RFC 7591); trust comes from that
+  gate, not from pre-registration.
 
-With no password configured, the server relies on a Host/Origin allowlist
-(`ALLOWED_HOSTS`) to block browser-based DNS-rebinding attacks instead —
-fine for pure loopback or a trusted LAN, not for exposing the port
-directly to the internet.
+With neither password login nor an external provider configured, the
+server relies on a Host/Origin allowlist (`ALLOWED_HOSTS`) to block
+browser-based DNS-rebinding attacks instead, fine for pure loopback or a
+trusted LAN, not for exposing the port directly to the internet. The
+server refuses to start if password login is turned off and no external
+provider is configured, or if a provider is configured with no allowlist:
+there has to be some way to authenticate, and some rule for who gets in.
 
 **What leaves the machine:**
 - By default, nothing. The embedding model for semantic search runs
