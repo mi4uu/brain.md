@@ -11,7 +11,6 @@
 [![MCP: streamable-http](https://img.shields.io/badge/MCP-streamable--http-7c3aed.svg)](docs/mcp.md)
 [![RAG: WASM ONNX](https://img.shields.io/badge/RAG-WASM%20ONNX-ec4899.svg)](#-semantic-search-rag)
 [![Glama MCP server](https://glama.ai/mcp/servers/mi4uu/brain.md/badges/score.svg)](https://glama.ai/mcp/servers/mi4uu/brain.md)
-[![Smithery](https://smithery.ai/badge/mi4uu/brain-md)](https://smithery.ai/server/mi4uu/brain-md)
 
 </div>
 
@@ -458,7 +457,7 @@ tool call (Claude Desktop and LM Studio both do this).
 
 ![MCP Server page in brain.md](docs/img/mcp-server-page.png)
 
-Tools (16):
+Tools (17):
 
 | Tool                  | Folder perm | What it does                                                       |
 |-----------------------|-------------|--------------------------------------------------------------------|
@@ -478,6 +477,7 @@ Tools (16):
 | `find_orphans`        | `read`      | Notes with 0 backlinks AND low semantic neighbour density          |
 | `weekly_digest`       | `read`      | Topic clusters across notes modified in a recent window (e.g. 7d)  |
 | `compare_notes`       | `read`      | Cosine sim + unified diff + shared headings between two notes      |
+| `current_datetime`    | none        | Server date, time and timezone, so agents never guess "now"        |
 
 Resources (2):
 
@@ -800,7 +800,7 @@ Contributions welcome.
 1. Open an issue first for anything non-trivial — a quick design
    sketch saves a long PR rewrite.
 2. Write the test before the implementation. Server tests run with
-   `bun test`; the suite is currently **187 green**.
+   `bun test`; keep the suite green.
 3. Open a PR. CI runs typecheck (server + web) + `bun test`.
 
 ---
