@@ -23,7 +23,7 @@ interface IssuerClaims {
   name?: string;
 }
 
-async function startFakeIssuer() {
+async function startFakeIssuer(opts: { port?: number } = {}) {
   const { publicKey, privateKey } = await generateKeyPair("ES256");
   const jwk = await exportJWK(publicKey);
   jwk.kid = "test-key-1";
@@ -35,9 +35,17 @@ async function startFakeIssuer() {
   let omitExp = false;
   let tokenEndpointHits = 0;
 
-  const server = Bun.serve({
-    port: 0,
-    fetch: async (req) => {
+  // Should-fix: a bind failure (the port requested is taken, or the
+  // sandbox refuses listeners outright) used to throw whatever raw error
+  // Bun.serve produces, with no indication this fixture is the cause, and
+  // left `issuer` unassigned in beforeEach, so afterEach's unguarded
+  // `issuer.stop()` masked it with an unrelated "undefined" TypeError.
+  // Wrapping and rethrowing here keeps the real cause visible.
+  let server: ReturnType<typeof Bun.serve>;
+  try {
+    server = Bun.serve({
+      port: opts.port ?? 0,
+      fetch: async (req) => {
       const url = new URL(req.url);
       if (url.pathname === "/token" && req.method === "POST") tokenEndpointHits++;
       if (url.pathname === "/.well-known/openid-configuration") {
@@ -81,9 +89,15 @@ async function startFakeIssuer() {
           token_type: "Bearer",
         });
       }
-      return new Response("not found", { status: 404 });
-    },
-  });
+        return new Response("not found", { status: 404 });
+      },
+    });
+  } catch (e) {
+    throw new Error(
+      `startFakeIssuer: failed to bind a listening port (sandbox may restrict network listeners): ${String(e)}`,
+      { cause: e },
+    );
+  }
 
   function base(): string {
     return `http://127.0.0.1:${server.port}`;
@@ -110,6 +124,11 @@ async function startFakeIssuer() {
 }
 
 let issuer: Awaited<ReturnType<typeof startFakeIssuer>>;
+// Tracks whether beforeEach's startFakeIssuer() actually completed, since
+// `issuer` itself keeps its type non-optional for every ordinary test
+// body below (they only ever run once beforeEach has succeeded). Guards
+// just the teardown path against a beforeEach that threw.
+let issuerReady = false;
 let handle!: AppHandle;
 let dir!: string;
 
@@ -133,11 +152,19 @@ async function setup(overrides: Partial<LoginConfig> = {}) {
 }
 
 beforeEach(async () => {
+  issuerReady = false;
   issuer = await startFakeIssuer();
+  issuerReady = true;
 });
 
 afterEach(async () => {
-  issuer.stop();
+  // Should-fix: when beforeEach's startFakeIssuer() throws (a bind
+  // failure), `issuer` is left unassigned (or stale from a previous
+  // test). Unconditionally calling issuer.stop() here used to throw its
+  // own TypeError on top of that, replacing the real "failed to bind"
+  // error in the test output with an unrelated "Cannot read properties
+  // of undefined" one.
+  if (issuerReady) issuer.stop();
   if (dir) await rm(dir, { recursive: true, force: true });
 });
 
@@ -478,6 +505,34 @@ describe("cookie security follows the parsed scheme, not a raw string prefix", (
     const setCookie = res.headers.get("set-cookie") ?? "";
     expect(setCookie.startsWith("__Host-brainmd_idp_flow=")).toBe(true);
     expect(setCookie).toContain("Secure");
+  });
+});
+
+describe("OIDC fixture: fake issuer startup failure", () => {
+  // Should-fix regression: three full runs of this suite each reported
+  // 694 pass / 21 fail with an EADDRINUSE at this fixture's own startup,
+  // and the teardown's unconditional issuer.stop() turned the real cause
+  // into an unrelated "Cannot read properties of undefined" instead.
+  // This exercises both halves directly: the bind failure itself raises
+  // a clear, catchable error naming this fixture, and a beforeEach that
+  // never got as far as assigning `issuer` doesn't make afterEach crash
+  // on top of it.
+  test("binding an already-taken port throws a clear error naming this fixture, not a bare EADDRINUSE", async () => {
+    const taken = await startFakeIssuer();
+    const port = Number(new URL(taken.base).port);
+    try {
+      await expect(startFakeIssuer({ port })).rejects.toThrow(/startFakeIssuer: failed to bind/);
+    } finally {
+      taken.stop();
+    }
+  });
+
+  test("afterEach's guard does not throw when beforeEach never assigned issuer", () => {
+    let ready = false;
+    let localIssuer: Awaited<ReturnType<typeof startFakeIssuer>> | undefined;
+    expect(() => {
+      if (ready) localIssuer!.stop();
+    }).not.toThrow();
   });
 });
 
