@@ -214,6 +214,17 @@ describe("OIDC login: happy path", () => {
     expect(status.authenticated).toBe(true);
   });
 
+  // Regression: a trailing slash on BRAINMD_PUBLIC_URL used to be
+  // concatenated straight onto the callback path, producing
+  // ".../idp/oidc//callback" (double slash, 404 at the real callback).
+  test("a trailing slash on publicUrl doesn't double up in the callback redirect_uri", async () => {
+    await setup({ publicUrl: "http://localhost/" });
+    const res = await handle.app.handle(new Request("http://localhost/api/auth/idp/oidc/start"));
+    expect(res.status).toBe(302);
+    const authUrl = new URL(res.headers.get("location")!);
+    expect(authUrl.searchParams.get("redirect_uri")).toBe("http://localhost/api/auth/idp/oidc/callback");
+  });
+
   test("the handoff code is single-use, replaying it fails", async () => {
     await setup();
     const { cookie, state, nonce } = await startFlow();

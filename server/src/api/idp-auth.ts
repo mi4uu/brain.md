@@ -77,8 +77,12 @@ export function idpAuthRoutes(
 
   function redirectUriFor(provider: string): string {
     // BRAINMD_PUBLIC_URL is required and validated at startup whenever a
-    // provider is configured, see login-config.ts.
-    return `${loginConfig.publicUrl}/api/auth/idp/${provider}/callback`;
+    // provider is configured, see login-config.ts. new URL() rather than
+    // string concatenation: BRAINMD_PUBLIC_URL with a trailing slash
+    // (https://vault.example/) would otherwise double up into
+    // ".../idp/..." with an empty path segment, a 404 at the provider's
+    // callback.
+    return new URL(`/api/auth/idp/${provider}/callback`, loginConfig.publicUrl).toString();
   }
 
   return new Elysia()

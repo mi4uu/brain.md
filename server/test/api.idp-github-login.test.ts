@@ -103,6 +103,18 @@ describe("GitHub login", () => {
     expect((await statusRes.json()).authenticated).toBe(true);
   });
 
+  // Regression: a trailing slash on BRAINMD_PUBLIC_URL used to be
+  // concatenated straight onto the callback path, producing
+  // ".../idp/github//callback" (double slash, 404 at the real callback).
+  test("a trailing slash on publicUrl doesn't double up in the callback redirect_uri", async () => {
+    mockGithubFetch({ primaryVerified: true });
+    await setup({ publicUrl: "http://localhost/" });
+    const res = await handle.app.handle(new Request("http://localhost/api/auth/idp/github/start"));
+    expect(res.status).toBe(302);
+    const authUrl = new URL(res.headers.get("location")!);
+    expect(authUrl.searchParams.get("redirect_uri")).toBe("http://localhost/api/auth/idp/github/callback");
+  });
+
   test("unverified primary email redirects to the login page with a generic error", async () => {
     mockGithubFetch({ primaryVerified: false });
     await setup();
