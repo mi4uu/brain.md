@@ -22,6 +22,15 @@ export interface Identity {
   // for the git "Agent:" trailer. Mirrors `name` today (no separate human
   // name exists yet) but kept distinct for when OAuth login adds one.
   clientName?: string;
+  // Stable grouping key for autocommit.ts's one-commit-per-actor split.
+  // Defaults to `sub`, which is unique per API key but NOT per OAuth
+  // client: every MCP client whose consent was granted with the vault
+  // password (rather than a per-user session) gets the same `sub`
+  // (LOCAL_SUB), the subject is "the owner", not "which client". Without
+  // a separate grouping key, two different password-consented MCP
+  // clients collapse into one commit, crediting whichever client's
+  // identity happened to be recorded first for that subject.
+  credentialId?: string;
 }
 
 // Credential records predating this change have no `sub` of their own,
@@ -51,6 +60,12 @@ export function apiKeyIdentity(sub: string, keyName: string): Identity {
   return { sub, name: keyName, kind: "apikey", clientName: keyName };
 }
 
-export function oauthClientIdentity(sub: string, clientName: string): Identity {
-  return { sub, name: clientName, kind: "oauth-client", clientName };
+export function oauthClientIdentity(sub: string, clientName: string, clientId?: string): Identity {
+  return {
+    sub,
+    name: clientName,
+    kind: "oauth-client",
+    clientName,
+    credentialId: clientId ? `oauth-client:${clientId}` : sub,
+  };
 }

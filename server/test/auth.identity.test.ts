@@ -26,7 +26,24 @@ describe("identity builders", () => {
 
   test("oauthClientIdentity mirrors the client name into clientName", () => {
     const id = oauthClientIdentity("oauth-sub", "Claude Desktop");
-    expect(id).toEqual({ sub: "oauth-sub", name: "Claude Desktop", kind: "oauth-client", clientName: "Claude Desktop" });
+    expect(id).toEqual({
+      sub: "oauth-sub",
+      name: "Claude Desktop",
+      kind: "oauth-client",
+      clientName: "Claude Desktop",
+      credentialId: "oauth-sub",
+    });
+  });
+
+  // Regression: two different MCP clients consented with the same
+  // password both get sub === LOCAL_SUB (see password-policy.ts), so
+  // credentialId has to come from the client's own id, not the subject,
+  // or autocommit.ts's grouping collapses them into one commit.
+  test("oauthClientIdentity's credentialId is keyed by clientId when given, not sub", () => {
+    const a = oauthClientIdentity(LOCAL_SUB, "Claude Desktop", "client-a");
+    const b = oauthClientIdentity(LOCAL_SUB, "Cursor", "client-b");
+    expect(a.sub).toBe(b.sub);
+    expect(a.credentialId).not.toBe(b.credentialId);
   });
 });
 

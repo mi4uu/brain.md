@@ -192,4 +192,36 @@ describe("git commit author from identity", () => {
     expect(owners[0]!.body).not.toContain("On-Behalf-Of:");
     expect(bots[0]!.body).toContain("Agent: ci-bot");
   });
+
+  // Regression: app.ts's vault.onMutation listener only passed e.path
+  // (the rename's target) to autocommit.notify(), never e.extra (the
+  // source). The commit staged the new path but never the old one's
+  // deletion, leaving it to show up unstaged (or get swept into some
+  // later, differently-attributed commit) instead of landing in this
+  // rename's own commit.
+  test("a rename stages both the new path and the old path's deletion in one commit", async () => {
+    await put("/api/note/old.md", "hello");
+    await handle.autocommit.flush();
+
+    const r = await handle.app.handle(
+      new Request("http://localhost/api/rename", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ from: "old.md", to: "new.md" }),
+      }),
+    );
+    expect(r.status).toBe(200);
+    await handle.autocommit.flush();
+
+    const status = Bun.spawn(["git", "-C", dir, "status", "--porcelain"], { stdout: "pipe" });
+    const porcelain = (await new Response(status.stdout).text()).trim();
+    await status.exited;
+    expect(porcelain).toBe("");
+
+    const show = Bun.spawn(["git", "-C", dir, "show", "--name-status", "--format=", "HEAD"], { stdout: "pipe" });
+    const names = (await new Response(show.stdout).text()).trim();
+    await show.exited;
+    expect(names).toContain("new.md");
+    expect(names).toMatch(/old\.md/);
+  });
 });

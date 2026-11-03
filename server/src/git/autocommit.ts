@@ -95,17 +95,24 @@ interface ActorGroup {
 // One group per distinct subject that touched a path in this flush window,
 // so each actor gets their own commit (board-plan: "split into one commit
 // per actor" rather than one commit crediting whoever happened to flush).
+// Keyed by kind + credentialId (not just sub): a password-authenticated
+// human session and an MCP client consented with that same password both
+// end up with sub === LOCAL_SUB, and distinct MCP clients consented that
+// way all share it too, see Identity.credentialId. Without the kind/
+// credentialId split they'd merge into one commit under whichever
+// identity happened to be recorded first.
 function groupByActor(pendingPaths: Map<string, Identity>): ActorGroup[] {
-  const bySub = new Map<string, ActorGroup>();
+  const byKey = new Map<string, ActorGroup>();
   for (const [path, identity] of pendingPaths) {
-    let g = bySub.get(identity.sub);
+    const key = `${identity.kind}:${identity.credentialId ?? identity.sub}`;
+    let g = byKey.get(key);
     if (!g) {
       g = { identity, paths: [] };
-      bySub.set(identity.sub, g);
+      byKey.set(key, g);
     }
     g.paths.push(path);
   }
-  return Array.from(bySub.values());
+  return Array.from(byKey.values());
 }
 
 function commitMessage(paths: string[]): string {

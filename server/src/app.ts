@@ -74,7 +74,15 @@ export function createApp(opts: AppOptions = {}) {
   // Identity is read from identityContext HERE, synchronously inside the
   // request that triggered the mutation. The debounce timer autocommit
   // fires on later has no request, and no identity, of its own.
-  vault.onMutation((e) => autocommit.notify(e.path, identityContext.getStore()));
+  vault.onMutation((e) => {
+    const identity = identityContext.getStore();
+    autocommit.notify(e.path, identity);
+    // Rename's `extra` is the source path: the commit needs to stage its
+    // deletion too, or the old path is left behind, picked up (or not)
+    // by whatever next touches the tree instead of landing in this
+    // actor's own commit.
+    if (e.kind === "rename" && e.extra) autocommit.notify(e.extra, identity);
+  });
   // Centralised index maintenance (V-concurrency #18): every vault mutation
   // REST writes, MCP write_note/append_note, trash restore, git restore
   // via vault.notifyWrite, flows through this one subscription instead of
@@ -140,7 +148,7 @@ export function createApp(opts: AppOptions = {}) {
     .use(oauthDiscoveryRoutes())
     // V63 step 2+3 + V67: authorize + token + register endpoints
     // (PKCE + DCR + CIMD).
-    .use(oauthFlowRoutes(authStore, oauthStore, oauthClients, cimdResolver, tokenStore))
+    .use(oauthFlowRoutes(authStore, oauthStore, oauthClients, cimdResolver, tokenStore, loginConfig, loginLimiter))
     .use(authRoutes(authStore, tokenStore, loginLimiter, loginConfig))
     .use(idpAuthRoutes(loginConfig, tokenStore, handoffCodes))
     .use(apiKeyRoutes(apiKeys))

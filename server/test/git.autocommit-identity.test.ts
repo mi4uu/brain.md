@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitRepo } from "../src/git/git";
 import { Autocommit } from "../src/git/autocommit";
-import { apiKeyIdentity, localIdentity } from "../src/auth/identity";
+import { apiKeyIdentity, localIdentity, oauthClientIdentity, LOCAL_SUB } from "../src/auth/identity";
 
 let dir: string;
 let repo: GitRepo;
@@ -75,5 +75,36 @@ describe("Autocommit: identity grouping", () => {
     const name = (await new Response(proc.stdout).text()).trim();
     await proc.exited;
     expect(name).toBe("ci-bot");
+  });
+
+  // Regression: a password-login session and an MCP client whose consent
+  // was granted with the password both get sub === LOCAL_SUB, and so do
+  // two different password-consented MCP clients. Grouping by sub alone
+  // merged all of them into one commit, crediting whichever identity was
+  // recorded first and dropping the others' Agent/On-Behalf-Of trailers.
+  test("a human session and an oauth client sharing LOCAL_SUB still get separate commits", async () => {
+    const ac = new Autocommit(repo, { enabled: true, debounceMs: 50 });
+    const owner = localIdentity("Owner", "owner@brain.local", LOCAL_SUB);
+    const agent = oauthClientIdentity(LOCAL_SUB, "Claude Desktop", "client-1");
+    await writeFile(join(dir, "human.md"), "a");
+    await writeFile(join(dir, "agent.md"), "b");
+    ac.notify("human.md", owner);
+    ac.notify("agent.md", agent);
+    const before = await commitCount();
+    await ac.flush();
+    expect(await commitCount()).toBe(before + 2);
+  });
+
+  test("two different oauth clients both consented with the password still get separate commits", async () => {
+    const ac = new Autocommit(repo, { enabled: true, debounceMs: 50 });
+    const clientA = oauthClientIdentity(LOCAL_SUB, "Claude Desktop", "client-a");
+    const clientB = oauthClientIdentity(LOCAL_SUB, "Cursor", "client-b");
+    await writeFile(join(dir, "a.md"), "a");
+    await writeFile(join(dir, "b.md"), "b");
+    ac.notify("a.md", clientA);
+    ac.notify("b.md", clientB);
+    const before = await commitCount();
+    await ac.flush();
+    expect(await commitCount()).toBe(before + 2);
   });
 });
