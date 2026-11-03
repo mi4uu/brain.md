@@ -5,7 +5,7 @@
 // that's trusted on its face. X-Forwarded-For is only trusted when the
 // direct peer is loopback, i.e. the request arrived through a local
 // reverse proxy (cloudflared tunnel, nginx on the same box) rather than
-// straight off the internet — a non-loopback peer can set that header to
+// straight off the internet: a non-loopback peer can set that header to
 // anything, so it's ignored in that case. Same test harness quirk as
 // host-middleware: Elysia's `.handle()` has no real socket, so `server`
 // is null and callers fall into the same branch as a loopback peer.

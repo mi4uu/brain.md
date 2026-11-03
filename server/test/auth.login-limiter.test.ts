@@ -3,7 +3,7 @@ import { LoginLimiter } from "../src/auth/login-limiter";
 
 const WINDOW_MS = 15 * 60 * 1000;
 
-describe("LoginLimiter — per-IP sliding window", () => {
+describe("LoginLimiter: per-IP sliding window", () => {
   test("allows up to the failure threshold, then blocks with 429-worthy gate", () => {
     const limiter = new LoginLimiter();
     const now = 1_000_000;
@@ -58,7 +58,7 @@ describe("LoginLimiter — per-IP sliding window", () => {
   });
 });
 
-describe("LoginLimiter.reserve — closes the check-then-verify-then-record race", () => {
+describe("LoginLimiter.reserve: closes the check-then-verify-then-record race", () => {
   test("only MAX_FAILURES reservations are granted before any is released", () => {
     const limiter = new LoginLimiter();
     const now = 1_000_000;
@@ -100,7 +100,7 @@ describe("LoginLimiter.reserve — closes the check-then-verify-then-record race
   });
 });
 
-describe("LoginLimiter — global backoff", () => {
+describe("LoginLimiter: global backoff", () => {
   test("no delay under the global failure threshold", async () => {
     const limiter = new LoginLimiter();
     const now = 1_000_000;

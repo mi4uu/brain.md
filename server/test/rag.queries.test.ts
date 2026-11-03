@@ -15,7 +15,7 @@ import type { TaskDoneFilter } from "../src/rag/store";
 import { join } from "node:path";
 
 // V54: queries layer unit tests with hand-rolled deps. We deliberately
-// avoid spinning up LanceDB or a real embedder — we only need to verify
+// avoid spinning up LanceDB or a real embedder, we only need to verify
 // composition (perm filtering, budget packing, ordering, dedupe).
 
 function makeVec(values: number[]): Float32Array {
@@ -51,7 +51,7 @@ function makeDeps(opts: {
     // The folder-perm loader reads `.brain/folder-meta.json` via
     // vault.abs(); without that file on disk, loadFolderMeta's ENOENT
     // branch returns `{ mcp: {} }`, default perms (read/write true) for
-    // every path — exactly what most tests want. A genuinely missing
+    // every path, exactly what most tests want. A genuinely missing
     // `abs()` would instead hit loadFolderMeta's fail-closed branch (see
     // folder-perms.ts), denying everything, so the stub needs a real one.
     root: "/tmp/nonexistent-brain-queries-test",
@@ -90,7 +90,7 @@ function makeDeps(opts: {
   };
 }
 
-describe("queries — V54 perm + composition", () => {
+describe("queries: V54 perm + composition", () => {
   test("every function throws RagDisabledError when ragEnabled=false", async () => {
     const deps = makeDeps({ notes: [], enabled: false });
     await expect(related(deps, "a.md")).rejects.toBeInstanceOf(RagDisabledError);

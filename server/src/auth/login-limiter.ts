@@ -6,7 +6,7 @@
 //
 // Global backoff: a small extra delay once the whole server is seeing a
 // burst of failures in a short window, regardless of which IP they came
-// from — slows a botnet spreading guesses across many IPs to dodge the
+// from, slows a botnet spreading guesses across many IPs to dodge the
 // per-IP limit. It runs before password verification so it also applies
 // to callers who haven't failed yet.
 //

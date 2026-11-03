@@ -83,7 +83,7 @@ there has to be some way to authenticate, and some rule for who gets in.
   locally via bundled WASM ONNX (`bge-small-en-v1.5`); note content never
   leaves the process for indexing or search.
 - If you switch the RAG provider to **OpenAI-compatible** in Settings, note
-  text is sent to whatever `baseURL` you configure there for embedding —
+  text is sent to whatever `baseURL` you configure there for embedding:
   OpenAI's API, a remote Ollama/LM Studio instance, or anything else
   speaking that protocol. This is opt-in and off by default.
 - OAuth client metadata (CIMD) is fetched over HTTPS from a client's own

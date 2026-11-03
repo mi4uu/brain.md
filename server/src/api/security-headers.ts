@@ -1,7 +1,7 @@
 import { Elysia } from "elysia";
 
 // Headers that belong on every response, not just HTML pages (unlike CSP,
-// which only makes sense for documents a browser renders — see web/serve.ts
+// which only makes sense for documents a browser renders, see web/serve.ts
 // and api/oauth-flow.ts for that one).
 //
 // Set in onRequest rather than onAfterHandle: a few middlewares further

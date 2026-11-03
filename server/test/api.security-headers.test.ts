@@ -17,7 +17,7 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-describe("baseline security headers — every response", () => {
+describe("baseline security headers: every response", () => {
   test("a normal JSON route gets nosniff + referrer-policy", async () => {
     const r = await handle.app.handle(new Request("http://localhost/health"));
     expect(r.headers.get("x-content-type-options")).toBe("nosniff");
@@ -47,7 +47,7 @@ describe("baseline security headers — every response", () => {
   });
 });
 
-describe("Content-Security-Policy — HTML surfaces only", () => {
+describe("Content-Security-Policy: HTML surfaces only", () => {
   test("the OAuth consent page carries the CSP", async () => {
     await handle.app.handle(
       new Request("http://localhost/api/auth/set", {
@@ -83,7 +83,7 @@ describe("Content-Security-Policy — HTML surfaces only", () => {
     expect(CSP).toContain("base-uri 'self'");
     expect(CSP).toContain("frame-ancestors 'none'");
     expect(CSP).toContain("form-action 'self'");
-    // style-src needs 'unsafe-inline' for CodeMirror/KaTeX/highlight.js —
+    // style-src needs 'unsafe-inline' for CodeMirror/KaTeX/highlight.js,
     // see the comment on CSP in web/serve.ts.
     expect(CSP).toContain("style-src 'self' 'unsafe-inline'");
   });

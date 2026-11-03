@@ -6,7 +6,7 @@
 // hostname+scheme the client connected with or the client rejects it.
 //
 // Priority:
-//   1. Cloudflare `cf-visitor` JSON (`{"scheme":"https"}`) — set by
+//   1. Cloudflare `cf-visitor` JSON (`{"scheme":"https"}`), set by
 //      Cloudflare Tunnel, which does NOT populate x-forwarded-proto.
 //      Without this, URLs are advertised as http:// even though the
 //      client connected over https, a spec violation some clients

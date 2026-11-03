@@ -33,7 +33,7 @@ function login(password: string, ip: string) {
   );
 }
 
-describe("POST /api/auth/login — brute-force protection", () => {
+describe("POST /api/auth/login: brute-force protection", () => {
   test("5 wrong passwords from one IP are 401, the 6th is 429 with Retry-After", async () => {
     for (let i = 0; i < 5; i++) {
       const r = await login("wrong", "1.1.1.1");
