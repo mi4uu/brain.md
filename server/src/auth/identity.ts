@@ -39,6 +39,14 @@ export function localIdentity(ownerName: string, ownerEmail: string, sub: string
   return { sub, name: ownerName, email: ownerEmail, kind: "human" };
 }
 
+// OIDC/GitHub login (board-plan Part B): still the vault owner's single
+// identity for permission purposes, but the git "Author:" line should say
+// who actually clicked allow, not the owner config fallback that
+// localIdentity() uses for the password-login case.
+export function externalIdentity(sub: string, name: string, email: string): Identity {
+  return { sub, name, email, kind: "human" };
+}
+
 export function apiKeyIdentity(sub: string, keyName: string): Identity {
   return { sub, name: keyName, kind: "apikey", clientName: keyName };
 }

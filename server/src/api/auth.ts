@@ -2,6 +2,7 @@ import { Elysia, t } from "elysia";
 import type { AuthStore } from "../auth/store";
 import type { TokenStore } from "../auth/tokens";
 import type { LoginLimiter } from "../auth/login-limiter";
+import type { LoginConfig } from "../auth/login-config";
 import { hashPassword, verifyPassword } from "../auth/hasher";
 import { requireOwner } from "./perm-guard";
 import { getClientIp } from "./client-ip";
@@ -27,8 +28,24 @@ function bearer(headers: Record<string, string | undefined>): string | undefined
   return m ? m[1] : undefined;
 }
 
-export function authRoutes(auth: AuthStore, tokens: TokenStore, loginLimiter: LoginLimiter) {
+export function authRoutes(
+  auth: AuthStore,
+  tokens: TokenStore,
+  loginLimiter: LoginLimiter,
+  loginConfig: LoginConfig,
+) {
   return new Elysia()
+    // board-plan Part B: tells the login page which methods to render,
+    // before anyone is authenticated. Deliberately leaves out issuer
+    // URLs, client IDs, allowlists — a provider name and its button
+    // label are all the UI needs.
+    .get("/api/auth/config", () => ({
+      password: loginConfig.passwordLogin,
+      providers: [
+        ...(loginConfig.oidc ? [{ id: "oidc", label: loginConfig.oidc.name }] : []),
+        ...(loginConfig.github ? [{ id: "github", label: "GitHub" }] : []),
+      ],
+    }))
     .get("/api/auth/status", ({ request }) => {
       const headers: Record<string, string> = {};
       request.headers.forEach((v, k) => (headers[k.toLowerCase()] = v));
@@ -108,6 +125,10 @@ export function authRoutes(auth: AuthStore, tokens: TokenStore, loginLimiter: Lo
         }
         await loginLimiter.globalBackoff();
 
+        if (!loginConfig.passwordLogin) {
+          set.status = 403;
+          return { error: "password login is disabled", code: "PASSWORD_LOGIN_DISABLED" };
+        }
         if (!auth.isConfigured()) {
           set.status = 409;
           return { error: "auth not configured" };

@@ -39,6 +39,9 @@ import { folderPermsRoutes } from "./api/folder-perms";
 import { AuthStore } from "./auth/store";
 import { TokenStore } from "./auth/tokens";
 import { LoginLimiter } from "./auth/login-limiter";
+import { HandoffCodeStore } from "./auth/handoff-codes";
+import { loadLoginConfig, validateLoginConfig, type LoginConfig } from "./auth/login-config";
+import { idpAuthRoutes } from "./api/idp-auth";
 import { securityHeadersMiddleware } from "./api/security-headers";
 import { identityContext } from "./auth/identity";
 import { createMcp, mcpRoutes } from "./mcp/server";
@@ -49,9 +52,17 @@ export interface AppOptions {
   gitDebounceMs?: number;
   mcpDisabled?: boolean;
   allowedHosts?: string[];
+  loginConfig?: LoginConfig;
 }
 
 export function createApp(opts: AppOptions = {}) {
+  // board-plan Part B: refuse to start on an invalid login configuration
+  // (password login off with no external provider, a provider configured
+  // with no allowlist or no public URL, …) rather than serve a vault
+  // nobody can log into, or one with no access control at all.
+  const loginConfig = opts.loginConfig ?? loadLoginConfig();
+  validateLoginConfig(loginConfig);
+
   const vault = new Vault(opts.vaultDir ?? config.vaultDir);
   const index = new VaultIndex(vault);
   const repo = new GitRepo(vault.root);
@@ -90,6 +101,7 @@ export function createApp(opts: AppOptions = {}) {
   const oauthClients = new OAuthClientStore();
   const cimdResolver = new CimdResolver();
   const apiKeys = new APIKeyStore();
+  const handoffCodes = new HandoffCodeStore();
 
   const allowedHosts = opts.allowedHosts ?? config.allowedHosts;
   const allowedHostsSet = buildAllowedHostsSet(allowedHosts);
@@ -123,8 +135,9 @@ export function createApp(opts: AppOptions = {}) {
     .use(oauthDiscoveryRoutes())
     // V63 step 2+3 + V67: authorize + token + register endpoints
     // (PKCE + DCR + CIMD).
-    .use(oauthFlowRoutes(authStore, oauthStore, oauthClients, cimdResolver))
-    .use(authRoutes(authStore, tokenStore, loginLimiter))
+    .use(oauthFlowRoutes(authStore, oauthStore, oauthClients, cimdResolver, tokenStore))
+    .use(authRoutes(authStore, tokenStore, loginLimiter, loginConfig))
+    .use(idpAuthRoutes(loginConfig, tokenStore, handoffCodes))
     .use(apiKeyRoutes(apiKeys))
     .use(treeRoutes(vault))
     .use(noteRoutes(vault, index))
@@ -169,6 +182,8 @@ export function createApp(opts: AppOptions = {}) {
     apiKeys,
     oauthStore,
     mcp,
+    loginConfig,
+    handoffCodes,
   };
 }
 

@@ -5,7 +5,13 @@ import type { OAuthStore } from "../auth/oauth-store";
 import type { APIKeyStore } from "../auth/api-keys";
 import type { OAuthClientStore } from "../auth/oauth-clients";
 import type { Principal } from "./principal";
-import { identityContext, localIdentity, apiKeyIdentity, oauthClientIdentity } from "../auth/identity";
+import {
+  identityContext,
+  localIdentity,
+  apiKeyIdentity,
+  oauthClientIdentity,
+  externalIdentity,
+} from "../auth/identity";
 
 // Who authenticated a given request, keyed by the exact Request instance
 // Elysia hands to onRequest, the same object flows through to route
@@ -33,13 +39,21 @@ export function principalFor(request: Request): Principal {
 const OPEN_PATHS = new Set([
   "/api/auth/status",
   "/api/auth/login",
+  // board-plan Part B: which login methods are enabled, for the login
+  // page to render before anyone is authenticated.
+  "/api/auth/config",
   // V64: OAuth discovery endpoints MUST be reachable without a token —
   // the whole point is to let a client learn how to obtain one.
   "/.well-known/oauth-protected-resource",
   "/.well-known/oauth-authorization-server",
 ]);
 
-const OPEN_PREFIXES = ["/oauth/"]; // /oauth/authorize, /oauth/token, /oauth/register
+const OPEN_PREFIXES = [
+  "/oauth/", // /oauth/authorize, /oauth/token, /oauth/register
+  // board-plan Part B: external login start/callback/exchange — a human
+  // hitting these has no session yet by definition.
+  "/api/auth/idp/",
+];
 
 function bearer(req: Request): string | undefined {
   const a = req.headers.get("authorization");
@@ -132,8 +146,14 @@ export function authMiddleware(
     // it bypasses per-folder MCP permissions everywhere.
     if (tokens.validate(tok)) {
       principals.set(request, { kind: "owner" });
-      const sub = tokens.subFor(tok);
-      if (sub) identityContext.enterWith(localIdentity(owner.name, owner.email, sub));
+      const identity = tokens.identityFor(tok);
+      if (identity) {
+        identityContext.enterWith(
+          identity.name && identity.email
+            ? externalIdentity(identity.sub, identity.name, identity.email)
+            : localIdentity(owner.name, owner.email, identity.sub),
+        );
+      }
       return;
     }
 

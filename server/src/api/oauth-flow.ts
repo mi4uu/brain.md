@@ -2,6 +2,7 @@ import { Elysia, t } from "elysia";
 import type { AuthStore } from "../auth/store";
 import type { OAuthStore } from "../auth/oauth-store";
 import type { OAuthClientStore, ClientRegistrationRequest } from "../auth/oauth-clients";
+import type { TokenStore } from "../auth/tokens";
 import { CimdResolver, isCimdClientId, type ClientMetadata } from "../auth/cimd";
 import { CSP } from "../web/serve";
 import { LOCAL_SUB } from "../auth/identity";
@@ -110,7 +111,7 @@ function consentPage(params: {
         <dd><div class="scopes">${scopes.map((s) => `<span class="scope">${safe(s)}</span>`).join("")}</div></dd>
       </dl>
     </div>
-    <form method="POST" action="/oauth/authorize">
+    <form method="POST" action="/oauth/authorize" id="consent-form">
       <input type="hidden" name="client_id" value="${safe(clientId)}" />
       <input type="hidden" name="redirect_uri" value="${safe(redirectUri)}" />
       <input type="hidden" name="scope" value="${safe(scope)}" />
@@ -118,14 +119,24 @@ function consentPage(params: {
       <input type="hidden" name="code_challenge" value="${safe(codeChallenge)}" />
       <input type="hidden" name="code_challenge_method" value="S256" />
       <input type="hidden" name="resource" value="${safe(resource)}" />
+      <input type="hidden" name="session_token" id="session_token" value="" />
       <label for="password">Vault password</label>
-      <input type="password" id="password" name="password" autocomplete="current-password" autofocus required />
+      <input type="password" id="password" name="password" autocomplete="current-password" autofocus />
       <div class="actions">
         <button type="submit" name="decision" value="allow" class="allow">Allow</button>
         <button type="submit" name="decision" value="deny" class="deny">Deny</button>
       </div>
     </form>
   </div>
+  <script>
+    // If this browser already has a web-app session (password login or an
+    // external provider login), reuse it: the password field becomes
+    // optional in that case, see POST /oauth/authorize.
+    try {
+      var tok = window.localStorage.getItem("brain.auth.token");
+      if (tok) document.getElementById("session_token").value = tok;
+    } catch (e) {}
+  </script>
 </body>
 </html>`;
 }
@@ -145,6 +156,7 @@ export function oauthFlowRoutes(
   oauth: OAuthStore,
   clients: OAuthClientStore,
   cimd: CimdResolver,
+  tokens: TokenStore,
 ) {
   // V67: resolve client_id to a (displayName, redirect_uris) pair. Two paths:
   //   - HTTPS URL → fetch CIMD document, validate, cache
@@ -319,6 +331,7 @@ export function oauthFlowRoutes(
           const codeChallenge = String(b.code_challenge ?? "");
           const resource = String(b.resource ?? "");
           const password = String(b.password ?? "");
+          const sessionToken = String(b.session_token ?? "");
 
           const redirOk = validateRedirectUri(redirectUri);
           if (!redirOk.ok) {
@@ -344,13 +357,29 @@ export function oauthFlowRoutes(
             return redirectWithError(redirectUri, state, "access_denied", "user denied");
           }
 
-          // Verify password against V53 hash.
+          // Two ways to prove "the consenting human is allowed to grant
+          // this": the vault password (unchanged, default mode), or an
+          // already-valid web-app session token — which covers a human
+          // who logged in via an external provider (board-plan Part B)
+          // just as much as one who already typed the password once this
+          // browser session. Password is tried first so the default
+          // password-only deployment behaves exactly as before it.
+          let sub: string = LOCAL_SUB;
+          let authenticated = false;
+
           const hash = authStore.getHash();
-          if (!hash) {
+          if (!hash && !sessionToken) {
             return redirectWithError(redirectUri, state, "server_error", "vault password missing");
           }
-          const ok = await Bun.password.verify(password, hash);
-          if (!ok) {
+          if (password && hash && (await Bun.password.verify(password, hash))) {
+            authenticated = true;
+            sub = LOCAL_SUB;
+          } else if (sessionToken && tokens.validate(sessionToken)) {
+            authenticated = true;
+            sub = tokens.subFor(sessionToken) ?? LOCAL_SUB;
+          }
+
+          if (!authenticated) {
             set.headers["content-type"] = "text/html; charset=utf-8";
             set.headers["content-security-policy"] = CSP;
             return consentPage({
@@ -359,9 +388,9 @@ export function oauthFlowRoutes(
             });
           }
 
-          // The password check above proved the consenting human is the
-          // vault owner, so the code (and everything issued from it) is
-          // attributed to the owner's subject, same as a password login.
+          // The check above proved the consenting human is the vault
+          // owner, so the code (and everything issued from it) is
+          // attributed to their subject, same as a password login.
           const code = oauth.issueCode({
             clientId,
             redirectUri,
@@ -369,7 +398,7 @@ export function oauthFlowRoutes(
             codeChallenge,
             codeChallengeMethod: "S256",
             resource,
-            sub: LOCAL_SUB,
+            sub,
           });
 
           const u = new URL(redirectUri);

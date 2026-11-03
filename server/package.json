@@ -29,8 +29,10 @@
     "@lancedb/lancedb": "^0.20.0",
     "@modelcontextprotocol/sdk": "^1.0.4",
     "apache-arrow": "^18.1.0",
+    "arctic": "^3.7.0",
     "elysia": "^1.1.25",
     "gpt-tokenizer": "^2.8.1",
+    "jose": "^6.2.15",
     "onnxruntime-web": "^1.26.0",
     "yaml": "^2.6.0",
     "zod": "^3.25.0"
