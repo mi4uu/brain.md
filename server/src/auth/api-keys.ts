@@ -2,6 +2,7 @@ import { randomBytes, createHash } from "node:crypto";
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Vault } from "../vault/vault";
+import { LOCAL_SUB } from "./identity";
 
 // V66: long-lived named API keys. Survive restarts (persist to
 // <vault>/.brain/api-keys.json), have human-readable labels for
@@ -34,6 +35,7 @@ export interface APIKey {
   createdAt: number;
   lastUsedAt: number | null;
   expiresAt: number | null;   // null = never expires
+  sub: string;                 // identity subject for git attribution, see auth/identity.ts
 }
 
 export interface PublicAPIKey {
@@ -54,6 +56,7 @@ interface StoredAPIKey {
   createdAt: number;
   lastUsedAt: number | null;
   expiresAt: number | null;
+  sub: string;
 }
 
 interface PersistedFile {
@@ -61,7 +64,7 @@ interface PersistedFile {
   keys: StoredAPIKey[];
 }
 
-// Pre-migration on-disk shape (plaintext token, no hash/prefix).
+// Pre-migration on-disk shape (plaintext token, no hash/prefix/sub).
 interface LegacyStoredAPIKey extends Partial<StoredAPIKey> {
   token?: string;
 }
@@ -93,6 +96,8 @@ export class APIKeyStore {
         if (typeof k.id !== "string") continue;
         let rec: StoredAPIKey;
         if (typeof k.tokenHash === "string" && typeof k.prefix === "string") {
+          const sub = typeof k.sub === "string" && k.sub.length > 0 ? k.sub : LOCAL_SUB;
+          if (sub !== k.sub) migrated = true;
           rec = {
             id: k.id,
             tokenHash: k.tokenHash,
@@ -101,9 +106,11 @@ export class APIKeyStore {
             createdAt: k.createdAt ?? Date.now(),
             lastUsedAt: k.lastUsedAt ?? null,
             expiresAt: k.expiresAt ?? null,
+            sub,
           };
         } else if (typeof k.token === "string") {
           // Pre-hash format: migrate to a hash-only record on next flush.
+          // No sub predates this format either — same "local" default.
           rec = {
             id: k.id,
             tokenHash: hashToken(k.token),
@@ -112,6 +119,7 @@ export class APIKeyStore {
             createdAt: k.createdAt ?? Date.now(),
             lastUsedAt: k.lastUsedAt ?? null,
             expiresAt: k.expiresAt ?? null,
+            sub: LOCAL_SUB,
           };
           migrated = true;
         } else {
@@ -168,6 +176,10 @@ export class APIKeyStore {
         ? now + args.expiresInDays * 24 * 60 * 60 * 1000
         : null;
     const name = args.name.slice(0, 200) || "Unnamed key";
+    // Each new key gets its own stable subject, unlike migrated legacy keys
+    // (which default to "local" — they were never distinguishable from the
+    // owner before this field existed).
+    const sub = `apikey:${id}`;
     const rec: StoredAPIKey = {
       id,
       tokenHash: hashToken(token),
@@ -176,12 +188,13 @@ export class APIKeyStore {
       createdAt: now,
       lastUsedAt: null,
       expiresAt,
+      sub,
     };
     this.byHash.set(rec.tokenHash, rec);
     this.byId.set(id, rec);
     this.scheduleFlush();
     // Plaintext token only ever leaves the store here, at creation time.
-    return { id, token, name, createdAt: now, lastUsedAt: null, expiresAt };
+    return { id, token, name, createdAt: now, lastUsedAt: null, expiresAt, sub };
   }
 
   validate(token: string | undefined): APIKey | null {

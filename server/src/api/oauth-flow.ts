@@ -4,6 +4,7 @@ import type { OAuthStore } from "../auth/oauth-store";
 import type { OAuthClientStore, ClientRegistrationRequest } from "../auth/oauth-clients";
 import { CimdResolver, isCimdClientId, type ClientMetadata } from "../auth/cimd";
 import { CSP } from "../web/serve";
+import { LOCAL_SUB } from "../auth/identity";
 
 // V63 step 2: /oauth/authorize + /oauth/token endpoints.
 //
@@ -358,6 +359,9 @@ export function oauthFlowRoutes(
             });
           }
 
+          // The password check above proved the consenting human is the
+          // vault owner, so the code (and everything issued from it) is
+          // attributed to the owner's subject, same as a password login.
           const code = oauth.issueCode({
             clientId,
             redirectUri,
@@ -365,6 +369,7 @@ export function oauthFlowRoutes(
             codeChallenge,
             codeChallengeMethod: "S256",
             resource,
+            sub: LOCAL_SUB,
           });
 
           const u = new URL(redirectUri);
@@ -407,6 +412,7 @@ export function oauthFlowRoutes(
               clientId,
               scope: consumed.scope,
               resource: consumed.resource,
+              sub: consumed.sub,
             });
             return {
               access_token: pair.accessToken,

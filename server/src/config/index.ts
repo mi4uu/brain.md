@@ -34,6 +34,12 @@ function resolveAllowedHosts(): string[] {
   return Array.from(new Set([...DEFAULT_ALLOWED_HOSTS, ...extra]));
 }
 
+// Git author identity for the single-owner ("local") subject: password
+// login proves no name or email of its own, so a human-readable author
+// needs a configured fallback instead of guessing from the OS user.
+const DEFAULT_OWNER_NAME = "brain.md owner";
+const DEFAULT_OWNER_EMAIL = "owner@brain.local";
+
 export interface AppConfig {
   vaultDir: string;
   port: number;
@@ -44,6 +50,8 @@ export interface AppConfig {
   gitAutocommit: boolean;
   gitDebounceMs: number;
   allowedHosts: string[];
+  ownerName: string;
+  ownerEmail: string;
 }
 
 export function loadConfig(cli?: CliOptions): AppConfig {
@@ -57,6 +65,8 @@ export function loadConfig(cli?: CliOptions): AppConfig {
     gitAutocommit: boolEnv("GIT_AUTOCOMMIT", true),
     gitDebounceMs: Number(process.env.GIT_AUTOCOMMIT_DEBOUNCE_MS ?? 15000),
     allowedHosts: resolveAllowedHosts(),
+    ownerName: process.env.BRAINMD_OWNER_NAME?.trim() || DEFAULT_OWNER_NAME,
+    ownerEmail: process.env.BRAINMD_OWNER_EMAIL?.trim() || DEFAULT_OWNER_EMAIL,
   };
 }
 

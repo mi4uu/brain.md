@@ -2,6 +2,7 @@ import { randomBytes, createHash } from "node:crypto";
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Vault } from "../vault/vault";
+import { LOCAL_SUB } from "./identity";
 
 // V53 + B19: session bearer token table. 24h TTL. Persists to
 // <vault>/.brain/tokens.json so a server restart doesn't invalidate
@@ -30,17 +31,19 @@ function hashToken(token: string): string {
 
 interface TokenRecord {
   expiresAt: number;
+  sub: string;
 }
 
 interface PersistedFile {
   version: 1;
-  tokens: Array<{ tokenHash: string; expiresAt: number }>;
+  tokens: Array<{ tokenHash: string; expiresAt: number; sub: string }>;
 }
 
-// Pre-migration on-disk shape (plaintext token).
+// Pre-migration on-disk shape (plaintext token, and/or no `sub` — identity
+// plumbing postdates this file, so every record before it is "local").
 interface LegacyPersistedFile {
   version: 1;
-  tokens: Array<{ token?: string; tokenHash?: string; expiresAt: number }>;
+  tokens: Array<{ token?: string; tokenHash?: string; expiresAt: number; sub?: string }>;
 }
 
 export class TokenStore {
@@ -71,11 +74,13 @@ export class TokenStore {
       let migrated = false;
       for (const t of parsed.tokens) {
         if (typeof t.expiresAt !== "number" || t.expiresAt <= now) continue;
+        const sub = typeof t.sub === "string" && t.sub.length > 0 ? t.sub : LOCAL_SUB;
+        if (sub !== t.sub) migrated = true;
         if (typeof t.tokenHash === "string") {
-          this.tokens.set(t.tokenHash, { expiresAt: t.expiresAt });
+          this.tokens.set(t.tokenHash, { expiresAt: t.expiresAt, sub });
         } else if (typeof t.token === "string") {
           // Pre-hash format: migrate to a hash-only record on next flush.
-          this.tokens.set(hashToken(t.token), { expiresAt: t.expiresAt });
+          this.tokens.set(hashToken(t.token), { expiresAt: t.expiresAt, sub });
           migrated = true;
         }
       }
@@ -104,6 +109,7 @@ export class TokenStore {
       tokens: Array.from(this.tokens.entries()).map(([tokenHash, rec]) => ({
         tokenHash,
         expiresAt: rec.expiresAt,
+        sub: rec.sub,
       })),
     };
     const abs = this.vault.abs(REL);
@@ -122,25 +128,36 @@ export class TokenStore {
     }
   }
 
-  issue(): { token: string; expiresAt: number } {
+  issue(sub: string = LOCAL_SUB): { token: string; expiresAt: number } {
     const token = randomBytes(32).toString("base64url");
     const expiresAt = Date.now() + this.ttlMs;
-    this.tokens.set(hashToken(token), { expiresAt });
+    this.tokens.set(hashToken(token), { expiresAt, sub });
     this.scheduleFlush();
     return { token, expiresAt };
   }
 
   validate(token: string | undefined): boolean {
-    if (!token) return false;
+    return this.lookup(token) !== undefined;
+  }
+
+  // Identity resolution (auth-middleware.ts): the subject behind a valid
+  // session token, without the caller re-deriving the expiry/hash logic
+  // that validate() already does.
+  subFor(token: string | undefined): string | undefined {
+    return this.lookup(token)?.sub;
+  }
+
+  private lookup(token: string | undefined): TokenRecord | undefined {
+    if (!token) return undefined;
     const hash = hashToken(token);
     const rec = this.tokens.get(hash);
-    if (!rec) return false;
+    if (!rec) return undefined;
     if (rec.expiresAt < Date.now()) {
       this.tokens.delete(hash);
       this.scheduleFlush();
-      return false;
+      return undefined;
     }
-    return true;
+    return rec;
   }
 
   revoke(token: string | undefined): boolean {

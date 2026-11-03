@@ -1,4 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { LOCAL_SUB } from "./identity";
 
 // V63: OAuth 2.1 in-memory state. Lost on restart, same as V53 TokenStore
 // (single-user single-device; re-login on resume is acceptable). All
@@ -23,6 +24,7 @@ export interface AuthorizationCode {
   resource: string;         // RFC 8707 audience binding (the MCP server URL)
   expiresAt: number;
   used: boolean;
+  sub: string;               // identity subject of the consenting human, see auth/identity.ts
 }
 
 export interface AccessToken {
@@ -33,6 +35,7 @@ export interface AccessToken {
   expiresAt: number;
   refreshTokenRef?: string; // back-link for "revoke whole chain"
   familyId: string;
+  sub: string;
 }
 
 export interface RefreshToken {
@@ -44,6 +47,7 @@ export interface RefreshToken {
   accessTokenRef?: string;  // latest access token issued from this refresh
   rotatedFrom?: string;     // previous refresh token (RFC 6749 §10.4 chain)
   familyId: string;         // shared by every token descended from one login
+  sub: string;
 }
 
 // Record kept after a refresh token is rotated out, so a replay of that
@@ -103,6 +107,7 @@ export class OAuthStore {
     codeChallenge: string;
     codeChallengeMethod: "S256";
     resource: string;
+    sub?: string;
   }): string {
     const code = randomBytes(32).toString("base64url");
     this.codes.set(code, {
@@ -115,6 +120,7 @@ export class OAuthStore {
       resource: args.resource,
       expiresAt: Date.now() + CODE_TTL_MS,
       used: false,
+      sub: args.sub ?? LOCAL_SUB,
     });
     return code;
   }
@@ -126,7 +132,7 @@ export class OAuthStore {
     code: string,
     args: { clientId: string; redirectUri: string; codeVerifier: string; resource: string },
   ):
-    | { ok: true; scope: string; resource: string }
+    | { ok: true; scope: string; resource: string; sub: string }
     | { ok: false; error: "invalid_grant"; reason: string } {
     const rec = this.codes.get(code);
     if (!rec) return { ok: false, error: "invalid_grant", reason: "unknown code" };
@@ -154,19 +160,20 @@ export class OAuthStore {
     if (!constantTimeEq(challenge, rec.codeChallenge)) {
       return { ok: false, error: "invalid_grant", reason: "PKCE verification failed" };
     }
-    return { ok: true, scope: rec.scope, resource: rec.resource };
+    return { ok: true, scope: rec.scope, resource: rec.resource, sub: rec.sub };
   }
 
   // ---- token issuance ----
 
   issueTokenPair(
-    args: { clientId: string; scope: string; resource: string },
+    args: { clientId: string; scope: string; resource: string; sub?: string },
     familyId?: string,
   ): IssuedTokenPair {
     const access = randomBytes(32).toString("base64url");
     const refresh = randomBytes(32).toString("base64url");
     const now = Date.now();
     const fam = familyId ?? randomBytes(16).toString("base64url");
+    const sub = args.sub ?? LOCAL_SUB;
     this.access.set(access, {
       token: access,
       clientId: args.clientId,
@@ -175,6 +182,7 @@ export class OAuthStore {
       expiresAt: now + ACCESS_TTL_MS,
       refreshTokenRef: refresh,
       familyId: fam,
+      sub,
     });
     this.refresh.set(refresh, {
       token: refresh,
@@ -184,6 +192,7 @@ export class OAuthStore {
       expiresAt: now + REFRESH_TTL_MS,
       accessTokenRef: access,
       familyId: fam,
+      sub,
     });
     return {
       accessToken: access,
@@ -222,7 +231,7 @@ export class OAuthStore {
     this.consumedRefresh.set(rec.token, { familyId: rec.familyId, expiresAt: rec.expiresAt });
     if (rec.accessTokenRef) this.access.delete(rec.accessTokenRef);
     const pair = this.issueTokenPair(
-      { clientId: rec.clientId, scope: rec.scope, resource: rec.resource },
+      { clientId: rec.clientId, scope: rec.scope, resource: rec.resource, sub: rec.sub },
       rec.familyId,
     );
     const newRefresh = this.refresh.get(pair.refreshToken);
@@ -241,7 +250,7 @@ export class OAuthStore {
   // ---- validation (called from auth-middleware) ----
 
   validateAccess(token: string | undefined, resource: string):
-    | { ok: true; scope: string }
+    | { ok: true; scope: string; sub: string; clientId: string }
     | { ok: false; reason: string } {
     if (!token) return { ok: false, reason: "no token" };
     const rec = this.access.get(token);
@@ -256,7 +265,7 @@ export class OAuthStore {
     if (!constantTimeEq(rec.resource, resource)) {
       return { ok: false, reason: "audience mismatch" };
     }
-    return { ok: true, scope: rec.scope };
+    return { ok: true, scope: rec.scope, sub: rec.sub, clientId: rec.clientId };
   }
 
   revokeAccess(token: string | undefined): boolean {
