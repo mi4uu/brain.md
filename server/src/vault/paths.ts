@@ -113,6 +113,28 @@ export function assertMarkdown(rel: string): void {
   }
 }
 
+// assertMarkdown only checks the suffix: a directory literally named
+// "x.md" passes it, and a restore writing into that path (git.ts
+// restore(), via `git checkout <sha> -- x.md`) would otherwise recurse
+// into it rather than treating it as the single file it's supposed to
+// be. Call this right before a restore actually runs, after
+// assertSafePath/assertMarkdown, to reject that case against the real
+// filesystem. A path that doesn't exist yet (ENOENT) is fine, there's
+// nothing to recurse into.
+export async function assertRestoreTargetIsFile(vaultDir: string, rel: string): Promise<void> {
+  const abs = safeJoin(vaultDir, rel);
+  let st;
+  try {
+    st = await lstat(abs);
+  } catch (e) {
+    if ((e as { code?: string }).code === "ENOENT") return;
+    throw e;
+  }
+  if (st.isDirectory()) {
+    throw new VaultError(`restore target is a directory, not a file: ${rel}`, "NOT_MARKDOWN");
+  }
+}
+
 export function relFromAbs(vaultDir: string, abs: string): string {
   const base = resolve(vaultDir);
   const a = resolve(abs);
