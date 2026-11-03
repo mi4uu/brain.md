@@ -156,11 +156,22 @@ export class Autocommit {
   // own author, explicit pathspec, never a sweep.
   private async fallbackCommit(): Promise<string | null> {
     const dirty = await this.repo.dirtyPaths();
-    const unclaimed = dirty.filter((p) => !this.pendingPaths.has(p));
-    if (unclaimed.length === 0) return null;
+    const candidates = dirty.filter((p) => !this.pendingPaths.has(p));
+    if (candidates.length === 0) return null;
     return this.repo.commitAll("auto", {
-      paths: unclaimed,
+      paths: candidates,
       author: { name: FALLBACK_IDENTITY.name, email: FALLBACK_IDENTITY.email ?? "agent@brain.local" },
+      // Must-fix: this candidate list is picked here, but commitAll()
+      // still has its own serialisation queue + filterStageable() to
+      // await before it actually stages anything (git.ts). A notify() for
+      // one of these exact paths (a real actor's write landing after the
+      // dirty scan above, during those awaits) used to have nothing
+      // checking for it again, so it got staged and committed under the
+      // fallback author anyway, and that actor's own retry afterwards had
+      // nothing left to commit. excludeIfClaimed is called again right as
+      // git.ts is about to stage, the last synchronous point before it
+      // does, closing that gap instead of only checking it here.
+      excludeIfClaimed: (p) => this.pendingPaths.has(p),
     });
   }
 }

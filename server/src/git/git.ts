@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, rm, stat, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 
 export interface GitCommit {
@@ -29,7 +30,7 @@ const GITIGNORE = [
 async function run(
   cwd: string,
   args: string[],
-  opts: { input?: string; allowFail?: boolean } = {},
+  opts: { input?: string; allowFail?: boolean; env?: Record<string, string> } = {},
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn(["git", ...args], {
     cwd,
@@ -49,6 +50,7 @@ async function run(
       // never authorised for. Equivalent to prefixing every pathspec with
       // ":(literal)".
       GIT_LITERAL_PATHSPECS: "1",
+      ...opts.env,
     },
   });
   if (opts.input !== undefined && proc.stdin) {
@@ -125,8 +127,19 @@ export class GitRepo {
   // attributed commit. `-z` avoids porcelain's path quoting; a rename or
   // copy record carries an extra NUL-terminated original-path field we
   // don't need, so it's skipped.
+  // `--untracked-files=all`: without it, git collapses a wholly-untracked
+  // directory into one line for the directory itself ("new folder/"),
+  // which can't be compared against pendingPaths at all (that holds
+  // concrete file paths like "new folder/b.md") and gets treated as
+  // unclaimed in its entirety, sweeping in whatever a notified actor just
+  // put there. Listing every file individually makes the exact-path
+  // exclusion in autocommit.ts actually work.
   async dirtyPaths(): Promise<string[]> {
-    const r = await run(this.root, ["status", "--porcelain=v1", "-z"], { allowFail: true });
+    const r = await run(
+      this.root,
+      ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+      { allowFail: true },
+    );
     if (r.code !== 0) return [];
     const tokens = r.stdout.split("\0").filter((t) => t.length > 0);
     const paths: string[] = [];
@@ -161,60 +174,138 @@ export class GitRepo {
   // never changes, only who the change is attributed to.
   // `trailers`: appended as plain "Key: value" lines after a blank line,
   // same convention `git interpret-trailers` reads, without requiring it.
+  // `excludeIfClaimed`: called once, synchronously, as the very last check
+  // before anything is staged (see commitWithIsolatedIndex): a path it
+  // says yes to is dropped before `git add` ever touches it. Autocommit's
+  // fallback commit passes this to re-test "is this path still unclaimed"
+  // right up against the staging call, closing the gap between choosing
+  // the candidate list and acting on it.
   commitAll(
     message: string,
-    opts: { paths?: string[]; author?: { name: string; email: string }; trailers?: Record<string, string> } = {},
+    opts: {
+      paths?: string[];
+      author?: { name: string; email: string };
+      trailers?: Record<string, string>;
+      excludeIfClaimed?: (path: string) => boolean;
+    } = {},
   ): Promise<string | null> {
     return this.serialize(async () => {
       if (opts.paths && opts.paths.length > 0) {
-        // A path that's neither tracked nor on disk any more (a
-        // transient rename's intermediate name: created and renamed
-        // away again before this flush ran) makes `git add` reject the
-        // WHOLE pathspec with "did not match any files", staging
-        // nothing at all, not just skipping that one path. --ignore-errors
-        // doesn't help here, it only covers per-file errors AFTER
-        // pathspec matching. Filter to paths git can actually act on
-        // first, so the other paths in the same rename chain (the
-        // original, now-deleted name; the final, now-existing name)
-        // still get staged.
-        const stageable = await this.filterStageable(opts.paths);
-        if (stageable.length > 0) {
-          await run(this.root, ["add", "-A", "--", ...stageable]);
-        }
-      } else {
-        await this.stageAll();
+        return this.commitWithIsolatedIndex(message, opts.paths, opts);
       }
-      const trailerLines = opts.trailers
-        ? Object.entries(opts.trailers).map(
-            ([k, v]) => `${sanitizeAuthorPart(k)}: ${sanitizeAuthorPart(v)}`,
-          )
-        : [];
-      const fullMessage = trailerLines.length > 0 ? `${message}\n\n${trailerLines.join("\n")}` : message;
-      const args = ["commit", "--quiet", "--allow-empty-message", "-m", fullMessage];
-      if (opts.author) {
-        args.push("--author", `${sanitizeAuthorPart(opts.author.name)} <${sanitizeAuthorPart(opts.author.email)}>`);
+      await this.stageAll();
+      return this.commitStaged(message, opts);
+    });
+  }
+
+  // Builds `fullMessage`/`args` shared by both staging strategies below.
+  private buildCommitArgs(
+    message: string,
+    opts: { author?: { name: string; email: string }; trailers?: Record<string, string> },
+  ): string[] {
+    const trailerLines = opts.trailers
+      ? Object.entries(opts.trailers).map(
+          ([k, v]) => `${sanitizeAuthorPart(k)}: ${sanitizeAuthorPart(v)}`,
+        )
+      : [];
+    const fullMessage = trailerLines.length > 0 ? `${message}\n\n${trailerLines.join("\n")}` : message;
+    const args = ["commit", "--quiet", "--allow-empty-message", "-m", fullMessage];
+    if (opts.author) {
+      args.push("--author", `${sanitizeAuthorPart(opts.author.name)} <${sanitizeAuthorPart(opts.author.email)}>`);
+    }
+    return args;
+  }
+
+  // No `paths`: the pre-existing "commit everything staged" behaviour,
+  // used only for the init commit (ensure()) and by callers that want a
+  // plain whole-repo commit. Operates on the repo's real index directly;
+  // not concurrency-sensitive the way the per-actor path is, since it's
+  // never called from more than one place at a time in practice.
+  private async commitStaged(
+    message: string,
+    opts: { author?: { name: string; email: string }; trailers?: Record<string, string> },
+  ): Promise<string | null> {
+    const args = this.buildCommitArgs(message, opts);
+    const r = await run(this.root, args, { allowFail: true });
+    if (r.code !== 0) {
+      if (r.stdout.includes("nothing to commit") || r.stderr.includes("nothing to commit")) {
+        return null;
       }
-      const r = await run(this.root, args, { allowFail: true });
+      await run(this.root, ["reset"], { allowFail: true });
+      throw new Error(r.stderr || r.stdout);
+    }
+    return this.headSha();
+  }
+
+  // Stages and commits `paths` through a private, temporary index file
+  // (GIT_INDEX_FILE), never the repo's real one.
+  //
+  // Must-fix: the old code staged straight into the real index and, on a
+  // failed commit (a rejecting hook, disk full, a lock held by another
+  // process), ran `git reset -- <paths>` to undo it, un-checked, so a
+  // reset that itself failed (e.g. an index.lock left behind by whatever
+  // just rejected the commit) silently left those paths staged for
+  // whichever commitAll call ran next, crediting them to the wrong actor.
+  // It also reset those paths to their HEAD version even when the real
+  // index held a *different*, user-staged version of one of them before
+  // this call started, destroying it instead of leaving it alone.
+  //
+  // Building the commit in an isolated index sidesteps both: the real
+  // index is never written to while staging or committing, so a failure
+  // leaves it exactly as it was, nothing to roll back, and nothing to
+  // verify a rollback of. On success, the real index is brought up to
+  // date for exactly these paths (the step below real-index staging) so
+  // `status()`/`dirtyPaths()` (which read the real index) stop reporting
+  // them dirty; anything else already staged there, unrelated to this
+  // call, is left untouched.
+  private async commitWithIsolatedIndex(
+    message: string,
+    paths: string[],
+    opts: {
+      author?: { name: string; email: string };
+      trailers?: Record<string, string>;
+      excludeIfClaimed?: (path: string) => boolean;
+    },
+  ): Promise<string | null> {
+    // head and the stageable filter are independent of each other: run
+    // them together so no await separates the final exclusion check below
+    // from the git commands that immediately follow it.
+    const [candidates, head] = await Promise.all([this.filterStageable(paths), this.headSha()]);
+    // Last synchronous step before any staging happens. Nothing can
+    // observe or mutate pendingPaths between this line and the `run()`
+    // call right after it (no await in between), so a path reclaimed by
+    // another actor's notify() since `paths` was chosen is dropped here,
+    // not staged under this call's author.
+    const stageable = opts.excludeIfClaimed ? candidates.filter((p) => !opts.excludeIfClaimed!(p)) : candidates;
+    if (stageable.length === 0) return null;
+
+    const tmpIndex = join(this.root, ".git", `brainmd-index.${randomBytes(8).toString("hex")}`);
+    const tmpEnv = { GIT_INDEX_FILE: tmpIndex };
+    try {
+      await run(this.root, head ? ["read-tree", head] : ["read-tree", "--empty"], { env: tmpEnv });
+      await run(this.root, ["add", "-A", "--", ...stageable], { env: tmpEnv });
+      const args = this.buildCommitArgs(message, opts);
+      // Hooks (pre-commit, commit-msg) still fire normally: `git commit`
+      // runs them as a subprocess inheriting this env, including
+      // GIT_INDEX_FILE, regardless of which index file backs the commit.
+      const r = await run(this.root, args, { allowFail: true, env: tmpEnv });
       if (r.code !== 0) {
         if (r.stdout.includes("nothing to commit") || r.stderr.includes("nothing to commit")) {
           return null;
         }
-        // The commit itself failed after staging succeeded (a rejecting
-        // hook, disk full, a lock held by another process). `git commit`
-        // commits the whole index, not just this call's own pathspecs, so
-        // leaving these files staged would let the next commitAll call (a
-        // different actor's group, in the same flush) sweep them in under
-        // its own authorship. Unstage exactly what this call staged before
-        // surfacing the error, so the index is clean for whoever runs next.
-        if (opts.paths && opts.paths.length > 0) {
-          await run(this.root, ["reset", "--", ...opts.paths], { allowFail: true });
-        } else {
-          await run(this.root, ["reset"], { allowFail: true });
-        }
+        // Nothing was ever staged in the real index, so there's nothing
+        // to roll back: discarding the temp index file below (in
+        // `finally`) is the entire cleanup.
         throw new Error(r.stderr || r.stdout);
       }
-      return this.headSha();
-    });
+      const sha = await this.headSha();
+      // Catch the real index up for exactly these paths, matching what
+      // just got committed. Paths outside this call are never touched.
+      await run(this.root, ["add", "-A", "--", ...stageable], { allowFail: true });
+      return sha;
+    } finally {
+      await rm(tmpIndex, { force: true }).catch(() => undefined);
+    }
   }
 
   async headSha(): Promise<string | null> {
