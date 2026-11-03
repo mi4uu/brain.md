@@ -164,6 +164,56 @@ describe("Autocommit: identity grouping", () => {
     expect(await authorOf(sha!)).toBe("Owner");
   });
 
+  // Must-fix regression (f7618a5): the final fallback used to call
+  // commitAll('auto') with no `paths`, so it staged EVERYTHING dirty
+  // (`git add -A`). If a second actor's notify() landed while the first
+  // actor's own commitAll was still running, that fallback couldn't tell
+  // the newcomer's change apart from a genuinely unclaimed one and swept
+  // it in under the fallback author. The newcomer's pendingPaths entry
+  // then survived to be "retried" against a path already committed.
+  test("a notify() arriving during another actor's commit is not swept into the fallback commit", async () => {
+    const ac = new Autocommit(repo, { enabled: true, debounceMs: 50 });
+    const alice = localIdentity("Alice", "alice@brain.local");
+    const bob = apiKeyIdentity("bob-sub", "Bob", "bob-1");
+
+    await writeFile(join(dir, "alice.md"), "a1");
+    ac.notify("alice.md", alice);
+
+    const originalCommitAll = repo.commitAll.bind(repo);
+    let patched = false;
+    (repo as unknown as { commitAll: typeof repo.commitAll }).commitAll = (message, opts) => {
+      if (!patched && opts?.paths?.includes("alice.md")) {
+        patched = true;
+        // Simulates Bob's mutation landing while Alice's own commitAll is
+        // still in flight, before it resolves below.
+        return (async () => {
+          await writeFile(join(dir, "bob.md"), "b1");
+          ac.notify("bob.md", bob);
+          return originalCommitAll(message, opts);
+        })();
+      }
+      return originalCommitAll(message, opts);
+    };
+
+    const aliceSha = await ac.flush();
+    expect(aliceSha).toBeTruthy();
+
+    // Alice's own commit must hold only her file.
+    const aliceShow = Bun.spawnSync(["git", "-C", dir, "show", "--name-status", "-1", aliceSha!]);
+    expect(aliceShow.stdout.toString()).toContain("alice.md");
+    expect(aliceShow.stdout.toString()).not.toContain("bob.md");
+    expect(await authorOf(aliceSha!)).toBe("Alice");
+
+    // bob.md must still be pending (not already committed under the
+    // fallback author), so this flush commits it properly, under Bob.
+    const bobSha = await ac.flush();
+    expect(bobSha).toBeTruthy();
+    expect(await authorOf(bobSha!)).toBe("Bob");
+    const bobShow = Bun.spawnSync(["git", "-C", dir, "show", "--name-status", "-1", bobSha!]);
+    expect(bobShow.stdout.toString()).toContain("bob.md");
+    expect(bobShow.stdout.toString()).not.toContain("alice.md");
+  });
+
   test("flush() with queued paths never takes the no-groups fallback", async () => {
     const ac = new Autocommit(repo, { enabled: true, debounceMs: 50 });
     const owner = localIdentity("Owner", "owner@brain.local");

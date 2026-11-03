@@ -54,7 +54,7 @@ describe("Autocommit: a group that fails to commit is kept for retry", () => {
     await writeFile(join(dir, "a.md"), "a1");
 
     let calls = 0;
-    const failOnce: Pick<GitRepo, "isEnabled" | "hasChanges" | "commitAll"> = {
+    const failOnce: Pick<GitRepo, "isEnabled" | "hasChanges" | "dirtyPaths" | "commitAll"> = {
       isEnabled: async () => true,
       // Real dirty state, not hardcoded true: flush() checks hasChanges()
       // again after the per-actor loop (to pick up anything left dirty by
@@ -62,6 +62,7 @@ describe("Autocommit: a group that fails to commit is kept for retry", () => {
       // regardless of what actually got committed would make that second
       // check fire a spurious extra commitAll call of its own.
       hasChanges: () => repo.hasChanges(),
+      dirtyPaths: () => repo.dirtyPaths(),
       commitAll: async (message, opts) => {
         calls++;
         if (calls === 1) throw new Error("simulated: lock held by another process");

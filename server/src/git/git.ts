@@ -118,6 +118,27 @@ export class GitRepo {
     return r.code === 0 && r.stdout.trim() !== "";
   }
 
+  // Current working-tree paths with any dirty status (staged, unstaged,
+  // or untracked). Used by autocommit.ts to work out which dirty paths
+  // belong to no notified actor at all, instead of a blanket `git add -A`
+  // that can't tell those apart from paths already queued for their own
+  // attributed commit. `-z` avoids porcelain's path quoting; a rename or
+  // copy record carries an extra NUL-terminated original-path field we
+  // don't need, so it's skipped.
+  async dirtyPaths(): Promise<string[]> {
+    const r = await run(this.root, ["status", "--porcelain=v1", "-z"], { allowFail: true });
+    if (r.code !== 0) return [];
+    const tokens = r.stdout.split("\0").filter((t) => t.length > 0);
+    const paths: string[] = [];
+    for (let i = 0; i < tokens.length; i++) {
+      const entry = tokens[i] ?? "";
+      const code = entry.slice(0, 2);
+      paths.push(entry.slice(3));
+      if (code.includes("R") || code.includes("C")) i++; // skip the orig-path field
+    }
+    return paths;
+  }
+
   async stageAll(): Promise<void> {
     await run(this.root, ["add", "-A", "--", "."]);
   }
@@ -177,6 +198,18 @@ export class GitRepo {
       if (r.code !== 0) {
         if (r.stdout.includes("nothing to commit") || r.stderr.includes("nothing to commit")) {
           return null;
+        }
+        // The commit itself failed after staging succeeded (a rejecting
+        // hook, disk full, a lock held by another process). `git commit`
+        // commits the whole index, not just this call's own pathspecs, so
+        // leaving these files staged would let the next commitAll call (a
+        // different actor's group, in the same flush) sweep them in under
+        // its own authorship. Unstage exactly what this call staged before
+        // surfacing the error, so the index is clean for whoever runs next.
+        if (opts.paths && opts.paths.length > 0) {
+          await run(this.root, ["reset", "--", ...opts.paths], { allowFail: true });
+        } else {
+          await run(this.root, ["reset"], { allowFail: true });
         }
         throw new Error(r.stderr || r.stdout);
       }

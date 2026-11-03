@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitRepo } from "../src/git/git";
@@ -105,5 +105,48 @@ describe("GitRepo.commitAll: author + trailers", () => {
     const show = Bun.spawnSync(["git", "-C", dir, "show", "--name-status", "-1"]);
     expect(show.stdout.toString()).toContain("A\tc.md");
     expect(show.stdout.toString()).toContain("D\ta.md");
+  });
+
+  // Must-fix regression: `git commit` commits the whole index, not just
+  // the pathspecs named on its own command line. If a commitAll call
+  // staged its paths and then the commit itself failed (a rejecting
+  // hook, a lock, disk full), the staged files used to stay in the
+  // index. A later commitAll call for a different actor's paths would
+  // then commit those leftover files too, under the wrong author.
+  test("a failed commit unstages its own paths, so a later commitAll for someone else doesn't inherit them", async () => {
+    await writeFile(join(dir, "alice.md"), "a1");
+    const hookPath = join(dir, ".git", "hooks", "pre-commit");
+    await writeFile(
+      hookPath,
+      '#!/bin/sh\ntest ! -f "$(git rev-parse --show-toplevel)/FAIL_COMMIT"\n',
+    );
+    await chmod(hookPath, 0o755);
+    await writeFile(join(dir, "FAIL_COMMIT"), "");
+
+    await expect(
+      repo.commitAll("alice change", {
+        paths: ["alice.md"],
+        author: { name: "Alice", email: "alice@brain.local" },
+      }),
+    ).rejects.toThrow();
+
+    // alice.md must be back to untracked (unstaged), not still sitting
+    // staged in the index after the failed commit.
+    const afterFail = Bun.spawnSync(["git", "-C", dir, "status", "--porcelain"]);
+    expect(afterFail.stdout.toString()).toMatch(/^\?\? alice\.md$/m);
+
+    await unlink(join(dir, "FAIL_COMMIT"));
+    await writeFile(join(dir, "bob.md"), "b1");
+    const sha = await repo.commitAll("bob change", {
+      paths: ["bob.md"],
+      author: { name: "Bob", email: "bob@brain.local" },
+    });
+    expect(sha).toBeTruthy();
+
+    const show = Bun.spawnSync(["git", "-C", dir, "show", "--name-status", "-1"]);
+    expect(show.stdout.toString()).toContain("bob.md");
+    expect(show.stdout.toString()).not.toContain("alice.md");
+    const [name] = (await rawLog()).split("\x1f");
+    expect(name).toBe("Bob");
   });
 });

@@ -53,13 +53,14 @@ export class Autocommit {
   //
   // Design: snapshot pendingPaths synchronously right here, before any
   // await, then stage and commit exactly those snapshotted paths per
-  // actor. A notify() landing on the SAME path while a group's own commit
-  // is in flight below can only be for a path that group already removed
-  // from pendingPaths, so there's no snapshot/clear race to speak of; the
-  // one real race was between the dirty check's await and queuing a
-  // commit from zero groups (see below), closed by folding anything that
-  // arrived during that one await into this same snapshot instead of
-  // trying to special-case what the dirty check saw.
+  // actor (never a sweeping `git add -A`). A notify() landing on a path
+  // already claimed by this snapshot can't happen (that path left
+  // pendingPaths the moment it was snapshotted), so there's nothing to
+  // race there. A notify() for any OTHER path can land at any later await
+  // in this method, including inside a group's own commit: it's simply
+  // left in pendingPaths for the fallback and the next flush to respect,
+  // see fallbackCommit() and the retry scheduled at the end of this
+  // method.
   async flush(): Promise<string | null> {
     if (this.timer !== null) {
       clearTimeout(this.timer);
@@ -91,54 +92,43 @@ export class Autocommit {
       if (!dirty && snapshot.size === 0) return null;
 
       const groups = groupByActor(snapshot);
-      if (groups.length === 0) {
-        // Dirty repo, nothing was ever notified (an external edit, a
-        // restart that lost pendingPaths, or a direct flush() call).
-        // v0.4.12 always committed in this case; preserve that instead
-        // of silently leaving the change unstaged.
-        lastSha = await this.repo.commitAll("auto", {
-          author: { name: FALLBACK_IDENTITY.name, email: FALLBACK_IDENTITY.email ?? "agent@brain.local" },
-        });
-      } else {
-        let anyGroupFailed = false;
-        for (const group of groups) {
-          try {
-            const sha = await this.repo.commitAll(commitMessage(group.paths), {
-              paths: group.paths,
-              author: { name: group.identity.name, email: group.identity.email ?? "agent@brain.local" },
-              trailers: trailersFor(group.identity),
-            });
-            if (sha) lastSha = sha;
-          } catch (e) {
-            // A group's commit can fail for reasons --ignore-errors in
-            // git.ts doesn't cover (disk full, a lock held by another
-            // process). Put its paths back instead of dropping them: a
-            // later flush (notify() debounce, or the retry below) gets
-            // another shot instead of silently losing the change.
-            console.warn("[autocommit] group commit failed, will retry:", e);
-            anyGroupFailed = true;
-            for (const path of group.paths) {
-              if (!this.pendingPaths.has(path)) this.pendingPaths.set(path, group.identity);
-            }
-          }
-        }
-        // Every group above staged and committed exactly its own
-        // snapshotted paths, by pathspec, never a sweeping `git add -A`.
-        // Anything still dirty after all of them belongs to no notified
-        // actor at all (an external edit alongside the attributed ones):
-        // one last fallback commit for it, same author as the no-groups
-        // case above, instead of leaving it unstaged until some later
-        // flush happens to catch it. Skipped whenever a group failed:
-        // its paths are still dirty too, now queued above for the retry
-        // this method schedules below, and the fallback can't tell its
-        // dirt apart from theirs, so it would otherwise re-author a
-        // retry-pending group's change under the fallback identity.
-        if (!anyGroupFailed && (await this.repo.hasChanges())) {
-          const sha = await this.repo.commitAll("auto", {
-            author: { name: FALLBACK_IDENTITY.name, email: FALLBACK_IDENTITY.email ?? "agent@brain.local" },
+      let anyGroupFailed = false;
+      for (const group of groups) {
+        try {
+          const sha = await this.repo.commitAll(commitMessage(group.paths), {
+            paths: group.paths,
+            author: { name: group.identity.name, email: group.identity.email ?? "agent@brain.local" },
+            trailers: trailersFor(group.identity),
           });
           if (sha) lastSha = sha;
+        } catch (e) {
+          // A group's commit can fail for reasons --ignore-errors in
+          // git.ts doesn't cover (disk full, a lock held by another
+          // process). Put its paths back instead of dropping them: a
+          // later flush (notify() debounce, or the retry below) gets
+          // another shot instead of silently losing the change. git.ts
+          // unstages this group's own paths on that failure, so the next
+          // group below starts from a clean index instead of inheriting
+          // this one's staged-but-uncommitted files.
+          console.warn("[autocommit] group commit failed, will retry:", e);
+          anyGroupFailed = true;
+          for (const path of group.paths) {
+            if (!this.pendingPaths.has(path)) this.pendingPaths.set(path, group.identity);
+          }
         }
+      }
+      // Every group above staged and committed exactly its own snapshotted
+      // paths, by pathspec, never a sweeping `git add -A`. Anything still
+      // dirty after all of them belongs to no notified actor at all (an
+      // external edit, a restart that lost pendingPaths, or a direct
+      // flush() call with nothing queued, same as v0.4.12's always-commit
+      // behaviour): one fallback commit for it under the default author.
+      // Skipped whenever a group failed: its paths are still dirty too,
+      // queued above for the retry this method schedules below, and the
+      // fallback can't yet tell its dirt apart from theirs.
+      if (!anyGroupFailed) {
+        const sha = await this.fallbackCommit();
+        if (sha) lastSha = sha;
       }
     } finally {
       this.inFlight = false;
@@ -148,6 +138,30 @@ export class Autocommit {
       setTimeout(() => void this.flush(), 50);
     }
     return lastSha;
+  }
+
+  // Commits whatever is dirty on disk right now but claimed by no actor,
+  // under the default author. Must-fix regression (f7618a5): a blanket
+  // `commitAll('auto')` here (no `paths`, so it staged everything with
+  // `git add -A`) could not tell an unclaimed path apart from one that
+  // arrived in this.pendingPaths mid-flush, queued for its own actor's
+  // commit a moment later (notify() doesn't check inFlight, so a request's
+  // mutation can land at any point during this method's own awaits, or
+  // during the per-group commits above). That swept the newcomer's change
+  // into the fallback commit under the wrong author; its pendingPaths
+  // entry then survived to be "retried" against a file already committed.
+  // Re-reading the queue right here, right before staging, closes that:
+  // dirtyPaths() lists every dirty path, and anything already in
+  // pendingPaths is left for the flush that queued it to commit under its
+  // own author, explicit pathspec, never a sweep.
+  private async fallbackCommit(): Promise<string | null> {
+    const dirty = await this.repo.dirtyPaths();
+    const unclaimed = dirty.filter((p) => !this.pendingPaths.has(p));
+    if (unclaimed.length === 0) return null;
+    return this.repo.commitAll("auto", {
+      paths: unclaimed,
+      author: { name: FALLBACK_IDENTITY.name, email: FALLBACK_IDENTITY.email ?? "agent@brain.local" },
+    });
   }
 }
 
