@@ -14,10 +14,18 @@ describe("getClientIp", () => {
     expect(getClientIp(req({ "x-forwarded-for": "9.9.9.9" }), null)).toBe("9.9.9.9");
   });
 
-  test("X-Forwarded-For takes the leftmost (original client) entry", () => {
+  test("X-Forwarded-For takes the rightmost entry, the one the trusted proxy appended", () => {
     expect(
       getClientIp(req({ "x-forwarded-for": "9.9.9.9, 10.0.0.1, 10.0.0.2" }), null),
-    ).toBe("9.9.9.9");
+    ).toBe("10.0.0.2");
+  });
+
+  test("a spoofed leftmost entry cannot change the resolved IP, only the real peer can", () => {
+    const server = { requestIP: () => ({ address: "127.0.0.1" }) };
+    const a = getClientIp(req({ "x-forwarded-for": "spoof-a, 198.51.100.9" }), server);
+    const b = getClientIp(req({ "x-forwarded-for": "spoof-b, 198.51.100.9" }), server);
+    expect(a).toBe("198.51.100.9");
+    expect(b).toBe("198.51.100.9");
   });
 
   test("a non-loopback direct peer is trusted and X-Forwarded-For is ignored", () => {

@@ -18,9 +18,19 @@ function isLoopback(addr: string): boolean {
   return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
 }
 
-function firstForwardedIp(header: string): string | null {
-  const first = header.split(",")[0]?.trim();
-  return first && first.length > 0 ? first : null;
+// The trusted local proxy appends the address it saw the request arrive
+// from to the END of whatever X-Forwarded-For chain it received, it never
+// edits what's already there. So the rightmost entry is the one our one
+// trusted hop actually vouches for; anything to its left came from
+// whoever made the request and is exactly as trustworthy as a
+// self-reported header, i.e. not at all. Taking the leftmost entry
+// (the "original client" by convention) let an attacker pick any
+// rate-limit key it wanted by prefixing the header with junk, while the
+// real peer address the proxy appended stayed constant.
+function lastForwardedIp(header: string): string | null {
+  const parts = header.split(",");
+  const last = parts[parts.length - 1]?.trim();
+  return last && last.length > 0 ? last : null;
 }
 
 export function getClientIp(
@@ -31,7 +41,7 @@ export function getClientIp(
   if (direct && !isLoopback(direct)) return direct;
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) {
-    const ip = firstForwardedIp(forwarded);
+    const ip = lastForwardedIp(forwarded);
     if (ip) return ip;
   }
   return direct ?? "unknown";
