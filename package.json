@@ -33,12 +33,12 @@
   "workspaces": ["server", "web"],
   "scripts": {
     "dev": "bun --filter '*' dev",
-    "dev:server": "bun --cwd server run dev",
-    "dev:web": "bun --cwd web run dev",
-    "build": "bun --cwd web run build",
-    "start": "bun --cwd server run start",
+    "dev:server": "bun run --cwd server dev",
+    "dev:web": "bun run --cwd web dev",
+    "build": "bun run --cwd web build",
+    "start": "bun run --cwd server start",
     "test": "bun --cwd server test",
-    "typecheck": "bun --cwd=server run typecheck && bun --cwd=web run typecheck"
+    "typecheck": "bun run --cwd server typecheck && bun run --cwd web typecheck"
   },
   "devDependencies": {
     "typescript": "^5.6.3"
