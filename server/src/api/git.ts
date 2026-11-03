@@ -1,6 +1,8 @@
 import { Elysia, t } from "elysia";
 import type { GitRepo } from "../git/git";
 import type { Autocommit } from "../git/autocommit";
+import { singleActorCommitOpts } from "../git/autocommit";
+import { currentIdentity } from "../auth/identity";
 import type { SettingsStore } from "../settings/settings";
 import type { Vault } from "../vault/vault";
 import { asError } from "./errors";
@@ -172,9 +174,16 @@ export function gitRoutes(
           // including whatever else was dirty at the time, not just the
           // restored file. Scoping it to the one touched path matches
           // what the commit message claims happened.
+          //
+          // Attribution: /restore is reachable by any credential with
+          // write access (requireWrite above), not just the owner, unlike
+          // /commit and /checkpoint, which requireOwner. Without this,
+          // every restore lands as the default committer identity
+          // (brain.md/brain@local) no matter who actually ran it.
+          const identity = currentIdentity();
           const sha = await repo.commitAll(
             `restore ${body.path} → ${body.sha.slice(0, 7)}`,
-            { paths: [body.path] },
+            { paths: [body.path], ...(identity ? singleActorCommitOpts(identity) : {}) },
           );
           return { ok: true, sha };
         } catch (e) {

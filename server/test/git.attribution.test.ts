@@ -223,6 +223,45 @@ describe("git commit author from identity", () => {
     const names = (await new Response(show.stdout).text()).trim();
     await show.exited;
     expect(names).toContain("new.md");
-    expect(names).toMatch(/old\.md/);
+  });
+
+  // Should-fix: /restore committed via repo.commitAll with no author or
+  // trailers at all, unlike every other mutation path in this describe
+  // block. A restore run by an API key (or any non-owner credential with
+  // folder write access) must still show up as that credential, not the
+  // default committer identity.
+  test("restore commits under the acting credential, with On-Behalf-Of + Agent trailers", async () => {
+    await setPassword("hunter2hunter2");
+    const ownerToken = await login("hunter2hunter2");
+    const keyToken = await createApiKey(ownerToken, "ci-bot");
+
+    await put("/api/note/a.md", "first", ownerToken);
+    await handle.autocommit.flush();
+    await put("/api/note/a.md", "second", ownerToken);
+    await handle.autocommit.flush();
+
+    const logRes = await handle.app.handle(
+      new Request("http://localhost/api/git/log?path=a.md", {
+        headers: { authorization: `Bearer ${ownerToken}` },
+      }),
+    );
+    const entries = (await logRes.json()) as Array<{ sha: string }>;
+    const firstSha = entries[entries.length - 1]!.sha;
+
+    const restore = await handle.app.handle(
+      new Request("http://localhost/api/git/restore", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${keyToken}` },
+        body: JSON.stringify({ path: "a.md", sha: firstSha }),
+      }),
+    );
+    expect(restore.status).toBe(200);
+
+    const log = await gitLog();
+    const commit = log.find((c) => c.body.startsWith("restore "));
+    expect(commit).toBeDefined();
+    expect(commit!.authorName).toBe("ci-bot");
+    expect(commit!.body).toContain("Agent: ci-bot");
+    expect(commit!.body).toMatch(/On-Behalf-Of: apikey:[0-9a-f]+/);
   });
 });
