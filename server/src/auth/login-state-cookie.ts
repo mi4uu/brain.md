@@ -17,6 +17,10 @@ export interface LoginFlowState {
   state: string;
   verifier: string;
   nonce?: string; // OIDC only
+  // Random per-flow secret, carried through to the bind cookie set on a
+  // successful callback (serializeBindCookie below). Binds the handoff
+  // code to the browser that actually ran the flow, see idp-auth.ts.
+  bind: string;
   expiresAt: number;
 }
 
@@ -54,6 +58,49 @@ export function readFlowCookie(cookieHeader: string | null): LoginFlowState | un
     } catch {
       return undefined;
     }
+  }
+  return undefined;
+}
+
+// Set on a successful callback, cleared once /api/auth/idp/exchange
+// consumes it. Carries the flow's `bind` secret past the point where the
+// flow cookie itself is cleared (it's single-use regardless of outcome),
+// so the browser that ran the flow, and only that browser, can redeem
+// the handoff code the callback redirected it to. Without this, the
+// handoff code alone is enough: an attacker who runs their own login and
+// hands the resulting URL to a victim gets the victim's browser to adopt
+// the attacker's session (login CSRF), the code itself proves nothing
+// about which browser is presenting it.
+const BIND_COOKIE_NAME = "brainmd_idp_bind";
+const BIND_MAX_AGE_SECONDS = 120;
+
+export function serializeBindCookie(secret: string, secure: boolean): string {
+  const parts = [
+    `${BIND_COOKIE_NAME}=${secret}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    `Max-Age=${BIND_MAX_AGE_SECONDS}`,
+  ];
+  if (secure) parts.push("Secure");
+  return parts.join("; ");
+}
+
+export function clearBindCookie(secure: boolean): string {
+  const parts = [`${BIND_COOKIE_NAME}=`, "Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=0"];
+  if (secure) parts.push("Secure");
+  return parts.join("; ");
+}
+
+export function readBindCookie(cookieHeader: string | null): string | undefined {
+  if (!cookieHeader) return undefined;
+  for (const part of cookieHeader.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq < 0) continue;
+    const name = part.slice(0, eq).trim();
+    if (name !== BIND_COOKIE_NAME) continue;
+    const raw = part.slice(eq + 1).trim();
+    return raw.length > 0 ? raw : undefined;
   }
   return undefined;
 }

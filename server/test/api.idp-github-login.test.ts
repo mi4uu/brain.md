@@ -58,6 +58,14 @@ function cookiePair(setCookieHeader: string | null): string {
   return setCookieHeader.split(";")[0] ?? "";
 }
 
+function bindCookieFrom(res: Response): string {
+  const pair = res.headers
+    .getSetCookie()
+    .find((c) => c.startsWith("brainmd_idp_bind="));
+  if (!pair) throw new Error("no bind cookie on the callback response");
+  return pair.split(";")[0] ?? "";
+}
+
 describe("GitHub login", () => {
   test("happy path: verified primary email issues a working session token", async () => {
     mockGithubFetch({ primaryVerified: true });
@@ -81,7 +89,7 @@ describe("GitHub login", () => {
     const exchangeRes = await handle.app.handle(
       new Request("http://localhost/api/auth/idp/exchange", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", cookie: bindCookieFrom(cbRes) },
         body: JSON.stringify({ code }),
       }),
     );

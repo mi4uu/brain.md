@@ -31,6 +31,8 @@ async function startFakeIssuer() {
   jwk.use = "sig";
 
   let nextClaims: Partial<IssuerClaims> = {};
+  let discoveryIssuer: string | undefined;
+  let omitExp = false;
 
   const server = Bun.serve({
     port: 0,
@@ -38,7 +40,7 @@ async function startFakeIssuer() {
       const url = new URL(req.url);
       if (url.pathname === "/.well-known/openid-configuration") {
         return Response.json({
-          issuer: base(),
+          issuer: discoveryIssuer ?? base(),
           authorization_endpoint: `${base()}/authorize`,
           token_endpoint: `${base()}/token`,
           jwks_uri: `${base()}/jwks`,
@@ -59,7 +61,7 @@ async function startFakeIssuer() {
           name: "Alice",
           ...nextClaims,
         };
-        const idToken = await new SignJWT({
+        let builder = new SignJWT({
           email: claims.email,
           email_verified: claims.email_verified,
           nonce: claims.nonce,
@@ -68,10 +70,9 @@ async function startFakeIssuer() {
           .setProtectedHeader({ alg: "ES256", kid: "test-key-1" })
           .setSubject(claims.sub)
           .setAudience(claims.aud)
-          .setIssuer(claims.iss)
-          .setExpirationTime(claims.exp)
-          .setIssuedAt()
-          .sign(privateKey);
+          .setIssuer(claims.iss);
+        if (!omitExp) builder = builder.setExpirationTime(claims.exp).setIssuedAt();
+        const idToken = await builder.sign(privateKey);
         return Response.json({
           access_token: "fake-access-token",
           id_token: idToken,
@@ -90,6 +91,12 @@ async function startFakeIssuer() {
     base: base(),
     setNextClaims(c: Partial<IssuerClaims>) {
       nextClaims = c;
+    },
+    setDiscoveryIssuer(iss: string | undefined) {
+      discoveryIssuer = iss;
+    },
+    setOmitExp(v: boolean) {
+      omitExp = v;
     },
     stop() {
       server.stop(true);
@@ -134,6 +141,17 @@ function cookiePair(setCookieHeader: string | null): string {
   return setCookieHeader.split(";")[0] ?? "";
 }
 
+// The callback sets two cookies (clear the flow cookie, set the bind
+// cookie), getSetCookie() is the standard way to read multiple Set-Cookie
+// headers off one Response.
+function bindCookieFrom(res: Response): string {
+  const pair = res.headers
+    .getSetCookie()
+    .find((c) => c.startsWith("brainmd_idp_bind="));
+  if (!pair) throw new Error("no bind cookie on the callback response");
+  return pair.split(";")[0] ?? "";
+}
+
 async function startFlow(): Promise<{ cookie: string; state: string; nonce: string }> {
   const res = await handle.app.handle(new Request("http://localhost/api/auth/idp/oidc/start"));
   expect(res.status).toBe(302);
@@ -148,6 +166,18 @@ async function callback(params: { cookie: string; state: string; code?: string }
   url.searchParams.set("state", params.state);
   url.searchParams.set("code", params.code ?? "fake-code");
   return handle.app.handle(new Request(url, { headers: { cookie: params.cookie } }));
+}
+
+// Exchanges a handoff code the way the browser that ran the flow would:
+// carrying the bind cookie the callback just set.
+async function exchange(code: string | null, bindCookie: string) {
+  return handle.app.handle(
+    new Request("http://localhost/api/auth/idp/exchange", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: bindCookie },
+      body: JSON.stringify({ code }),
+    }),
+  );
 }
 
 function redirectTarget(res: Response): URL {
@@ -169,13 +199,7 @@ describe("OIDC login: happy path", () => {
     const code = target.searchParams.get("login_code");
     expect(code).not.toBeNull();
 
-    const exchangeRes = await handle.app.handle(
-      new Request("http://localhost/api/auth/idp/exchange", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ code }),
-      }),
-    );
+    const exchangeRes = await exchange(code, bindCookieFrom(cbRes));
     expect(exchangeRes.status).toBe(200);
     const body = await exchangeRes.json();
     expect(typeof body.token).toBe("string");
@@ -196,24 +220,38 @@ describe("OIDC login: happy path", () => {
     issuer.setNextClaims({ nonce });
     const cbRes = await callback({ cookie, state });
     const code = redirectTarget(cbRes).searchParams.get("login_code");
+    const bindCookie = bindCookieFrom(cbRes);
 
-    const first = await handle.app.handle(
-      new Request("http://localhost/api/auth/idp/exchange", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ code }),
-      }),
-    );
+    const first = await exchange(code, bindCookie);
     expect(first.status).toBe(200);
 
-    const second = await handle.app.handle(
-      new Request("http://localhost/api/auth/idp/exchange", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ code }),
-      }),
-    );
+    const second = await exchange(code, bindCookie);
     expect(second.status).toBe(400);
+  });
+
+  // Login CSRF regression: a browser that never ran the flow (no bind
+  // cookie) must not be able to redeem a code it merely learned the
+  // value of, e.g. handed a login_code URL by the person who ran it.
+  test("exchanging a valid code without the bind cookie fails", async () => {
+    await setup();
+    const { cookie, state, nonce } = await startFlow();
+    issuer.setNextClaims({ nonce });
+    const cbRes = await callback({ cookie, state });
+    const code = redirectTarget(cbRes).searchParams.get("login_code");
+
+    const res = await exchange(code, "");
+    expect(res.status).toBe(400);
+  });
+
+  test("exchanging a valid code with someone else's bind cookie fails", async () => {
+    await setup();
+    const { cookie, state, nonce } = await startFlow();
+    issuer.setNextClaims({ nonce });
+    const cbRes = await callback({ cookie, state });
+    const code = redirectTarget(cbRes).searchParams.get("login_code");
+
+    const res = await exchange(code, "brainmd_idp_bind=not-the-real-secret");
+    expect(res.status).toBe(400);
   });
 });
 
@@ -267,18 +305,55 @@ describe("OIDC login: rejected flows redirect to the login page with a generic e
     const res = await callback({ cookie, state: "a-completely-different-state" });
     expect(redirectTarget(res).searchParams.get("login_error")).not.toBeNull();
   });
+
+  // Regression: discovery's issuer field used to be trusted as-is and
+  // handed straight to jwtVerify, a discovery document (served over
+  // whatever the issuer URL happens to resolve to) claiming a different
+  // issuer than configured was accepted.
+  test("discovery document issuer does not match the configured issuer", async () => {
+    await setup();
+    // Discovery is fetched (and cached) during /start, the override has
+    // to be in place before that first fetch.
+    issuer.setDiscoveryIssuer("http://attacker.example");
+    const { cookie, state, nonce } = await startFlow();
+    issuer.setNextClaims({ nonce });
+    const res = await callback({ cookie, state });
+    expect(redirectTarget(res).searchParams.get("login_error")).not.toBeNull();
+    expect(redirectTarget(res).searchParams.get("login_code")).toBeNull();
+  });
+
+  // Regression: jose's requiredClaims defaulted to empty, an ID token
+  // with no exp at all (not merely expired) passed jwtVerify.
+  test("ID token with no exp claim at all is rejected", async () => {
+    await setup();
+    const { cookie, state, nonce } = await startFlow();
+    issuer.setNextClaims({ nonce });
+    issuer.setOmitExp(true);
+    const res = await callback({ cookie, state });
+    expect(redirectTarget(res).searchParams.get("login_error")).not.toBeNull();
+    expect(redirectTarget(res).searchParams.get("login_code")).toBeNull();
+  });
 });
 
 describe("OIDC login does not affect password login", () => {
   test("password login still works with an OIDC provider configured", async () => {
     await setup();
-    await handle.app.handle(
+    // With an IdP active, setting the first password needs an owner
+    // session (see auth-middleware.ts), log in via OIDC first to get one.
+    const { cookie, state, nonce } = await startFlow();
+    issuer.setNextClaims({ nonce });
+    const cbRes = await callback({ cookie, state });
+    const code = redirectTarget(cbRes).searchParams.get("login_code");
+    const { token: ownerToken } = await (await exchange(code, bindCookieFrom(cbRes))).json();
+
+    const setRes = await handle.app.handle(
       new Request("http://localhost/api/auth/set", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", authorization: `Bearer ${ownerToken}` },
         body: JSON.stringify({ newPassword: "correct-password" }),
       }),
     );
+    expect(setRes.status).toBe(200);
     const res = await handle.app.handle(
       new Request("http://localhost/api/auth/login", {
         method: "POST",
@@ -297,6 +372,43 @@ describe("OIDC login does not affect password login", () => {
     const body = await res.json();
     expect(body.password).toBe(true);
     expect(body.providers).toEqual([{ id: "oidc", label: "Test IdP" }]);
+  });
+});
+
+describe("anonymous instance takeover regression", () => {
+  // auth-middleware.ts used to let POST /api/auth/set through with no
+  // bearer at all whenever auth.isConfigured() was false, even with an
+  // IdP active: principalFor() defaults to the back-compat "open"
+  // principal, which requireOwner() treats as owner, so anyone could set
+  // the first password before the real owner ever logged in.
+  test("POST /api/auth/set with no bearer is refused while an IdP is active and no password is set", async () => {
+    await setup();
+    const res = await handle.app.handle(
+      new Request("http://localhost/api/auth/set", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ newPassword: "attacker-password" }),
+      }),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  test("a valid owner session (from logging in via the IdP) can set the first password", async () => {
+    await setup();
+    const { cookie, state, nonce } = await startFlow();
+    issuer.setNextClaims({ nonce });
+    const cbRes = await callback({ cookie, state });
+    const code = redirectTarget(cbRes).searchParams.get("login_code");
+    const { token } = await (await exchange(code, bindCookieFrom(cbRes))).json();
+
+    const res = await handle.app.handle(
+      new Request("http://localhost/api/auth/set", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({ newPassword: "owner-chosen-password" }),
+      }),
+    );
+    expect(res.status).toBe(200);
   });
 });
 

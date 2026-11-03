@@ -7,7 +7,14 @@ import type { LoginConfig } from "../auth/login-config";
 import { isAllowed } from "../auth/login-config";
 import { OidcProvider } from "../auth/oidc-provider";
 import { GithubProvider } from "../auth/github-provider";
-import { serializeFlowCookie, clearFlowCookie, readFlowCookie } from "../auth/login-state-cookie";
+import {
+  serializeFlowCookie,
+  clearFlowCookie,
+  readFlowCookie,
+  serializeBindCookie,
+  clearBindCookie,
+  readBindCookie,
+} from "../auth/login-state-cookie";
 
 // Board-plan Part B: optional external login (OIDC + GitHub), alongside
 // but separate from V53 password login and the OAuth 2.1 authorization
@@ -28,28 +35,17 @@ import { serializeFlowCookie, clearFlowCookie, readFlowCookie } from "../auth/lo
 // debugging goes to server logs instead, same as the OAuth 2.1 consent
 // flow already does for password mismatches.
 
-// Mirrors auth-middleware.ts's originOf, see the long comment there for
-// why Cloudflare Tunnel needs the cf-visitor special case. Kept as its
-// own copy rather than a shared export: each caller depends on it for a
-// slightly different reason (audience binding vs. a redirect URI here),
-// and this codebase already keeps two such copies for that reason.
-function originOf(req: Request): string {
-  const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || new URL(req.url).host;
-  let proto: string | undefined;
-  const cfVisitor = req.headers.get("cf-visitor");
-  if (cfVisitor) {
-    try {
-      const v = JSON.parse(cfVisitor) as { scheme?: string };
-      if (v.scheme === "http" || v.scheme === "https") proto = v.scheme;
-    } catch {
-      // ignore malformed
-    }
-  }
-  if (!proto) proto = req.headers.get("x-forwarded-proto") ?? undefined;
-  if (!proto) proto = new URL(req.url).protocol.replace(":", "");
-  const isLocal = host.startsWith("localhost") || host.startsWith("127.0.0.1") || host.startsWith("[::1]");
-  if (!isLocal && proto === "http") proto = "https";
-  return `${proto}://${host}`;
+// Unlike auth-middleware.ts's originOf (used for OAuth audience binding,
+// where the resource URI has to match whatever host the request actually
+// came in on), these routes only need "this app's own origin" for an
+// internal redirect target and a cookie's Secure flag. login-config.ts
+// requires BRAINMD_PUBLIC_URL whenever an external provider is
+// configured, these routes only ever run in that case, so the
+// admin-configured, startup-validated value is available and is the
+// right source of truth: deriving it from X-Forwarded-Host instead would
+// let a request pick its own redirect target and cookie security flag.
+function appOrigin(cfg: LoginConfig): string {
+  return (cfg.publicUrl ?? "").replace(/\/+$/, "");
 }
 
 // arctic exports this from its oauth2 module but doesn't re-export it
@@ -86,9 +82,10 @@ export function idpAuthRoutes(
   }
 
   return new Elysia()
-    .get("/api/auth/idp/:provider/start", async ({ params, set, request }) => {
+    .get("/api/auth/idp/:provider/start", async ({ params, set }) => {
       const provider = params.provider;
-      const secure = originOf(request).startsWith("https://");
+      const secure = appOrigin(loginConfig).startsWith("https://");
+      const bind = randomBytes(32).toString("base64url");
 
       if (provider === "oidc" && oidc) {
         const state = generateState();
@@ -101,7 +98,7 @@ export function idpAuthRoutes(
           redirectUri: redirectUriFor("oidc"),
         });
         set.headers["set-cookie"] = serializeFlowCookie(
-          { provider: "oidc", state, verifier, nonce, expiresAt: Date.now() + 600_000 },
+          { provider: "oidc", state, verifier, nonce, bind, expiresAt: Date.now() + 600_000 },
           secure,
         );
         set.status = 302;
@@ -114,7 +111,7 @@ export function idpAuthRoutes(
         const github = new GithubProvider(loginConfig.github, redirectUriFor("github"));
         const authUrl = github.buildAuthorizationUrl(state);
         set.headers["set-cookie"] = serializeFlowCookie(
-          { provider: "github", state, verifier: "", expiresAt: Date.now() + 600_000 },
+          { provider: "github", state, verifier: "", bind, expiresAt: Date.now() + 600_000 },
           secure,
         );
         set.status = 302;
@@ -128,7 +125,7 @@ export function idpAuthRoutes(
 
     .get("/api/auth/idp/:provider/callback", async ({ params, query, set, request }) => {
       const provider = params.provider;
-      const origin = originOf(request);
+      const origin = appOrigin(loginConfig);
       const secure = origin.startsWith("https://");
       // Clear the flow cookie unconditionally, it's single-use regardless
       // of whether this callback succeeds.
@@ -181,11 +178,17 @@ export function idpAuthRoutes(
         }
 
         const { token, expiresAt } = tokens.issue(sub, { name, email });
-        const handoffCode = handoffCodes.issue(JSON.stringify({ token, expiresAt }));
+        const secretHash = createHash("sha256").update(flow.bind).digest("hex");
+        const handoffCode = handoffCodes.issue(JSON.stringify({ token, expiresAt }), secretHash);
         const u = new URL("/", origin);
         u.searchParams.set("login_code", handoffCode);
         set.status = 302;
         set.headers["location"] = u.toString();
+        // Replaces the already-cleared flow cookie's Set-Cookie with two:
+        // the flow cookie stays cleared, and a fresh bind cookie carries
+        // flow.bind to the exchange call that's about to follow this
+        // redirect, see handoff-codes.ts.
+        set.headers["set-cookie"] = [clearFlowCookie(secure), serializeBindCookie(flow.bind, secure)];
         return;
       } catch (e) {
         // eslint-disable-next-line no-console
@@ -199,8 +202,19 @@ export function idpAuthRoutes(
 
     .post(
       "/api/auth/idp/exchange",
-      ({ body, set }) => {
-        const raw = handoffCodes.consume(body.code);
+      ({ body, set, request }) => {
+        const secure = appOrigin(loginConfig).startsWith("https://");
+        set.headers["set-cookie"] = clearBindCookie(secure);
+        const bind = readBindCookie(request.headers.get("cookie"));
+        // No bind cookie at all means either this isn't the browser the
+        // callback redirected (login CSRF, see handoff-codes.ts) or the
+        // code is just stale. Same generic error either way.
+        if (!bind) {
+          set.status = 400;
+          return { error: "invalid or expired code" };
+        }
+        const secretHash = createHash("sha256").update(bind).digest("hex");
+        const raw = handoffCodes.consume(body.code, secretHash);
         if (!raw) {
           set.status = 400;
           return { error: "invalid or expired code" };

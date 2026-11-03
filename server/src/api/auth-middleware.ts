@@ -139,13 +139,14 @@ export function authMiddleware(
       principals.set(request, { kind: "open" });
       return; // no auth required
     }
-    // Initial password setup must stay reachable even when an external
-    // provider is configured and the password hash store is still empty,
-    // otherwise an owner who wants password login ALONGSIDE a provider
-    // has no bearer token yet to get past the gate below and set one.
-    if (path === "/api/auth/set" && !auth.isConfigured()) {
-      return;
-    }
+    // No bypass for /api/auth/set once an IdP is active: that used to
+    // fall through unauthenticated (principalFor() defaults to "open",
+    // which isOwnerPrincipal() treats as owner), so anyone could set the
+    // first password and take over the instance before the real owner
+    // ever logged in. The legacy no-auth bootstrap above already covers
+    // "there's nobody else to protect the vault from yet"; once an IdP
+    // is configured that's no longer true, so setting the first password
+    // requires an owner session obtained by logging in through it first.
     const isProtected =
       path.startsWith("/api/") || path === "/mcp" || path.startsWith("/mcp/");
     if (!isProtected) return;
@@ -196,7 +197,7 @@ export function authMiddleware(
         if (read || write) {
           principals.set(request, { kind: "oauth", read, write });
           const clientName = oauthClients?.get(v.clientId)?.client_name ?? v.clientId;
-          identityContext.enterWith(oauthClientIdentity(v.sub, clientName));
+          identityContext.enterWith(oauthClientIdentity(v.sub, clientName, v.clientId));
           return;
         }
       }
