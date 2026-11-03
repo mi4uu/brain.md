@@ -179,7 +179,7 @@ export function authMiddleware(
       const rec = keys.validate(tok);
       if (rec) {
         principals.set(request, { kind: "apikey" });
-        identityContext.enterWith(apiKeyIdentity(rec.sub, rec.name));
+        identityContext.enterWith(apiKeyIdentity(rec.sub, rec.name, rec.id));
         return;
       }
     }

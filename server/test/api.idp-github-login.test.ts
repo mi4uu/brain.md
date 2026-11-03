@@ -61,7 +61,7 @@ function cookiePair(setCookieHeader: string | null): string {
 function bindCookieFrom(res: Response): string {
   const pair = res.headers
     .getSetCookie()
-    .find((c) => c.startsWith("brainmd_idp_bind="));
+    .find((c) => c.startsWith("brainmd_idp_bind_dev="));
   if (!pair) throw new Error("no bind cookie on the callback response");
   return pair.split(";")[0] ?? "";
 }
@@ -74,7 +74,7 @@ describe("GitHub login", () => {
     const startRes = await handle.app.handle(new Request("http://localhost/api/auth/idp/github/start"));
     expect(startRes.status).toBe(302);
     const cookie = cookiePair(startRes.headers.get("set-cookie"));
-    const flow = readFlowCookie(cookie);
+    const flow = readFlowCookie(cookie, false);
     if (!flow) throw new Error("flow cookie did not round-trip");
 
     const cbUrl = new URL("http://localhost/api/auth/idp/github/callback");
@@ -121,7 +121,7 @@ describe("GitHub login", () => {
 
     const startRes = await handle.app.handle(new Request("http://localhost/api/auth/idp/github/start"));
     const cookie = cookiePair(startRes.headers.get("set-cookie"));
-    const flow = readFlowCookie(cookie);
+    const flow = readFlowCookie(cookie, false);
     if (!flow) throw new Error("flow cookie did not round-trip");
 
     const cbUrl = new URL("http://localhost/api/auth/idp/github/callback");

@@ -97,6 +97,33 @@ describe("loadLoginConfig / validateLoginConfig", () => {
     expect(() => validateLoginConfig(cfg)).not.toThrow();
   });
 
+  test("a non-URL BRAINMD_PUBLIC_URL refuses to start", () => {
+    process.env.BRAINMD_GITHUB_CLIENT_ID = "id";
+    process.env.BRAINMD_GITHUB_CLIENT_SECRET = "secret";
+    process.env.BRAINMD_OAUTH_ALLOWED_EMAILS = "me@example.com";
+    process.env.BRAINMD_PUBLIC_URL = "not a url";
+    const cfg = loadLoginConfig();
+    expect(() => validateLoginConfig(cfg)).toThrow(/not a valid URL/);
+  });
+
+  test("a plain http:// BRAINMD_PUBLIC_URL on a real host refuses to start", () => {
+    process.env.BRAINMD_GITHUB_CLIENT_ID = "id";
+    process.env.BRAINMD_GITHUB_CLIENT_SECRET = "secret";
+    process.env.BRAINMD_OAUTH_ALLOWED_EMAILS = "me@example.com";
+    process.env.BRAINMD_PUBLIC_URL = "http://vault.example.com";
+    const cfg = loadLoginConfig();
+    expect(() => validateLoginConfig(cfg)).toThrow(/https/);
+  });
+
+  test("a plain http:// BRAINMD_PUBLIC_URL on localhost is allowed", () => {
+    process.env.BRAINMD_GITHUB_CLIENT_ID = "id";
+    process.env.BRAINMD_GITHUB_CLIENT_SECRET = "secret";
+    process.env.BRAINMD_OAUTH_ALLOWED_EMAILS = "me@example.com";
+    process.env.BRAINMD_PUBLIC_URL = "http://localhost:3000";
+    const cfg = loadLoginConfig();
+    expect(() => validateLoginConfig(cfg)).not.toThrow();
+  });
+
   test("OIDC scopes default to openid email profile", () => {
     process.env.BRAINMD_OIDC_ISSUER = "https://idp.example.com";
     process.env.BRAINMD_OIDC_CLIENT_ID = "id";
@@ -119,6 +146,12 @@ describe("isAllowed", () => {
     cfg.allowedDomains = ["example.com"];
     expect(isAllowed(cfg, { email: "anyone@example.com" })).toBe(true);
     expect(isAllowed(cfg, { email: "anyone@other.com" })).toBe(false);
+  });
+
+  test("rejects a quoted local part that embeds an allowed domain", () => {
+    const cfg = loadLoginConfig();
+    cfg.allowedDomains = ["example.com"];
+    expect(isAllowed(cfg, { email: '"a@example.com@b"@evil.test' })).toBe(false);
   });
 
   test("matches by OIDC group when configured", () => {

@@ -24,6 +24,18 @@ describe("identity builders", () => {
     expect(id).toEqual({ sub: "apikey:abc123", name: "ci-bot", kind: "apikey", clientName: "ci-bot" });
   });
 
+  // Regression: migrated legacy API keys all share sub === LOCAL_SUB
+  // (see api-keys.ts load()), so without a credentialId keyed by the
+  // key's own id, autocommit.ts's groupByActor collapses two unrelated
+  // legacy keys into one commit, credited to whichever key's identity
+  // was recorded first.
+  test("apiKeyIdentity's credentialId is keyed by keyId when given, not sub", () => {
+    const a = apiKeyIdentity(LOCAL_SUB, "legacy key 1", "aaaaaaaa");
+    const b = apiKeyIdentity(LOCAL_SUB, "legacy key 2", "bbbbbbbb");
+    expect(a.sub).toBe(b.sub);
+    expect(a.credentialId).not.toBe(b.credentialId);
+  });
+
   test("oauthClientIdentity mirrors the client name into clientName", () => {
     const id = oauthClientIdentity("oauth-sub", "Claude Desktop");
     expect(id).toEqual({

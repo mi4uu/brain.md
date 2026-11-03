@@ -112,6 +112,24 @@ export function validateLoginConfig(cfg: LoginConfig): void {
         "BRAINMD_PUBLIC_URL is required when an external login provider is configured (used to build the OAuth redirect URI)",
       );
     }
+    // A string that isn't a URL at all (a bare host, a typo, stray
+    // whitespace mid-value) used to pass straight through: idp-auth.ts's
+    // cookie Secure flag and redirect_uri only ever check it with a
+    // string-prefix test ("https://"), which a malformed value just
+    // fails silently, serving Secure-less cookies and a broken
+    // redirect_uri instead of refusing to start. Parse it for real here.
+    let url: URL;
+    try {
+      url = new URL(cfg.publicUrl);
+    } catch {
+      throw new LoginConfigError(`BRAINMD_PUBLIC_URL (${cfg.publicUrl}) is not a valid URL`);
+    }
+    const isLoopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1";
+    if (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopback)) {
+      throw new LoginConfigError(
+        `BRAINMD_PUBLIC_URL (${cfg.publicUrl}) must be https:// (plain http:// is only allowed for localhost/127.0.0.1 development)`,
+      );
+    }
     const hasGroupAllowlist = Boolean(cfg.oidc?.groupsClaim && cfg.oidc.allowedGroups);
     const hasAllowlist =
       cfg.allowedEmails.length > 0 || cfg.allowedDomains.length > 0 || hasGroupAllowlist;
@@ -131,7 +149,13 @@ export function isAllowed(
 ): boolean {
   const email = identity.email.toLowerCase();
   if (cfg.allowedEmails.includes(email)) return true;
-  const domain = email.split("@")[1];
+  // Take the domain after the LAST '@', not split("@")[1]: a quoted
+  // local part can legally contain '@' (RFC 5321), e.g.
+  // "a@example.com"@evil.test, where split("@")[1] would read back
+  // "example.com" and let an attacker pass an allowed-domain check with
+  // a mailbox that actually lives at evil.test.
+  const at = email.lastIndexOf("@");
+  const domain = at >= 0 ? email.slice(at + 1) : "";
   if (domain && cfg.allowedDomains.includes(domain)) return true;
   if (cfg.oidc?.groupsClaim && cfg.oidc.allowedGroups && identity.groups) {
     if (identity.groups.some((g) => cfg.oidc!.allowedGroups!.includes(g))) return true;

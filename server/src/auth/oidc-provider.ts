@@ -59,9 +59,27 @@ export class OidcProvider {
     return doc;
   }
 
+  // Both callers that actually USE a discovered endpoint, rather than
+  // just building a redirect URL for the browser, run this first: the
+  // token endpoint gets the client secret and the jwks_uri gets trusted
+  // for signature verification, so neither may come from a discovery
+  // document whose claimed issuer doesn't match the one we configured. A
+  // document served from a compromised or misconfigured path could
+  // otherwise claim any issuer and point both at attacker-controlled
+  // hosts.
+  private checkIssuer(doc: DiscoveryDocument): void {
+    const configuredIssuer = this.cfg.issuer.replace(/\/+$/, "");
+    if (doc.issuer.replace(/\/+$/, "") !== configuredIssuer) {
+      throw new OidcDiscoveryError(
+        `OIDC discovery document issuer (${doc.issuer}) does not match the configured issuer (${this.cfg.issuer})`,
+      );
+    }
+  }
+
   private async getJwks() {
     if (!this.jwks) {
       const doc = await this.discover();
+      this.checkIssuer(doc);
       this.jwks = createRemoteJWKSet(new URL(doc.jwks_uri));
     }
     return this.jwks;
@@ -97,6 +115,7 @@ export class OidcProvider {
     nonce: string;
   }): Promise<OidcIdentity> {
     const doc = await this.discover();
+    this.checkIssuer(doc);
     const body = new URLSearchParams({
       grant_type: "authorization_code",
       code: params.code,
@@ -116,19 +135,6 @@ export class OidcProvider {
     const tokenResponse = (await res.json()) as { id_token?: string };
     if (!tokenResponse.id_token) {
       throw new Error("token response is missing id_token");
-    }
-
-    // doc.issuer comes straight from the discovery document, which is
-    // fetched over plain HTTPS trust with no further check that it's
-    // actually the issuer we configured. A discovery document served
-    // from a compromised or misconfigured path could claim any issuer,
-    // and jwtVerify would happily accept tokens for it. Compare against
-    // the admin-configured value, not the document's own say-so.
-    const configuredIssuer = this.cfg.issuer.replace(/\/+$/, "");
-    if (doc.issuer.replace(/\/+$/, "") !== configuredIssuer) {
-      throw new Error(
-        `OIDC discovery document issuer (${doc.issuer}) does not match the configured issuer (${this.cfg.issuer})`,
-      );
     }
 
     const jwks = await this.getJwks();

@@ -76,6 +76,23 @@ export function createApp(opts: AppOptions = {}) {
   // fires on later has no request, and no identity, of its own.
   vault.onMutation((e) => {
     const identity = identityContext.getStore();
+    // Folder events never queue the directory path itself: git has no
+    // concept of an empty directory to stage, and queuing it as a
+    // pathspec makes a later `git add -A -- <dir>` sweep in whatever
+    // another actor wrote under that directory before this flush,
+    // crediting (or re-committing) their change under the folder
+    // actor's commit instead of its own.
+    if (e.kind === "folder-create") return;
+    if (e.kind === "folder-delete") {
+      // Queue each concrete note that was under the deleted folder (its
+      // own path still staged as a deletion even though it no longer
+      // exists on disk, filterStageable keeps tracked-but-gone paths),
+      // instead of the folder path, which `ls-files` never resolves to
+      // a tracked entry and `existsSync` never finds once deleted, so
+      // it would be dropped from staging entirely.
+      for (const p of e.paths ?? []) autocommit.notify(p, identity);
+      return;
+    }
     autocommit.notify(e.path, identity);
     // Rename's `extra` is the source path: the commit needs to stage its
     // deletion too, or the old path is left behind, picked up (or not)

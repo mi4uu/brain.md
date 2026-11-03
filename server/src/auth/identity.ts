@@ -56,8 +56,19 @@ export function externalIdentity(sub: string, name: string, email: string): Iden
   return { sub, name, email, kind: "human" };
 }
 
-export function apiKeyIdentity(sub: string, keyName: string): Identity {
-  return { sub, name: keyName, kind: "apikey", clientName: keyName };
+// `keyId`: the API key's own stable id (APIKey.id), used as the
+// autocommit grouping key. Migrated legacy keys all share sub ===
+// LOCAL_SUB (they predate per-key subs), so without this two unrelated
+// legacy keys would collapse into one commit, credited to whichever
+// key's identity autocommit happened to record first for that subject.
+export function apiKeyIdentity(sub: string, keyName: string, keyId?: string): Identity {
+  return {
+    sub,
+    name: keyName,
+    kind: "apikey",
+    clientName: keyName,
+    credentialId: keyId ? `apikey:${keyId}` : undefined,
+  };
 }
 
 export function oauthClientIdentity(sub: string, clientName: string, clientId?: string): Identity {

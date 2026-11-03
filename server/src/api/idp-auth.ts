@@ -135,7 +135,7 @@ export function idpAuthRoutes(
       // of whether this callback succeeds.
       set.headers["set-cookie"] = clearFlowCookie(secure);
 
-      const flow = readFlowCookie(request.headers.get("cookie"));
+      const flow = readFlowCookie(request.headers.get("cookie"), secure);
       if (!flow || flow.provider !== provider) {
         return loginRedirect(origin, "login failed");
       }
@@ -209,7 +209,7 @@ export function idpAuthRoutes(
       ({ body, set, request }) => {
         const secure = appOrigin(loginConfig).startsWith("https://");
         set.headers["set-cookie"] = clearBindCookie(secure);
-        const bind = readBindCookie(request.headers.get("cookie"));
+        const bind = readBindCookie(request.headers.get("cookie"), secure);
         // No bind cookie at all means either this isn't the browser the
         // callback redirected (login CSRF, see handoff-codes.ts) or the
         // code is just stale. Same generic error either way.

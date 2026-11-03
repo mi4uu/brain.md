@@ -107,4 +107,37 @@ describe("Autocommit: identity grouping", () => {
     await ac.flush();
     expect(await commitCount()).toBe(before + 2);
   });
+
+  // Regression: v0.4.12 committed a dirty repo on flush() even with no
+  // paths queued (an external edit, a restart that lost pendingPaths, or
+  // a direct flush() call). The identity-grouping rewrite made flush()
+  // return early whenever groupByActor() produced zero groups, silently
+  // leaving the dirty working tree uncommitted.
+  test("flush() with a dirty repo and nothing queued still commits, falling back to the default author", async () => {
+    const ac = new Autocommit(repo, { enabled: true, debounceMs: 50 });
+    await writeFile(join(dir, "external.md"), "written outside any notify() call");
+    const before = await commitCount();
+    const sha = await ac.flush();
+    expect(sha).toBeTruthy();
+    expect(await commitCount()).toBe(before + 1);
+    const proc = Bun.spawn(["git", "-C", dir, "log", "-1", "--format=%an"], { stdout: "pipe" });
+    const name = (await new Response(proc.stdout).text()).trim();
+    await proc.exited;
+    expect(name).toBe("brain.md");
+  });
+
+  // The fallback above must never swallow paths another group is already
+  // carrying with a real identity: it only fires when there is NOTHING
+  // queued at all.
+  test("flush() with queued paths never takes the no-groups fallback", async () => {
+    const ac = new Autocommit(repo, { enabled: true, debounceMs: 50 });
+    const owner = localIdentity("Owner", "owner@brain.local");
+    await writeFile(join(dir, "a.md"), "a");
+    ac.notify("a.md", owner);
+    await ac.flush();
+    const proc = Bun.spawn(["git", "-C", dir, "log", "-1", "--format=%an"], { stdout: "pipe" });
+    const name = (await new Response(proc.stdout).text()).trim();
+    await proc.exited;
+    expect(name).toBe("Owner");
+  });
 });

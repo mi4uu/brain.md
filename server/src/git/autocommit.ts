@@ -68,6 +68,17 @@ export class Autocommit {
     try {
       const dirty = await this.repo.hasChanges();
       if (!dirty) return null;
+      if (groups.length === 0) {
+        // Dirty repo, nothing was notified (an external edit, a restart
+        // that lost pendingPaths, or a direct flush() call). v0.4.12
+        // always committed in this case; preserve that instead of
+        // silently leaving the change unstaged, but only for this
+        // unattributed case, never by sweeping up paths some other
+        // group is already carrying with a real identity.
+        return this.repo.commitAll("auto", {
+          author: { name: FALLBACK_IDENTITY.name, email: FALLBACK_IDENTITY.email ?? "agent@brain.local" },
+        });
+      }
       for (const group of groups) {
         try {
           const sha = await this.repo.commitAll(commitMessage(group.paths), {

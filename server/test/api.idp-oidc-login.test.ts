@@ -33,11 +33,13 @@ async function startFakeIssuer() {
   let nextClaims: Partial<IssuerClaims> = {};
   let discoveryIssuer: string | undefined;
   let omitExp = false;
+  let tokenEndpointHits = 0;
 
   const server = Bun.serve({
     port: 0,
     fetch: async (req) => {
       const url = new URL(req.url);
+      if (url.pathname === "/token" && req.method === "POST") tokenEndpointHits++;
       if (url.pathname === "/.well-known/openid-configuration") {
         return Response.json({
           issuer: discoveryIssuer ?? base(),
@@ -98,6 +100,9 @@ async function startFakeIssuer() {
     setOmitExp(v: boolean) {
       omitExp = v;
     },
+    tokenEndpointHits() {
+      return tokenEndpointHits;
+    },
     stop() {
       server.stop(true);
     },
@@ -147,7 +152,7 @@ function cookiePair(setCookieHeader: string | null): string {
 function bindCookieFrom(res: Response): string {
   const pair = res.headers
     .getSetCookie()
-    .find((c) => c.startsWith("brainmd_idp_bind="));
+    .find((c) => c.startsWith("brainmd_idp_bind_dev="));
   if (!pair) throw new Error("no bind cookie on the callback response");
   return pair.split(";")[0] ?? "";
 }
@@ -156,7 +161,7 @@ async function startFlow(): Promise<{ cookie: string; state: string; nonce: stri
   const res = await handle.app.handle(new Request("http://localhost/api/auth/idp/oidc/start"));
   expect(res.status).toBe(302);
   const cookie = cookiePair(res.headers.get("set-cookie"));
-  const flow = readFlowCookie(cookie);
+  const flow = readFlowCookie(cookie, false);
   if (!flow) throw new Error("flow cookie did not round-trip");
   return { cookie, state: flow.state, nonce: flow.nonce ?? "" };
 }
@@ -261,7 +266,7 @@ describe("OIDC login: happy path", () => {
     const cbRes = await callback({ cookie, state });
     const code = redirectTarget(cbRes).searchParams.get("login_code");
 
-    const res = await exchange(code, "brainmd_idp_bind=not-the-real-secret");
+    const res = await exchange(code, "brainmd_idp_bind_dev=not-the-real-secret");
     expect(res.status).toBe(400);
   });
 });
@@ -331,6 +336,19 @@ describe("OIDC login: rejected flows redirect to the login page with a generic e
     const res = await callback({ cookie, state });
     expect(redirectTarget(res).searchParams.get("login_error")).not.toBeNull();
     expect(redirectTarget(res).searchParams.get("login_code")).toBeNull();
+  });
+
+  // Regression: the issuer mismatch used to be checked only after the
+  // code exchange, so the client secret had already been POSTed to the
+  // discovery document's (attacker-controlled) token endpoint by the
+  // time the mismatch was caught. The check must run before that POST.
+  test("the client secret is never sent to the token endpoint when the discovery issuer mismatches", async () => {
+    await setup();
+    issuer.setDiscoveryIssuer("http://attacker.example");
+    const { cookie, state, nonce } = await startFlow();
+    issuer.setNextClaims({ nonce });
+    await callback({ cookie, state });
+    expect(issuer.tokenEndpointHits()).toBe(0);
   });
 
   // Regression: jose's requiredClaims defaulted to empty, an ID token
