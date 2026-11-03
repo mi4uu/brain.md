@@ -17,9 +17,13 @@ import { LOCAL_SUB } from "./identity";
 //
 // Only the SHA-256 hash of a token is ever persisted or kept as a map
 // key, never the plaintext. Lookups hash the incoming bearer value and
-// compare with timingSafeEqual so a token can't be recovered by timing
-// a byte-by-byte guess. Files predating this change stored plaintext
-// tokens under a "token" field; load() migrates those in place.
+// look it up by that hash (Map.get, not a byte-by-byte comparison): an
+// attacker who doesn't already know the full token has nothing to time
+// a guess against, since SHA-256 output isn't incrementally comparable
+// the way a raw string compare would be. This is not a timingSafeEqual
+// call; none is needed here. Files predating this change stored
+// plaintext tokens under a "token" field; load() migrates those in
+// place.
 
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 const REL = ".brain/tokens.json";
