@@ -4,6 +4,7 @@ import type { TokenStore } from "../auth/tokens";
 import type { LoginLimiter } from "../auth/login-limiter";
 import { hasExternalProvider, type LoginConfig } from "../auth/login-config";
 import { hashPassword, verifyPassword } from "../auth/hasher";
+import { checkOwnerPassword } from "../auth/password-policy";
 import { requireOwner } from "./perm-guard";
 import { getClientIp } from "./client-ip";
 
@@ -120,29 +121,30 @@ export function authRoutes(
       "/api/auth/login",
       async ({ body, set, request, server }) => {
         const ip = getClientIp(request, server);
-        const gate = loginLimiter.check(ip);
-        if (!gate.allowed) {
-          set.status = 429;
-          set.headers["retry-after"] = String(gate.retryAfterSeconds);
-          return { error: "too many failed attempts, try again later", code: "RATE_LIMITED" };
-        }
-        await loginLimiter.globalBackoff();
-
-        if (!loginConfig.passwordLogin) {
-          set.status = 403;
-          return { error: "password login is disabled", code: "PASSWORD_LOGIN_DISABLED" };
-        }
-        if (!auth.isConfigured()) {
-          set.status = 409;
-          return { error: "auth not configured" };
-        }
-        const ok = await verifyPassword(body.password, auth.getHash() ?? "");
-        if (!ok) {
-          loginLimiter.recordFailure(ip);
+        const result = await checkOwnerPassword({
+          password: body.password,
+          authStore: auth,
+          loginConfig,
+          loginLimiter,
+          ip,
+        });
+        if (!result.ok) {
+          if (result.reason === "rate_limited") {
+            set.status = 429;
+            set.headers["retry-after"] = String(result.retryAfterSeconds);
+            return { error: "too many failed attempts, try again later", code: "RATE_LIMITED" };
+          }
+          if (result.reason === "disabled") {
+            set.status = 403;
+            return { error: "password login is disabled", code: "PASSWORD_LOGIN_DISABLED" };
+          }
+          if (result.reason === "not_configured") {
+            set.status = 409;
+            return { error: "auth not configured" };
+          }
           set.status = 401;
           return { error: "invalid password" };
         }
-        loginLimiter.recordSuccess(ip);
         const { token, expiresAt } = tokens.issue();
         return { token, expiresAt };
       },

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { createApp, type AppHandle } from "../src/app";
+import { hashPassword } from "../src/auth/hasher";
 
 // board-plan Part B regression test: the MCP OAuth 2.1 consent page
 // (oauth-flow.ts) now also accepts an already-valid web session token in
@@ -127,5 +128,133 @@ describe("POST /oauth/authorize: a logged-in web session can substitute for the 
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("Incorrect password");
+  });
+});
+
+// Regression: the consent page's password field used to bypass both
+// loginConfig.passwordLogin and the brute-force limiter, see
+// password-policy.ts. These spin up their own app so they don't share
+// state with the default-config tests above.
+describe("POST /oauth/authorize: shares the login password policy", () => {
+  async function appWithPasswordLoginOff(): Promise<{ handle: AppHandle; dir: string }> {
+    const d = await mkdtemp(join(tmpdir(), "brain-consent-policy-"));
+    const h = createApp({
+      vaultDir: d,
+      gitAutocommit: false,
+      loginConfig: {
+        passwordLogin: false,
+        publicUrl: "http://localhost",
+        github: { clientId: "gh-client", clientSecret: "gh-secret" },
+        allowedEmails: ["owner@example.com"],
+        allowedDomains: [],
+      },
+    });
+    // Set a password hash directly (bypassing HTTP, which now requires
+    // an owner session for /api/auth/set once an IdP is active, see
+    // auth-middleware.ts): the only thing this test needs is a hash to
+    // exist so it can submit a password that's actually correct.
+    await h.authStore.save(await hashPassword("correct-password"));
+    return { handle: h, dir: d };
+  }
+
+  test("a correct password is refused when password login is off", async () => {
+    const { handle: h, dir: d } = await appWithPasswordLoginOff();
+    try {
+      const reg = await h.app.handle(
+        new Request("http://localhost/oauth/register", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ client_name: "test client", redirect_uris: ["https://example.com/cb"] }),
+        }),
+      );
+      const { client_id } = await reg.json();
+      const { form } = authorizeParams(client_id);
+      const res = await h.app.handle(
+        new Request("http://localhost/oauth/authorize", {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ ...form, decision: "allow", password: "correct-password" }).toString(),
+        }),
+      );
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain("Incorrect password");
+    } finally {
+      await rm(d, { recursive: true, force: true });
+    }
+  });
+
+  test("a lockout from wrong attempts on the consent page also locks out /api/auth/login", async () => {
+    const dir2 = await mkdtemp(join(tmpdir(), "brain-consent-ratelimit-"));
+    const h = createApp({ vaultDir: dir2, gitAutocommit: false });
+    try {
+      await h.app.handle(
+        new Request("http://localhost/api/auth/set", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ newPassword: "correct-password" }),
+        }),
+      );
+      const reg = await h.app.handle(
+        new Request("http://localhost/oauth/register", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ client_name: "test client", redirect_uris: ["https://example.com/cb"] }),
+        }),
+      );
+      const { client_id } = await reg.json();
+      const { form } = authorizeParams(client_id);
+
+      // MAX_FAILURES wrong passwords through the consent page.
+      for (let i = 0; i < 5; i++) {
+        await h.app.handle(
+          new Request("http://localhost/oauth/authorize", {
+            method: "POST",
+            headers: { "content-type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({ ...form, decision: "allow", password: "wrong" }).toString(),
+          }),
+        );
+      }
+
+      const loginRes = await h.app.handle(
+        new Request("http://localhost/api/auth/login", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ password: "correct-password" }),
+        }),
+      );
+      expect(loginRes.status).toBe(429);
+    } finally {
+      await rm(dir2, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("GET /oauth/authorize: the consent page's script is same-origin, not inline", () => {
+  // CSP is script-src 'self' with no nonce (api.security-headers.test.ts
+  // covers the header itself); an inline <script> would be silently
+  // blocked by the browser, leaving anyone without a password (IdP-only
+  // deployments) unable to prefill the session token and so unable to
+  // approve an MCP client at all.
+  test("the consent page has no inline script, only a same-origin <script src>", async () => {
+    const clientId = await register();
+    const { form } = authorizeParams(clientId);
+    const url =
+      `http://localhost/oauth/authorize?response_type=code&client_id=${clientId}` +
+      `&redirect_uri=${encodeURIComponent(form.redirect_uri)}&code_challenge=${form.code_challenge}` +
+      `&code_challenge_method=S256&resource=${encodeURIComponent(form.resource)}`;
+    const res = await handle.app.handle(new Request(url));
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('<script src="/oauth/consent.js"></script>');
+    expect(html).not.toMatch(/<script>[^<]/);
+  });
+
+  test("GET /oauth/consent.js serves the script referenced by the consent page", async () => {
+    const res = await handle.app.handle(new Request("http://localhost/oauth/consent.js"));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("javascript");
+    const body = await res.text();
+    expect(body).toContain("brain.auth.token");
   });
 });

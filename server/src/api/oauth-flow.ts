@@ -3,6 +3,10 @@ import type { AuthStore } from "../auth/store";
 import type { OAuthStore } from "../auth/oauth-store";
 import type { OAuthClientStore, ClientRegistrationRequest } from "../auth/oauth-clients";
 import type { TokenStore } from "../auth/tokens";
+import type { LoginConfig } from "../auth/login-config";
+import type { LoginLimiter } from "../auth/login-limiter";
+import { checkOwnerPassword } from "../auth/password-policy";
+import { getClientIp } from "./client-ip";
 import { CimdResolver, isCimdClientId, type ClientMetadata } from "../auth/cimd";
 import { CSP } from "../web/serve";
 import { LOCAL_SUB } from "../auth/identity";
@@ -128,18 +132,25 @@ function consentPage(params: {
       </div>
     </form>
   </div>
-  <script>
-    // If this browser already has a web-app session (password login or an
-    // external provider login), reuse it: the password field becomes
-    // optional in that case, see POST /oauth/authorize.
-    try {
-      var tok = window.localStorage.getItem("brain.auth.token");
-      if (tok) document.getElementById("session_token").value = tok;
-    } catch (e) {}
-  </script>
+  <script src="/oauth/consent.js"></script>
 </body>
 </html>`;
 }
+
+// Served from its own same-origin path rather than inlined: the page's
+// CSP is script-src 'self' with no nonce, an inline <script> would just
+// be blocked, silently dropping the session-token prefill and leaving
+// anyone without a password (IdP-only deployments) unable to approve an
+// MCP client at all.
+const CONSENT_SCRIPT = `
+// If this browser already has a web-app session (password login or an
+// external provider login), reuse it: the password field becomes
+// optional in that case, see POST /oauth/authorize.
+try {
+  var tok = window.localStorage.getItem("brain.auth.token");
+  if (tok) document.getElementById("session_token").value = tok;
+} catch (e) {}
+`;
 
 function redirectWithError(redirectUri: string, state: string, error: string, description?: string): Response {
   const u = new URL(redirectUri);
@@ -157,6 +168,8 @@ export function oauthFlowRoutes(
   clients: OAuthClientStore,
   cimd: CimdResolver,
   tokens: TokenStore,
+  loginConfig: LoginConfig,
+  loginLimiter: LoginLimiter,
 ) {
   // V67: resolve client_id to a (displayName, redirect_uris) pair. Two paths:
   //   - HTTPS URL → fetch CIMD document, validate, cache
@@ -184,6 +197,12 @@ export function oauthFlowRoutes(
 
   return (
     new Elysia()
+
+      // ----- GET /oauth/consent.js (same-origin script for the consent page) -----
+      .get("/oauth/consent.js", ({ set }) => {
+        set.headers["content-type"] = "application/javascript; charset=utf-8";
+        return CONSENT_SCRIPT;
+      })
 
       // ----- POST /oauth/register (RFC 7591 Dynamic Client Registration) -----
       .post(
@@ -321,7 +340,7 @@ export function oauthFlowRoutes(
       // ----- POST /oauth/authorize (consent submission) -----
       .post(
         "/oauth/authorize",
-        async ({ body, set }) => {
+        async ({ body, set, request, server }) => {
           const b = body as Record<string, string>;
           const decision = String(b.decision ?? "");
           const clientId = String(b.client_id ?? "");
@@ -364,17 +383,34 @@ export function oauthFlowRoutes(
           // just as much as one who already typed the password once this
           // browser session. Password is tried first so the default
           // password-only deployment behaves exactly as before it.
+          //
+          // The password check goes through the same policy as POST
+          // /api/auth/login (checkOwnerPassword): passwordLogin=false
+          // and the per-IP/global brute-force limiter both have to apply
+          // here too, or this page is a second, unprotected door to the
+          // same password.
           let sub: string = LOCAL_SUB;
           let authenticated = false;
 
-          const hash = authStore.getHash();
-          if (!hash && !sessionToken) {
+          if (!authStore.isConfigured() && !sessionToken) {
             return redirectWithError(redirectUri, state, "server_error", "vault password missing");
           }
-          if (password && hash && (await Bun.password.verify(password, hash))) {
-            authenticated = true;
-            sub = LOCAL_SUB;
-          } else if (sessionToken && tokens.validate(sessionToken)) {
+          if (password) {
+            const ip = getClientIp(request, server);
+            const result = await checkOwnerPassword({ password, authStore, loginConfig, loginLimiter, ip });
+            if (result.ok) {
+              authenticated = true;
+              sub = LOCAL_SUB;
+            } else if (result.reason === "rate_limited") {
+              set.status = 429;
+              set.headers["retry-after"] = String(result.retryAfterSeconds);
+              return { error: "too many failed attempts, try again later", code: "RATE_LIMITED" };
+            }
+            // disabled / not_configured / invalid all fall through to the
+            // generic "Incorrect password" consent-page error below,
+            // same as a plain wrong password: never say which it was.
+          }
+          if (!authenticated && sessionToken && tokens.validate(sessionToken)) {
             authenticated = true;
             sub = tokens.subFor(sessionToken) ?? LOCAL_SUB;
           }
