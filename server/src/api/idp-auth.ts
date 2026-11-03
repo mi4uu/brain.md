@@ -48,6 +48,23 @@ function appOrigin(cfg: LoginConfig): string {
   return (cfg.publicUrl ?? "").replace(/\/+$/, "");
 }
 
+// Every cookie's Secure flag turns on this, never a raw string-prefix
+// check on appOrigin()/origin: BRAINMD_PUBLIC_URL is validated at startup
+// via new URL() (login-config.ts), which parses and normalises the
+// scheme, but appOrigin() hands back whatever raw string was configured.
+// "HTTPS://brain.example.com" parses fine and passes that validation
+// (new URL() lowercases the scheme before comparing it), yet a
+// ".startsWith(\"https://\")" test against the raw, un-normalised string
+// fails, silently serving a dev-grade cookie (no Secure, no __Host-) over
+// a real HTTPS deployment.
+function isHttpsOrigin(origin: string): boolean {
+  try {
+    return new URL(origin).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 // arctic exports this from its oauth2 module but doesn't re-export it
 // from the package root (only generateCodeVerifier/generateState are),
 // so PKCE's S256 transform gets its own copy here.
@@ -88,19 +105,34 @@ export function idpAuthRoutes(
   return new Elysia()
     .get("/api/auth/idp/:provider/start", async ({ params, set }) => {
       const provider = params.provider;
-      const secure = appOrigin(loginConfig).startsWith("https://");
+      const secure = isHttpsOrigin(appOrigin(loginConfig));
       const bind = randomBytes(32).toString("base64url");
 
       if (provider === "oidc" && oidc) {
         const state = generateState();
         const verifier = generateCodeVerifier();
         const nonce = randomBytes(16).toString("base64url");
-        const authUrl = await oidc.buildAuthorizationUrl({
-          state,
-          codeChallenge: s256CodeChallenge(verifier),
-          nonce,
-          redirectUri: redirectUriFor("oidc"),
-        });
+        let authUrl: URL;
+        try {
+          // Discovery (and its issuer check, see oidc-provider.ts) happens
+          // inside here, on the first call. A mismatched or unreachable
+          // discovery document must fail the redirect itself, not be
+          // discovered only once something later tries to use jwks_uri or
+          // token_endpoint for real.
+          authUrl = await oidc.buildAuthorizationUrl({
+            state,
+            codeChallenge: s256CodeChallenge(verifier),
+            nonce,
+            redirectUri: redirectUriFor("oidc"),
+          });
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[idp-auth] oidc start failed:`,
+            e instanceof Error ? e.message : String(e),
+          );
+          return loginRedirect(appOrigin(loginConfig), "login failed");
+        }
         set.headers["set-cookie"] = serializeFlowCookie(
           { provider: "oidc", state, verifier, nonce, bind, expiresAt: Date.now() + 600_000 },
           secure,
@@ -130,7 +162,7 @@ export function idpAuthRoutes(
     .get("/api/auth/idp/:provider/callback", async ({ params, query, set, request }) => {
       const provider = params.provider;
       const origin = appOrigin(loginConfig);
-      const secure = origin.startsWith("https://");
+      const secure = isHttpsOrigin(origin);
       // Clear the flow cookie unconditionally, it's single-use regardless
       // of whether this callback succeeds.
       set.headers["set-cookie"] = clearFlowCookie(secure);
@@ -207,7 +239,7 @@ export function idpAuthRoutes(
     .post(
       "/api/auth/idp/exchange",
       ({ body, set, request }) => {
-        const secure = appOrigin(loginConfig).startsWith("https://");
+        const secure = isHttpsOrigin(appOrigin(loginConfig));
         set.headers["set-cookie"] = clearBindCookie(secure);
         const bind = readBindCookie(request.headers.get("cookie"), secure);
         // No bind cookie at all means either this isn't the browser the

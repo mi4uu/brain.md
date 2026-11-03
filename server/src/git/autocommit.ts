@@ -50,6 +50,16 @@ export class Autocommit {
 
   // Returns the last commit sha made (or null if nothing was dirty). A
   // single flush can produce more than one commit, see groupByActor.
+  //
+  // Design: snapshot pendingPaths synchronously right here, before any
+  // await, then stage and commit exactly those snapshotted paths per
+  // actor. A notify() landing on the SAME path while a group's own commit
+  // is in flight below can only be for a path that group already removed
+  // from pendingPaths, so there's no snapshot/clear race to speak of; the
+  // one real race was between the dirty check's await and queuing a
+  // commit from zero groups (see below), closed by folding anything that
+  // arrived during that one await into this same snapshot instead of
+  // trying to special-case what the dirty check saw.
   async flush(): Promise<string | null> {
     if (this.timer !== null) {
       clearTimeout(this.timer);
@@ -61,42 +71,73 @@ export class Autocommit {
     }
     if (!this.opts.enabled) return null;
     if (!(await this.repo.isEnabled())) return null;
-    const groups = groupByActor(this.pendingPaths);
+
+    const snapshot = new Map(this.pendingPaths);
     this.pendingPaths.clear();
     this.inFlight = true;
     let lastSha: string | null = null;
     try {
       const dirty = await this.repo.hasChanges();
-      if (!dirty) return null;
+      // A notify() that landed while the hasChanges() await above was in
+      // flight is still sitting in pendingPaths right now (notify() only
+      // clears via a flush's own snapshot). Fold it into THIS flush's
+      // snapshot instead of leaving it for the zero-groups fallback below
+      // to sweep up unattributed, or leaving it queued for a later flush
+      // to repeat the same race against.
+      if (this.pendingPaths.size > 0) {
+        for (const [path, identity] of this.pendingPaths) snapshot.set(path, identity);
+        this.pendingPaths.clear();
+      }
+      if (!dirty && snapshot.size === 0) return null;
+
+      const groups = groupByActor(snapshot);
       if (groups.length === 0) {
-        // Dirty repo, nothing was notified (an external edit, a restart
-        // that lost pendingPaths, or a direct flush() call). v0.4.12
-        // always committed in this case; preserve that instead of
-        // silently leaving the change unstaged, but only for this
-        // unattributed case, never by sweeping up paths some other
-        // group is already carrying with a real identity.
-        return this.repo.commitAll("auto", {
+        // Dirty repo, nothing was ever notified (an external edit, a
+        // restart that lost pendingPaths, or a direct flush() call).
+        // v0.4.12 always committed in this case; preserve that instead
+        // of silently leaving the change unstaged.
+        lastSha = await this.repo.commitAll("auto", {
           author: { name: FALLBACK_IDENTITY.name, email: FALLBACK_IDENTITY.email ?? "agent@brain.local" },
         });
-      }
-      for (const group of groups) {
-        try {
-          const sha = await this.repo.commitAll(commitMessage(group.paths), {
-            paths: group.paths,
-            author: { name: group.identity.name, email: group.identity.email ?? "agent@brain.local" },
-            trailers: trailersFor(group.identity),
+      } else {
+        let anyGroupFailed = false;
+        for (const group of groups) {
+          try {
+            const sha = await this.repo.commitAll(commitMessage(group.paths), {
+              paths: group.paths,
+              author: { name: group.identity.name, email: group.identity.email ?? "agent@brain.local" },
+              trailers: trailersFor(group.identity),
+            });
+            if (sha) lastSha = sha;
+          } catch (e) {
+            // A group's commit can fail for reasons --ignore-errors in
+            // git.ts doesn't cover (disk full, a lock held by another
+            // process). Put its paths back instead of dropping them: a
+            // later flush (notify() debounce, or the retry below) gets
+            // another shot instead of silently losing the change.
+            console.warn("[autocommit] group commit failed, will retry:", e);
+            anyGroupFailed = true;
+            for (const path of group.paths) {
+              if (!this.pendingPaths.has(path)) this.pendingPaths.set(path, group.identity);
+            }
+          }
+        }
+        // Every group above staged and committed exactly its own
+        // snapshotted paths, by pathspec, never a sweeping `git add -A`.
+        // Anything still dirty after all of them belongs to no notified
+        // actor at all (an external edit alongside the attributed ones):
+        // one last fallback commit for it, same author as the no-groups
+        // case above, instead of leaving it unstaged until some later
+        // flush happens to catch it. Skipped whenever a group failed:
+        // its paths are still dirty too, now queued above for the retry
+        // this method schedules below, and the fallback can't tell its
+        // dirt apart from theirs, so it would otherwise re-author a
+        // retry-pending group's change under the fallback identity.
+        if (!anyGroupFailed && (await this.repo.hasChanges())) {
+          const sha = await this.repo.commitAll("auto", {
+            author: { name: FALLBACK_IDENTITY.name, email: FALLBACK_IDENTITY.email ?? "agent@brain.local" },
           });
           if (sha) lastSha = sha;
-        } catch (e) {
-          // A group's commit can fail for reasons --ignore-errors in
-          // git.ts doesn't cover (disk full, a lock held by another
-          // process). Put its paths back instead of dropping them: a
-          // later flush (notify() debounce, or the retry below) gets
-          // another shot instead of silently losing the change.
-          console.warn("[autocommit] group commit failed, will retry:", e);
-          for (const path of group.paths) {
-            if (!this.pendingPaths.has(path)) this.pendingPaths.set(path, group.identity);
-          }
         }
       }
     } finally {

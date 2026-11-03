@@ -36,6 +36,18 @@ export class OidcProvider {
   // Fetched once at startup and cached for the process lifetime, the
   // discovery document practically never changes, and refetching it on
   // every login would add a round trip to the critical path for nothing.
+  //
+  // Issuer is validated here, before the document is cached or handed to
+  // ANY caller, including buildAuthorizationUrl: that one only wants a
+  // redirect target for the browser, it never reaches getJwks() or the
+  // token endpoint, so checking the issuer later (once something tries to
+  // use jwks_uri or token_endpoint for real) would still let a mismatched
+  // document's authorization_endpoint serve as the redirect target for
+  // every login started before that later check ever ran, and would
+  // leave the bad document cached for every call after. A document
+  // served from a compromised or misconfigured path could otherwise
+  // claim any issuer and point the whole flow at attacker-controlled
+  // hosts.
   async discover(): Promise<DiscoveryDocument> {
     if (this.discovery) return this.discovery;
     const issuer = this.cfg.issuer.replace(/\/+$/, "");
@@ -55,31 +67,18 @@ export class OidcProvider {
     if (!doc.authorization_endpoint || !doc.token_endpoint || !doc.jwks_uri) {
       throw new OidcDiscoveryError(`OIDC discovery document ${url} is missing required fields`);
     }
-    this.discovery = doc;
-    return doc;
-  }
-
-  // Both callers that actually USE a discovered endpoint, rather than
-  // just building a redirect URL for the browser, run this first: the
-  // token endpoint gets the client secret and the jwks_uri gets trusted
-  // for signature verification, so neither may come from a discovery
-  // document whose claimed issuer doesn't match the one we configured. A
-  // document served from a compromised or misconfigured path could
-  // otherwise claim any issuer and point both at attacker-controlled
-  // hosts.
-  private checkIssuer(doc: DiscoveryDocument): void {
-    const configuredIssuer = this.cfg.issuer.replace(/\/+$/, "");
-    if (doc.issuer.replace(/\/+$/, "") !== configuredIssuer) {
+    if (doc.issuer.replace(/\/+$/, "") !== issuer) {
       throw new OidcDiscoveryError(
         `OIDC discovery document issuer (${doc.issuer}) does not match the configured issuer (${this.cfg.issuer})`,
       );
     }
+    this.discovery = doc;
+    return doc;
   }
 
   private async getJwks() {
     if (!this.jwks) {
       const doc = await this.discover();
-      this.checkIssuer(doc);
       this.jwks = createRemoteJWKSet(new URL(doc.jwks_uri));
     }
     return this.jwks;
@@ -115,7 +114,6 @@ export class OidcProvider {
     nonce: string;
   }): Promise<OidcIdentity> {
     const doc = await this.discover();
-    this.checkIssuer(doc);
     const body = new URLSearchParams({
       grant_type: "authorization_code",
       code: params.code,

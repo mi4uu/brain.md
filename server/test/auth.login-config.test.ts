@@ -124,6 +124,24 @@ describe("loadLoginConfig / validateLoginConfig", () => {
     expect(() => validateLoginConfig(cfg)).not.toThrow();
   });
 
+  // Regression: idp-auth.ts derives a cookie's Secure flag from
+  // appOrigin(cfg).startsWith("https://"), a raw string-prefix test
+  // against whatever's stored on cfg.publicUrl. An uppercase scheme
+  // passed that same validation above (new URL() lowercases the scheme
+  // before comparing it) while leaving the stored string's casing alone,
+  // so the prefix test then failed and served a dev-grade, non-Secure,
+  // non-__Host- cookie over a real HTTPS deployment. validateLoginConfig
+  // must normalise the stored string, not just validate it.
+  test("an uppercase scheme in BRAINMD_PUBLIC_URL is normalised to lowercase", () => {
+    process.env.BRAINMD_GITHUB_CLIENT_ID = "id";
+    process.env.BRAINMD_GITHUB_CLIENT_SECRET = "secret";
+    process.env.BRAINMD_OAUTH_ALLOWED_EMAILS = "me@example.com";
+    process.env.BRAINMD_PUBLIC_URL = "HTTPS://vault.example.com";
+    const cfg = loadLoginConfig();
+    validateLoginConfig(cfg);
+    expect(cfg.publicUrl).toBe("https://vault.example.com");
+  });
+
   test("OIDC scopes default to openid email profile", () => {
     process.env.BRAINMD_OIDC_ISSUER = "https://idp.example.com";
     process.env.BRAINMD_OIDC_CLIENT_ID = "id";
@@ -152,6 +170,22 @@ describe("isAllowed", () => {
     const cfg = loadLoginConfig();
     cfg.allowedDomains = ["example.com"];
     expect(isAllowed(cfg, { email: '"a@example.com@b"@evil.test' })).toBe(false);
+  });
+
+  // Regression: the domain check sliced everything after the LAST '@'
+  // regardless of whether what came before it was a syntactically
+  // plausible mailbox, so a malformed address with an empty or
+  // doubled-up local part still produced a domain to compare.
+  test("rejects a malformed mailbox with an empty local part", () => {
+    const cfg = loadLoginConfig();
+    cfg.allowedDomains = ["example.com"];
+    expect(isAllowed(cfg, { email: "@example.com" })).toBe(false);
+  });
+
+  test("rejects a malformed mailbox with a bare unquoted '@' in the local part", () => {
+    const cfg = loadLoginConfig();
+    cfg.allowedDomains = ["example.com"];
+    expect(isAllowed(cfg, { email: "a@@example.com" })).toBe(false);
   });
 
   test("matches by OIDC group when configured", () => {

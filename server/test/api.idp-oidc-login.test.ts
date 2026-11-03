@@ -326,29 +326,52 @@ describe("OIDC login: rejected flows redirect to the login page with a generic e
   // handed straight to jwtVerify, a discovery document (served over
   // whatever the issuer URL happens to resolve to) claiming a different
   // issuer than configured was accepted.
-  test("discovery document issuer does not match the configured issuer", async () => {
+  //
+  // The check now runs inside discover() itself, before the document is
+  // cached or handed to any caller, so a mismatch fails /start directly
+  // (no flow cookie, no redirect to the provider) rather than only
+  // surfacing once something later in the flow (the callback's token
+  // validation) tries to use the cached document for real.
+  test("discovery document issuer does not match the configured issuer fails /start itself", async () => {
     await setup();
-    // Discovery is fetched (and cached) during /start, the override has
-    // to be in place before that first fetch.
     issuer.setDiscoveryIssuer("http://attacker.example");
-    const { cookie, state, nonce } = await startFlow();
-    issuer.setNextClaims({ nonce });
-    const res = await callback({ cookie, state });
+    const res = await handle.app.handle(new Request("http://localhost/api/auth/idp/oidc/start"));
+    expect(res.status).toBe(302);
     expect(redirectTarget(res).searchParams.get("login_error")).not.toBeNull();
-    expect(redirectTarget(res).searchParams.get("login_code")).toBeNull();
+    // Never redirected to the (attacker-controlled) authorization
+    // endpoint, and no flow cookie set for a callback to pick up.
+    expect(redirectTarget(res).hostname).toBe("localhost");
+    expect(res.headers.get("set-cookie")).toBeNull();
   });
 
   // Regression: the issuer mismatch used to be checked only after the
   // code exchange, so the client secret had already been POSTed to the
   // discovery document's (attacker-controlled) token endpoint by the
-  // time the mismatch was caught. The check must run before that POST.
+  // time the mismatch was caught. The check must run before that POST,
+  // in fact before anything from the mismatched document is used at all.
   test("the client secret is never sent to the token endpoint when the discovery issuer mismatches", async () => {
     await setup();
     issuer.setDiscoveryIssuer("http://attacker.example");
-    const { cookie, state, nonce } = await startFlow();
-    issuer.setNextClaims({ nonce });
-    await callback({ cookie, state });
+    await handle.app.handle(new Request("http://localhost/api/auth/idp/oidc/start"));
     expect(issuer.tokenEndpointHits()).toBe(0);
+  });
+
+  // Regression: a mismatched discovery document used to get cached
+  // regardless (this.discovery was set before the issuer was checked), so
+  // even fixing the mismatch later in the issuer's response couldn't
+  // recover without a process restart. It must only cache once the
+  // issuer check actually passes.
+  test("a fixed discovery document is usable after an earlier mismatched fetch", async () => {
+    await setup();
+    issuer.setDiscoveryIssuer("http://attacker.example");
+    const failed = await handle.app.handle(new Request("http://localhost/api/auth/idp/oidc/start"));
+    expect(redirectTarget(failed).searchParams.get("login_error")).not.toBeNull();
+
+    issuer.setDiscoveryIssuer(undefined);
+    const ok = await handle.app.handle(new Request("http://localhost/api/auth/idp/oidc/start"));
+    expect(ok.status).toBe(302);
+    const authUrl = new URL(ok.headers.get("location")!);
+    expect(authUrl.origin).toBe(issuer.base);
   });
 
   // Regression: jose's requiredClaims defaulted to empty, an ID token
@@ -438,6 +461,23 @@ describe("anonymous instance takeover regression", () => {
       }),
     );
     expect(res.status).toBe(200);
+  });
+});
+
+describe("cookie security follows the parsed scheme, not a raw string prefix", () => {
+  // Regression: idp-auth.ts used to derive a cookie's Secure flag with
+  // appOrigin(cfg).startsWith("https://"), a raw prefix test. An
+  // uppercase scheme passes validateLoginConfig's URL-based check (it
+  // lowercases the scheme before comparing) but failed that prefix test,
+  // serving a dev-grade, non-Secure, non-__Host- cookie over what's
+  // actually an HTTPS deployment.
+  test("an uppercase https scheme in publicUrl still gets a Secure, __Host- cookie", async () => {
+    await setup({ publicUrl: "HTTPS://localhost" });
+    const res = await handle.app.handle(new Request("http://localhost/api/auth/idp/oidc/start"));
+    expect(res.status).toBe(302);
+    const setCookie = res.headers.get("set-cookie") ?? "";
+    expect(setCookie.startsWith("__Host-brainmd_idp_flow=")).toBe(true);
+    expect(setCookie).toContain("Secure");
   });
 });
 

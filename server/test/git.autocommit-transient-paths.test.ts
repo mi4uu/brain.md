@@ -56,7 +56,12 @@ describe("Autocommit: a group that fails to commit is kept for retry", () => {
     let calls = 0;
     const failOnce: Pick<GitRepo, "isEnabled" | "hasChanges" | "commitAll"> = {
       isEnabled: async () => true,
-      hasChanges: async () => true,
+      // Real dirty state, not hardcoded true: flush() checks hasChanges()
+      // again after the per-actor loop (to pick up anything left dirty by
+      // no notified actor at all), and a stub that always says "dirty"
+      // regardless of what actually got committed would make that second
+      // check fire a spurious extra commitAll call of its own.
+      hasChanges: () => repo.hasChanges(),
       commitAll: async (message, opts) => {
         calls++;
         if (calls === 1) throw new Error("simulated: lock held by another process");

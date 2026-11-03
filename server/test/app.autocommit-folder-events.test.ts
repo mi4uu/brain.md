@@ -52,6 +52,31 @@ describe("app wiring: folder mutation events into autocommit", () => {
     expect(tracked).toBe("");
   });
 
+  // Must-fix regression: deleteFolder() only ever snapshotted listTree()'s
+  // notes (walk() skips .media entirely, it isn't shown in the note
+  // tree), so a non-markdown attachment living under the deleted folder
+  // was never queued to autocommit at all: not attributed to the actor
+  // who deleted it, not staged by any group, left for some other actor's
+  // unrelated commit (or no commit at all) to eventually sweep up.
+  test("deleting a folder also commits the deletion of a non-markdown attachment under it", async () => {
+    await as(actorA, () => h.vault.mkdirFolder("docs"));
+    await as(actorA, () => h.vault.writeNote("docs/a.md", "hello"));
+    await as(actorA, () => h.vault.writeMedia("docs/a.md", "img.png", new Uint8Array([1, 2, 3])));
+    await h.autocommit.flush();
+    expect(await h.repo.hasChanges()).toBe(false);
+
+    await as(actorB, () => h.vault.deleteFolder("docs"));
+    const sha = await h.autocommit.flush();
+    expect(sha).toBeTruthy();
+    expect(await h.repo.hasChanges()).toBe(false);
+
+    const proc = Bun.spawn(["git", "-C", dir, "ls-files", "docs"], { stdout: "pipe" });
+    const tracked = (await new Response(proc.stdout).text()).trim();
+    await proc.exited;
+    expect(tracked).toBe("");
+    expect(await authorsOf(sha!)).toBe("Bob");
+  });
+
   // Must-fix regression: creating a folder queued the directory path
   // itself. If another actor wrote a note under that folder before the
   // next flush, `git add -A -- <folder>` (run for the folder creator's

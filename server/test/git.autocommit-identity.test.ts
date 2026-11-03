@@ -26,6 +26,13 @@ async function commitCount(): Promise<number> {
   return Number(out.trim());
 }
 
+async function authorOf(sha: string): Promise<string> {
+  const proc = Bun.spawn(["git", "-C", dir, "log", "-1", "--format=%an", sha], { stdout: "pipe" });
+  const out = await new Response(proc.stdout).text();
+  await proc.exited;
+  return out.trim();
+}
+
 describe("Autocommit: identity grouping", () => {
   test("notify() with no identity falls back to the pre-identity default author", async () => {
     const ac = new Autocommit(repo, { enabled: true, debounceMs: 50 });
@@ -129,6 +136,34 @@ describe("Autocommit: identity grouping", () => {
   // The fallback above must never swallow paths another group is already
   // carrying with a real identity: it only fires when there is NOTHING
   // queued at all.
+  // Must-fix regression: flush() used to snapshot pendingPaths and clear
+  // it BEFORE awaiting hasChanges(). A notify() landing during that await
+  // (a concurrent request's mutation, in production) was computed against
+  // zero groups from the earlier snapshot, so the zero-groups fallback
+  // below swept the whole dirty tree, including that notified actor's
+  // change, under the fallback author instead of their own.
+  test("a notify() racing the dirty check still gets its own author, not the fallback's", async () => {
+    const ac = new Autocommit(repo, { enabled: true, debounceMs: 50 });
+    const owner = localIdentity("Owner", "owner@brain.local");
+
+    const originalHasChanges = repo.hasChanges.bind(repo);
+    let fired = false;
+    (repo as unknown as { hasChanges: () => Promise<boolean> }).hasChanges = async () => {
+      if (!fired) {
+        fired = true;
+        // Simulates a concurrent request's mutation landing while this
+        // flush's hasChanges() call is still in flight.
+        await writeFile(join(dir, "a.md"), "a");
+        ac.notify("a.md", owner);
+      }
+      return originalHasChanges();
+    };
+
+    const sha = await ac.flush();
+    expect(sha).toBeTruthy();
+    expect(await authorOf(sha!)).toBe("Owner");
+  });
+
   test("flush() with queued paths never takes the no-groups fallback", async () => {
     const ac = new Autocommit(repo, { enabled: true, debounceMs: 50 });
     const owner = localIdentity("Owner", "owner@brain.local");

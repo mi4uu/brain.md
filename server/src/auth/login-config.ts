@@ -130,6 +130,15 @@ export function validateLoginConfig(cfg: LoginConfig): void {
         `BRAINMD_PUBLIC_URL (${cfg.publicUrl}) must be https:// (plain http:// is only allowed for localhost/127.0.0.1 development)`,
       );
     }
+    // Replace the raw env string with new URL()'s normalised form (scheme
+    // and host lowercased, trailing slash added then stripped below): a
+    // value like "HTTPS://brain.example.com" passes the protocol check
+    // above (new URL() lowercases the scheme before comparing it) but
+    // would otherwise keep its original casing everywhere else this
+    // config is read, including idp-auth.ts's cookie Secure flag, which a
+    // defensive parse there covers too, but this is the one place that
+    // actually gets to fix the value instead of just working around it.
+    cfg.publicUrl = url.toString().replace(/\/+$/, "");
     const hasGroupAllowlist = Boolean(cfg.oidc?.groupsClaim && cfg.oidc.allowedGroups);
     const hasAllowlist =
       cfg.allowedEmails.length > 0 || cfg.allowedDomains.length > 0 || hasGroupAllowlist;
@@ -139,6 +148,21 @@ export function validateLoginConfig(cfg: LoginConfig): void {
       );
     }
   }
+}
+
+// Domain comparison only ever runs on a syntactically plausible mailbox:
+// a non-empty local part and a non-empty domain, where the local part is
+// either unquoted and contains no '@' of its own, or quoted end to end
+// (RFC 5321 quoted-string, which may legally contain '@'). Rejects things
+// like "@example.com" (empty local part) and "a@@example.com" (unquoted
+// local part with a bare '@' in it), which the lastIndexOf('@') split
+// below would otherwise still slice a domain out of and compare.
+function hasValidMailboxSyntax(email: string, at: number): boolean {
+  if (at <= 0 || at === email.length - 1) return false;
+  const local = email.slice(0, at);
+  const isQuoted = local.length >= 2 && local.startsWith('"') && local.endsWith('"');
+  if (!isQuoted && local.includes("@")) return false;
+  return true;
 }
 
 // Shared allowlist check: email and group membership are both "is this
@@ -155,7 +179,7 @@ export function isAllowed(
   // "example.com" and let an attacker pass an allowed-domain check with
   // a mailbox that actually lives at evil.test.
   const at = email.lastIndexOf("@");
-  const domain = at >= 0 ? email.slice(at + 1) : "";
+  const domain = hasValidMailboxSyntax(email, at) ? email.slice(at + 1) : "";
   if (domain && cfg.allowedDomains.includes(domain)) return true;
   if (cfg.oidc?.groupsClaim && cfg.oidc.allowedGroups && identity.groups) {
     if (identity.groups.some((g) => cfg.oidc!.allowedGroups!.includes(g))) return true;

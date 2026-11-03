@@ -35,9 +35,12 @@ export interface MutationEvent {
   kind: MutationKind;
   path: string;
   extra?: string;
-  // folder-delete: every note path (relative, pre-trash) that was under the
-  // deleted folder, so index/RAG listeners can drop each one individually
-  // instead of only hearing about the folder's own path.
+  // folder-delete: every tracked file (relative, pre-trash) that was under
+  // the deleted folder, notes AND non-markdown attachments alike, so index/
+  // RAG/autocommit listeners can drop or stage each one individually
+  // instead of only hearing about the folder's own path. index/RAG ignore
+  // entries that aren't markdown; autocommit stages and attributes every
+  // one of them.
   paths?: string[];
 }
 export type MutationListener = (event: MutationEvent) => void | Promise<void>;
@@ -319,14 +322,17 @@ export class Vault {
       throw new VaultError("refuse delete root/brain", "INVALID_PATH");
     }
     return this.withPathLock([norm], async () => {
-      // Snapshot the notes under this folder before trashing it, once
-      // trashed they live under .brain/trash/<stamp>/..., so this is the
-      // only chance to tell index/RAG listeners which paths disappeared.
-      const { notes: allNotes } = await this.listTree();
-      const prefix = `${norm}/`;
-      const removedNotes = allNotes.filter((p) => p === norm || p.startsWith(prefix));
+      // Snapshot every tracked file under this folder before trashing it,
+      // once trashed they live under .brain/trash/<stamp>/..., so this is
+      // the only chance to tell listeners which concrete paths
+      // disappeared. Every file, not just notes: listTree()/walk() skip
+      // .media (it isn't shown in the note tree) and non-.md files, but
+      // those are still real tracked files on disk, and autocommit needs
+      // every one of them to stage and attribute the deletion per actor.
+      const removedFiles: string[] = [];
+      await collectAllFiles(this.abs(norm), norm, removedFiles);
       const trashed = await this.trashPath(norm, true);
-      await this.notify("folder-delete", norm, trashed, removedNotes);
+      await this.notify("folder-delete", norm, trashed, removedFiles);
       return trashed;
     });
   }
@@ -467,6 +473,23 @@ async function collectTrash(
       await collectTrash(childAbs, childRel, out);
     } else if (ent.isFile()) {
       out.push({ path: childRel, mtime: s.mtimeMs, isDir: false });
+    }
+  }
+}
+
+// Every real file under a directory, recursively, notes and non-markdown
+// attachments alike (unlike walk(), this does NOT skip .media: deleteFolder
+// needs the concrete path of every tracked file being removed, not just
+// the subset that shows up as a "note" in the tree). Still skips
+// SKIP_DIRS, there's nothing of the vault's own to report there.
+async function collectAllFiles(absDir: string, relPrefix: string, out: string[]): Promise<void> {
+  const entries = await readdir(absDir, { withFileTypes: true }).catch(() => []);
+  for (const ent of entries) {
+    if (ent.isDirectory()) {
+      if (SKIP_DIRS.has(ent.name)) continue;
+      await collectAllFiles(join(absDir, ent.name), `${relPrefix}/${ent.name}`, out);
+    } else if (ent.isFile()) {
+      out.push(`${relPrefix}/${ent.name}`);
     }
   }
 }
