@@ -118,10 +118,24 @@ export class OidcProvider {
       throw new Error("token response is missing id_token");
     }
 
+    // doc.issuer comes straight from the discovery document, which is
+    // fetched over plain HTTPS trust with no further check that it's
+    // actually the issuer we configured. A discovery document served
+    // from a compromised or misconfigured path could claim any issuer,
+    // and jwtVerify would happily accept tokens for it. Compare against
+    // the admin-configured value, not the document's own say-so.
+    const configuredIssuer = this.cfg.issuer.replace(/\/+$/, "");
+    if (doc.issuer.replace(/\/+$/, "") !== configuredIssuer) {
+      throw new Error(
+        `OIDC discovery document issuer (${doc.issuer}) does not match the configured issuer (${this.cfg.issuer})`,
+      );
+    }
+
     const jwks = await this.getJwks();
     const { payload } = await jwtVerify(tokenResponse.id_token, jwks, {
       issuer: doc.issuer,
       audience: this.cfg.clientId,
+      requiredClaims: ["exp", "iat", "sub"],
     });
 
     if (payload.nonce !== params.nonce) {
