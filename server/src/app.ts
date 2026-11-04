@@ -159,7 +159,7 @@ export function createApp(opts: AppOptions = {}) {
         hasExternalProvider(loginConfig),
       ),
     )
-    .get("/health", () => ({ ok: true, vaultDir: vault.root }))
+    .get("/health", () => ({ ok: true }))
     // V64: OAuth discovery surface, served before everything else so it's
     // reachable even when auth.json gates the rest of the API.
     .use(oauthDiscoveryRoutes())
