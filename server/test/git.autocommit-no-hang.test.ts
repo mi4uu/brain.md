@@ -142,6 +142,57 @@ describe("Autocommit: no unbounded retry, no index-lock race", () => {
     { timeout: 10_000 },
   );
 
+  // Regression: a second caller's forced flush() (e.g. the /api/git/flush
+  // route) arriving while a first flush is already in-flight must not be
+  // silently dropped just because the first flush's own path set turns
+  // out empty. flush() used to `return null` from inside the empty-paths
+  // branch, skipping the end-of-function check that consumes `rerun` and
+  // schedules a retry, so the second caller's forced flush never ran.
+  test(
+    "a flush forced while another is in-flight still reruns, even when the in-flight one commits nothing",
+    async () => {
+      let hasChangesCalls = 0;
+      let resolveFirstHasChanges!: (v: boolean) => void;
+      const firstHasChanges = new Promise<boolean>((resolve) => {
+        resolveFirstHasChanges = resolve;
+      });
+      const stub: Pick<GitRepo, "isEnabled" | "hasChanges" | "dirtyPaths" | "commitAll"> = {
+        isEnabled: async () => true,
+        hasChanges: async () => {
+          hasChangesCalls++;
+          return hasChangesCalls === 1 ? firstHasChanges : false;
+        },
+        dirtyPaths: async () => [],
+        commitAll: async () => {
+          throw new Error("nothing should ever be committed in this test");
+        },
+      };
+      ac = new Autocommit(stub as unknown as GitRepo, { enabled: true, debounceMs: 20 });
+
+      const p1 = ac.flush();
+      // Let p1 run past its isEnabled()/inFlight=true and suspend on the
+      // still-pending hasChanges() call above.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // A second caller forces a flush while the first is in-flight: it
+      // must set `rerun` and return immediately, never commit anything
+      // itself.
+      expect(await ac.flush()).toBeNull();
+
+      // Now let the first flush see "nothing changed" and finish.
+      resolveFirstHasChanges(false);
+      expect(await p1).toBeNull();
+
+      // The forced second call must still cause a rerun: wait past the
+      // retry delay and confirm flush() actually ran again (hasChanges()
+      // called a second time), instead of the rerun flag being left
+      // stuck true with nothing ever scheduled to consume it.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(hasChangesCalls).toBeGreaterThanOrEqual(2);
+    },
+    { timeout: 5000 },
+  );
+
   // `git status` without --no-optional-locks can refresh-and-write
   // .git/index as a side effect, contending for .git/index.lock with an
   // in-progress commit. Firing hasChanges()/dirtyPaths() concurrently

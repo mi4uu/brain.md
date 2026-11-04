@@ -168,24 +168,30 @@ export class Autocommit {
           if (!snapshot.has(p)) paths.add(p);
         }
       }
-      if (paths.size === 0) return null;
-
-      const { author, trailers } = describeCommit(snapshot, paths);
-      try {
-        sha = await this.repo.commitAll(commitMessage(Array.from(paths)), {
-          paths: Array.from(paths),
-          author,
-          trailers,
-        });
-      } catch (e) {
-        // A transient commit failure (a lock held by another process, a
-        // rejecting hook) must not drop these paths: put them back for a
-        // later flush (notify()'s own debounce, or the bounded retry
-        // below) to try again, instead of silently losing the change.
-        console.warn("[autocommit] commit failed, will retry:", e);
-        failed = true;
-        for (const [path, identity] of snapshot) {
-          if (!this.pendingPaths.has(path)) this.pendingPaths.set(path, identity);
+      // Nothing to commit, but still fall through to the end-of-function
+      // rerun/retry check below instead of returning early: a second
+      // caller (e.g. a forced /api/git/flush while this flush was
+      // already in-flight) may have set `this.rerun` or queued more
+      // paths while this flush ran, and that request must not be
+      // dropped just because THIS flush's path set happened to be empty.
+      if (paths.size !== 0) {
+        const { author, trailers } = describeCommit(snapshot, paths);
+        try {
+          sha = await this.repo.commitAll(commitMessage(Array.from(paths)), {
+            paths: Array.from(paths),
+            author,
+            trailers,
+          });
+        } catch (e) {
+          // A transient commit failure (a lock held by another process, a
+          // rejecting hook) must not drop these paths: put them back for a
+          // later flush (notify()'s own debounce, or the bounded retry
+          // below) to try again, instead of silently losing the change.
+          console.warn("[autocommit] commit failed, will retry:", e);
+          failed = true;
+          for (const [path, identity] of snapshot) {
+            if (!this.pendingPaths.has(path)) this.pendingPaths.set(path, identity);
+          }
         }
       }
     } finally {
