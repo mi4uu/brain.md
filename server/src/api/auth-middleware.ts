@@ -85,7 +85,18 @@ export function authMiddleware(
     // skip the bearer checks below (unconfigured auth, open paths) still
     // give autocommit.notify() something sane to attribute a commit to.
     // Overwritten further down once a specific credential resolves.
-    identityContext.enterWith(localIdentity(owner.name, owner.email));
+    //
+    // When auth is entirely unconfigured (no password set, no external
+    // login provider), there is no credential to attribute to, so this
+    // must stay the legacy git default identity rather than `owner`
+    // (config.ownerName/ownerEmail): using `owner` here changed the
+    // autocommit author for every install that never opted into auth,
+    // which v0.4.12 never did.
+    identityContext.enterWith(
+      auth.isConfigured() || externalLoginConfigured
+        ? localIdentity(owner.name, owner.email)
+        : localIdentity("brain.md", "brain@local"),
+    );
 
     // BRAINMD_LOG_OAUTH=1 enables verbose tracing of every /oauth/* and
     // /.well-known/* request so we can diagnose what spec-incompliant

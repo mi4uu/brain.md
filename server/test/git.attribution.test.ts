@@ -127,13 +127,19 @@ describe("git commit author from identity", () => {
     expect(commit!.body).not.toContain("On-Behalf-Of:");
   });
 
-  test("unconfigured auth still commits as the local owner identity", async () => {
+  test("unconfigured auth commits as the legacy git identity, not the owner config", async () => {
+    // Regression guard: v0.4.12 (pre-OAuth) always committed as
+    // "brain.md <brain@local>" (git.ts's fixed committer config, no
+    // --author override) when nobody had set a password or an external
+    // login provider. auth-middleware.ts must not substitute the owner
+    // config identity in that case.
     await handle.vault.writeNoteChecked("open.md", "x");
     await put("/api/note/open.md", "x again");
     await handle.autocommit.flush();
     const log = await gitLog();
     const commit = log.find((c) => c.body.startsWith("auto:"));
-    expect(commit!.authorName).toBe("brain.md owner");
+    expect(commit!.authorName).toBe("brain.md");
+    expect(commit!.authorEmail).toBe("brain@local");
   });
 
   test("API key commits as the key name, with On-Behalf-Of + Agent trailers", async () => {
