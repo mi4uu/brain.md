@@ -31,6 +31,31 @@ you opt in.
   touched which path, via `Changed-by` / `On-Behalf-Of` / `Agent` trailers
   on commits that span more than one actor in a single flush.
 
+### Security
+
+- Bumped `@modelcontextprotocol/sdk` 1.29.0 → ^1.32.2 and `elysia` 1.1.25 →
+  ^1.4.31 (plus the matching `@elysiajs/cors` peer range): the SDK carried
+  several high-severity advisories (OAuth redirect confusion, unbounded
+  JSON-RPC batch memory exhaustion, bearer-token audience confusion,
+  cross-origin redirect leak; GHSA-6qxp-vccf-f47h, GHSA-22jm-h49p-29qw,
+  GHSA-46jr-4wx8-v453, GHSA-rvq5-wwqv-78pq, GHSA-f897-62hf-6gxq), and elysia
+  carried a high-severity algorithmic-complexity DoS reachable from
+  pre-auth routes.
+- Bumped `zod` 3.25.0 → ^4.6.7 (GHSA-mrhx-c7xc-m3w5, unbounded
+  memory-exhaustion DoS with no stable 3.x backport), with a root
+  `overrides` entry so the SDK's own nested zod resolves to the same
+  patched version.
+- Closed `192.0.0.0/24`, `192.88.99.0/24` and `198.18.0.0/15` in the CIMD
+  SSRF guard's private-IP check, which previously let a `client_id`
+  hostname resolve into those IANA special-purpose ranges.
+- The login/OAuth-consent rate limiter no longer trusts `X-Forwarded-For`
+  by default; it now keys on the real TCP peer unless `BRAINMD_TRUST_PROXY`
+  explicitly opts in to a Cloudflare tunnel or a list of trusted proxy IPs.
+- Persisted stores (auth, tokens, OAuth) now write through a unique,
+  exclusive tmp file and unlink it on any failure in the write itself, not
+  only on a failed rename, closing a cross-process clobber and an orphaned
+  tmp-file leak.
+
 ### Fixed (since the 40 commits on `feat/identity-oauth`)
 
 - `GET /health` no longer returns the vault's absolute filesystem path.
