@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp, type AppHandle } from "../src/app";
@@ -9,11 +9,18 @@ let dir: string;
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "brain-api-git-"));
-  h = createApp({ vaultDir: dir, gitAutocommit: true, gitDebounceMs: 50 });
+  // Large debounce: every test flushes explicitly, nothing here relies
+  // on the debounce timer firing on its own. A short one risked it firing
+  // mid-test (git subprocesses are not instant) and resolving after the
+  // test's own teardown had already removed its directory.
+  h = createApp({ vaultDir: dir, gitAutocommit: true, gitDebounceMs: 60_000 });
   await h.repo.ensure();
 });
 
 afterEach(async () => {
+  // See autocommit.ts's module comment: an undisposed instance can hold a
+  // live retry timer that must not outlive this test's temp directory.
+  h.autocommit.dispose();
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -97,6 +104,53 @@ describe("git API", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ path: "a.txt", sha: "HEAD" }),
+      }),
+    );
+    expect(restore.status).toBe(400);
+  });
+
+  // Audit P0: restore used to call commitAll(msg) with no `paths`, which
+  // stages and commits EVERYTHING dirty in the working tree, not just the
+  // restored file.
+  test("restore scopes its commit to the restored path, leaving other dirty files pending", async () => {
+    await put("/api/note/a.md", "first");
+    await h.autocommit.flush();
+    await put("/api/note/a.md", "second");
+    await h.autocommit.flush();
+    const log = (await (await h.app.handle(new Request("http://localhost/api/git/log?path=a.md"))).json()) as Array<{ sha: string }>;
+    const firstSha = log[log.length - 1]!.sha;
+
+    // Dirty, unrelated to the restore, and never flushed.
+    await put("/api/note/b.md", "unrelated, still pending");
+
+    const restore = await h.app.handle(
+      new Request("http://localhost/api/git/restore", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: "a.md", sha: firstSha }),
+      }),
+    );
+    expect(restore.status).toBe(200);
+    const { sha } = (await restore.json()) as { sha: string };
+    const show = Bun.spawnSync(["git", "-C", dir, "show", "--name-status", "-1", sha]);
+    const names = show.stdout.toString();
+    expect(names).toContain("a.md");
+    expect(names).not.toContain("b.md");
+    const status = Bun.spawnSync(["git", "-C", dir, "status", "--porcelain"]);
+    expect(status.stdout.toString()).toContain("b.md");
+  });
+
+  // Audit P0: a directory literally named "x.md" passes assertMarkdown's
+  // suffix check; restoring onto it must not recurse into it.
+  test("restore refuses a target that is a directory named *.md", async () => {
+    await mkdir(join(dir, "folder.md"), { recursive: true });
+    await writeFile(join(dir, "folder.md", "inner.md"), "inner");
+    await h.autocommit.flush();
+    const restore = await h.app.handle(
+      new Request("http://localhost/api/git/restore", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: "folder.md", sha: "HEAD" }),
       }),
     );
     expect(restore.status).toBe(400);

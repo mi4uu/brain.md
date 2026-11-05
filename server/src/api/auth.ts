@@ -1,8 +1,12 @@
 import { Elysia, t } from "elysia";
 import type { AuthStore } from "../auth/store";
 import type { TokenStore } from "../auth/tokens";
+import type { LoginLimiter } from "../auth/login-limiter";
+import { hasExternalProvider, type LoginConfig } from "../auth/login-config";
 import { hashPassword, verifyPassword } from "../auth/hasher";
+import { checkOwnerPassword } from "../auth/password-policy";
 import { requireOwner } from "./perm-guard";
+import { getClientIp } from "./client-ip";
 
 // V53: auth routes.
 // - GET  /api/auth/status        always open
@@ -11,6 +15,9 @@ import { requireOwner } from "./perm-guard";
 //                                requires currentPassword once configured
 // - POST /api/auth/clear         requires currentPassword
 // - POST /api/auth/logout        requires the token in the body
+//
+// /login is rate limited by auth/login-limiter.ts (per-IP sliding window +
+// a small global backoff) before the password is ever checked.
 //
 // The middleware (auth-middleware.ts) handles bearer enforcement on
 // everything else.
@@ -22,15 +29,34 @@ function bearer(headers: Record<string, string | undefined>): string | undefined
   return m ? m[1] : undefined;
 }
 
-export function authRoutes(auth: AuthStore, tokens: TokenStore) {
+export function authRoutes(
+  auth: AuthStore,
+  tokens: TokenStore,
+  loginLimiter: LoginLimiter,
+  loginConfig: LoginConfig,
+) {
   return new Elysia()
+    // board-plan Part B: tells the login page which methods to render,
+    // before anyone is authenticated. Deliberately leaves out issuer
+    // URLs, client IDs, allowlists, a provider name and its button
+    // label are all the UI needs.
+    .get("/api/auth/config", () => ({
+      password: loginConfig.passwordLogin,
+      providers: [
+        ...(loginConfig.oidc ? [{ id: "oidc", label: loginConfig.oidc.name }] : []),
+        ...(loginConfig.github ? [{ id: "github", label: "GitHub" }] : []),
+      ],
+    }))
     .get("/api/auth/status", ({ request }) => {
       const headers: Record<string, string> = {};
       request.headers.forEach((v, k) => (headers[k.toLowerCase()] = v));
       const tok = bearer(headers);
       return {
-        configured: auth.isConfigured(),
-        authenticated: auth.isConfigured() ? tokens.validate(tok) : true,
+        // "configured" means "auth is required", which an external login
+        // provider forces even when no password hash has ever been set
+        // (BRAINMD_PASSWORD_LOGIN=off, OIDC/GitHub only).
+        configured: auth.isConfigured() || hasExternalProvider(loginConfig),
+        authenticated: auth.isConfigured() || hasExternalProvider(loginConfig) ? tokens.validate(tok) : true,
       };
     })
     .post(
@@ -93,13 +119,29 @@ export function authRoutes(auth: AuthStore, tokens: TokenStore) {
     )
     .post(
       "/api/auth/login",
-      async ({ body, set }) => {
-        if (!auth.isConfigured()) {
-          set.status = 409;
-          return { error: "auth not configured" };
-        }
-        const ok = await verifyPassword(body.password, auth.getHash() ?? "");
-        if (!ok) {
+      async ({ body, set, request, server }) => {
+        const ip = getClientIp(request, server);
+        const result = await checkOwnerPassword({
+          password: body.password,
+          authStore: auth,
+          loginConfig,
+          loginLimiter,
+          ip,
+        });
+        if (!result.ok) {
+          if (result.reason === "rate_limited") {
+            set.status = 429;
+            set.headers["retry-after"] = String(result.retryAfterSeconds);
+            return { error: "too many failed attempts, try again later", code: "RATE_LIMITED" };
+          }
+          if (result.reason === "disabled") {
+            set.status = 403;
+            return { error: "password login is disabled", code: "PASSWORD_LOGIN_DISABLED" };
+          }
+          if (result.reason === "not_configured") {
+            set.status = 409;
+            return { error: "auth not configured" };
+          }
           set.status = 401;
           return { error: "invalid password" };
         }

@@ -38,6 +38,12 @@ import { apiKeyRoutes } from "./api/api-keys";
 import { folderPermsRoutes } from "./api/folder-perms";
 import { AuthStore } from "./auth/store";
 import { TokenStore } from "./auth/tokens";
+import { LoginLimiter } from "./auth/login-limiter";
+import { HandoffCodeStore } from "./auth/handoff-codes";
+import { loadLoginConfig, validateLoginConfig, hasExternalProvider, type LoginConfig } from "./auth/login-config";
+import { idpAuthRoutes } from "./api/idp-auth";
+import { securityHeadersMiddleware } from "./api/security-headers";
+import { identityContext } from "./auth/identity";
 import { createMcp, mcpRoutes } from "./mcp/server";
 
 export interface AppOptions {
@@ -46,9 +52,17 @@ export interface AppOptions {
   gitDebounceMs?: number;
   mcpDisabled?: boolean;
   allowedHosts?: string[];
+  loginConfig?: LoginConfig;
 }
 
 export function createApp(opts: AppOptions = {}) {
+  // board-plan Part B: refuse to start on an invalid login configuration
+  // (password login off with no external provider, a provider configured
+  // with no allowlist or no public URL, …) rather than serve a vault
+  // nobody can log into, or one with no access control at all.
+  const loginConfig = opts.loginConfig ?? loadLoginConfig();
+  validateLoginConfig(loginConfig);
+
   const vault = new Vault(opts.vaultDir ?? config.vaultDir);
   const index = new VaultIndex(vault);
   const repo = new GitRepo(vault.root);
@@ -57,7 +71,35 @@ export function createApp(opts: AppOptions = {}) {
     enabled: opts.gitAutocommit ?? config.gitAutocommit,
     debounceMs: opts.gitDebounceMs ?? config.gitDebounceMs,
   });
-  vault.onMutation((e) => autocommit.notify(e.path));
+  // Identity is read from identityContext HERE, synchronously inside the
+  // request that triggered the mutation. The debounce timer autocommit
+  // fires on later has no request, and no identity, of its own.
+  vault.onMutation((e) => {
+    const identity = identityContext.getStore();
+    // Folder events never queue the directory path itself: git has no
+    // concept of an empty directory to stage, and queuing it as a
+    // pathspec makes a later `git add -A -- <dir>` sweep in whatever
+    // another actor wrote under that directory before this flush,
+    // crediting (or re-committing) their change under the folder
+    // actor's commit instead of its own.
+    if (e.kind === "folder-create") return;
+    if (e.kind === "folder-delete") {
+      // Queue each concrete note that was under the deleted folder (its
+      // own path still staged as a deletion even though it no longer
+      // exists on disk, filterStageable keeps tracked-but-gone paths),
+      // instead of the folder path, which `ls-files` never resolves to
+      // a tracked entry and `existsSync` never finds once deleted, so
+      // it would be dropped from staging entirely.
+      for (const p of e.paths ?? []) autocommit.notify(p, identity);
+      return;
+    }
+    autocommit.notify(e.path, identity);
+    // Rename's `extra` is the source path: the commit needs to stage its
+    // deletion too, or the old path is left behind, picked up (or not)
+    // by whatever next touches the tree instead of landing in this
+    // actor's own commit.
+    if (e.kind === "rename" && e.extra) autocommit.notify(e.extra, identity);
+  });
   // Centralised index maintenance (V-concurrency #18): every vault mutation
   // REST writes, MCP write_note/append_note, trash restore, git restore
   // via vault.notifyWrite, flows through this one subscription instead of
@@ -78,16 +120,19 @@ export function createApp(opts: AppOptions = {}) {
 
   const authStore = new AuthStore(vault);
   const tokenStore = new TokenStore();
+  const loginLimiter = new LoginLimiter();
   const oauthStore = new OAuthStore();
   oauthStore.startSweeper();
   const oauthClients = new OAuthClientStore();
   const cimdResolver = new CimdResolver();
   const apiKeys = new APIKeyStore();
+  const handoffCodes = new HandoffCodeStore();
 
   const allowedHosts = opts.allowedHosts ?? config.allowedHosts;
   const allowedHostsSet = buildAllowedHostsSet(allowedHosts);
 
   const app = new Elysia()
+    .use(securityHeadersMiddleware())
     .use(hostMiddleware(allowedHosts, authStore))
     // The default `cors()` reflects back whatever Origin a request sends,
     // which is "allow any origin" in practice. Restrict Access-Control-
@@ -103,15 +148,26 @@ export function createApp(opts: AppOptions = {}) {
         credentials: false,
       }),
     )
-    .use(authMiddleware(authStore, tokenStore, oauthStore, apiKeys))
-    .get("/health", () => ({ ok: true, vaultDir: vault.root }))
+    .use(
+      authMiddleware(
+        authStore,
+        tokenStore,
+        oauthStore,
+        apiKeys,
+        oauthClients,
+        { name: config.ownerName, email: config.ownerEmail },
+        hasExternalProvider(loginConfig),
+      ),
+    )
+    .get("/health", () => ({ ok: true }))
     // V64: OAuth discovery surface, served before everything else so it's
     // reachable even when auth.json gates the rest of the API.
     .use(oauthDiscoveryRoutes())
     // V63 step 2+3 + V67: authorize + token + register endpoints
     // (PKCE + DCR + CIMD).
-    .use(oauthFlowRoutes(authStore, oauthStore, oauthClients, cimdResolver))
-    .use(authRoutes(authStore, tokenStore))
+    .use(oauthFlowRoutes(authStore, oauthStore, oauthClients, cimdResolver, tokenStore, loginConfig, loginLimiter))
+    .use(authRoutes(authStore, tokenStore, loginLimiter, loginConfig))
+    .use(idpAuthRoutes(loginConfig, tokenStore, handoffCodes))
     .use(apiKeyRoutes(apiKeys))
     .use(treeRoutes(vault))
     .use(noteRoutes(vault, index))
@@ -152,9 +208,12 @@ export function createApp(opts: AppOptions = {}) {
     ragPipeline,
     authStore,
     tokenStore,
+    loginLimiter,
     apiKeys,
     oauthStore,
     mcp,
+    loginConfig,
+    handoffCodes,
   };
 }
 

@@ -2,6 +2,7 @@ import { randomBytes, createHash } from "node:crypto";
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Vault } from "../vault/vault";
+import { LOCAL_SUB } from "./identity";
 
 // V53 + B19: session bearer token table. 24h TTL. Persists to
 // <vault>/.brain/tokens.json so a server restart doesn't invalidate
@@ -16,9 +17,13 @@ import type { Vault } from "../vault/vault";
 //
 // Only the SHA-256 hash of a token is ever persisted or kept as a map
 // key, never the plaintext. Lookups hash the incoming bearer value and
-// compare with timingSafeEqual so a token can't be recovered by timing
-// a byte-by-byte guess. Files predating this change stored plaintext
-// tokens under a "token" field; load() migrates those in place.
+// look it up by that hash (Map.get, not a byte-by-byte comparison): an
+// attacker who doesn't already know the full token has nothing to time
+// a guess against, since SHA-256 output isn't incrementally comparable
+// the way a raw string compare would be. This is not a timingSafeEqual
+// call; none is needed here. Files predating this change stored
+// plaintext tokens under a "token" field; load() migrates those in
+// place.
 
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 const REL = ".brain/tokens.json";
@@ -30,17 +35,32 @@ function hashToken(token: string): string {
 
 interface TokenRecord {
   expiresAt: number;
+  sub: string;
+  // Set for tokens issued to an external (OIDC/GitHub) login, the git
+  // "Author:" line should say who actually logged in, not the owner
+  // config fallback localIdentity() uses for the password-login case.
+  // Undefined means "local owner", same as every pre-login-provider token.
+  name?: string;
+  email?: string;
 }
 
 interface PersistedFile {
   version: 1;
-  tokens: Array<{ tokenHash: string; expiresAt: number }>;
+  tokens: Array<{ tokenHash: string; expiresAt: number; sub: string; name?: string; email?: string }>;
 }
 
-// Pre-migration on-disk shape (plaintext token).
+// Pre-migration on-disk shape (plaintext token, and/or no `sub`: identity
+// plumbing postdates this file, so every record before it is "local").
 interface LegacyPersistedFile {
   version: 1;
-  tokens: Array<{ token?: string; tokenHash?: string; expiresAt: number }>;
+  tokens: Array<{
+    token?: string;
+    tokenHash?: string;
+    expiresAt: number;
+    sub?: string;
+    name?: string;
+    email?: string;
+  }>;
 }
 
 export class TokenStore {
@@ -71,11 +91,15 @@ export class TokenStore {
       let migrated = false;
       for (const t of parsed.tokens) {
         if (typeof t.expiresAt !== "number" || t.expiresAt <= now) continue;
+        const sub = typeof t.sub === "string" && t.sub.length > 0 ? t.sub : LOCAL_SUB;
+        if (sub !== t.sub) migrated = true;
+        const name = typeof t.name === "string" ? t.name : undefined;
+        const email = typeof t.email === "string" ? t.email : undefined;
         if (typeof t.tokenHash === "string") {
-          this.tokens.set(t.tokenHash, { expiresAt: t.expiresAt });
+          this.tokens.set(t.tokenHash, { expiresAt: t.expiresAt, sub, name, email });
         } else if (typeof t.token === "string") {
           // Pre-hash format: migrate to a hash-only record on next flush.
-          this.tokens.set(hashToken(t.token), { expiresAt: t.expiresAt });
+          this.tokens.set(hashToken(t.token), { expiresAt: t.expiresAt, sub, name, email });
           migrated = true;
         }
       }
@@ -104,6 +128,9 @@ export class TokenStore {
       tokens: Array.from(this.tokens.entries()).map(([tokenHash, rec]) => ({
         tokenHash,
         expiresAt: rec.expiresAt,
+        sub: rec.sub,
+        name: rec.name,
+        email: rec.email,
       })),
     };
     const abs = this.vault.abs(REL);
@@ -122,25 +149,55 @@ export class TokenStore {
     }
   }
 
-  issue(): { token: string; expiresAt: number } {
+  // `identity` is only set for external (OIDC/GitHub) logins, password
+  // login keeps calling issue(sub) with no third argument, same as before.
+  issue(
+    sub: string = LOCAL_SUB,
+    identity?: { name: string; email: string },
+  ): { token: string; expiresAt: number } {
     const token = randomBytes(32).toString("base64url");
     const expiresAt = Date.now() + this.ttlMs;
-    this.tokens.set(hashToken(token), { expiresAt });
+    this.tokens.set(hashToken(token), {
+      expiresAt,
+      sub,
+      name: identity?.name,
+      email: identity?.email,
+    });
     this.scheduleFlush();
     return { token, expiresAt };
   }
 
   validate(token: string | undefined): boolean {
-    if (!token) return false;
+    return this.lookup(token) !== undefined;
+  }
+
+  // Identity resolution (auth-middleware.ts): the subject behind a valid
+  // session token, without the caller re-deriving the expiry/hash logic
+  // that validate() already does.
+  subFor(token: string | undefined): string | undefined {
+    return this.lookup(token)?.sub;
+  }
+
+  // Full identity resolution for tokens issued to an external login,
+  // undefined name/email means "fall back to the configured owner",
+  // same as every token issued before login providers existed.
+  identityFor(token: string | undefined): { sub: string; name?: string; email?: string } | undefined {
+    const rec = this.lookup(token);
+    if (!rec) return undefined;
+    return { sub: rec.sub, name: rec.name, email: rec.email };
+  }
+
+  private lookup(token: string | undefined): TokenRecord | undefined {
+    if (!token) return undefined;
     const hash = hashToken(token);
     const rec = this.tokens.get(hash);
-    if (!rec) return false;
+    if (!rec) return undefined;
     if (rec.expiresAt < Date.now()) {
       this.tokens.delete(hash);
       this.scheduleFlush();
-      return false;
+      return undefined;
     }
-    return true;
+    return rec;
   }
 
   revoke(token: string | undefined): boolean {

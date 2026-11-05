@@ -1,14 +1,12 @@
 import {
   mkdir,
-  open as fsOpen,
   readdir,
   readFile,
   rename,
   rm,
   stat,
-  unlink,
 } from "node:fs/promises";
-import { randomBytes, createHash } from "node:crypto";
+import { createHash } from "node:crypto";
 import { dirname, join, posix, resolve } from "node:path";
 import {
   assertMarkdown,
@@ -21,6 +19,7 @@ import {
   relFromAbs,
   safeJoin,
 } from "./paths";
+import { atomicWrite, atomicWriteBytes } from "./atomic-write";
 import { VaultError } from "./types";
 import type { NoteData, StatInfo, TreeNode } from "./types";
 
@@ -35,9 +34,12 @@ export interface MutationEvent {
   kind: MutationKind;
   path: string;
   extra?: string;
-  // folder-delete: every note path (relative, pre-trash) that was under the
-  // deleted folder, so index/RAG listeners can drop each one individually
-  // instead of only hearing about the folder's own path.
+  // folder-delete: every tracked file (relative, pre-trash) that was under
+  // the deleted folder, notes AND non-markdown attachments alike, so index/
+  // RAG/autocommit listeners can drop or stage each one individually
+  // instead of only hearing about the folder's own path. index/RAG ignore
+  // entries that aren't markdown; autocommit stages and attributes every
+  // one of them.
   paths?: string[];
 }
 export type MutationListener = (event: MutationEvent) => void | Promise<void>;
@@ -61,6 +63,7 @@ export class Vault {
   // sorted order so two callers locking the same pair of paths never
   // deadlock on each other.
   protected async withPathLock<T>(paths: string[], fn: () => Promise<T>): Promise<T> {
+    await this.beforeWithPathLock(paths);
     const sorted = Array.from(new Set(paths.map((p) => normalizeRel(p)))).sort();
     let release!: () => void;
     const gate = new Promise<void>((res) => {
@@ -78,6 +81,15 @@ export class Vault {
       release();
     }
   }
+
+  // Test-only seam, no-op in production. The real race between two
+  // concurrent mutateNote calls happens earlier (each does a real fs await
+  // in assertRealContainment before it ever gets here), so tests that want
+  // a deterministic interleaving override this to hold a caller here and
+  // release callers in a chosen order, forcing which one reaches the
+  // atomic lock-acquisition section first instead of leaving it to fs
+  // scheduling (see vault.test.ts).
+  protected async beforeWithPathLock(_paths: string[]): Promise<void> {}
 
   // Public wrapper so a caller spanning several notes (rename's backlink
   // patch pass) can hold the lock across a check-then-write on every one
@@ -319,14 +331,17 @@ export class Vault {
       throw new VaultError("refuse delete root/brain", "INVALID_PATH");
     }
     return this.withPathLock([norm], async () => {
-      // Snapshot the notes under this folder before trashing it, once
-      // trashed they live under .brain/trash/<stamp>/..., so this is the
-      // only chance to tell index/RAG listeners which paths disappeared.
-      const { notes: allNotes } = await this.listTree();
-      const prefix = `${norm}/`;
-      const removedNotes = allNotes.filter((p) => p === norm || p.startsWith(prefix));
+      // Snapshot every tracked file under this folder before trashing it,
+      // once trashed they live under .brain/trash/<stamp>/..., so this is
+      // the only chance to tell listeners which concrete paths
+      // disappeared. Every file, not just notes: listTree()/walk() skip
+      // .media (it isn't shown in the note tree) and non-.md files, but
+      // those are still real tracked files on disk, and autocommit needs
+      // every one of them to stage and attribute the deletion per actor.
+      const removedFiles: string[] = [];
+      await collectAllFiles(this.abs(norm), norm, removedFiles);
       const trashed = await this.trashPath(norm, true);
-      await this.notify("folder-delete", norm, trashed, removedNotes);
+      await this.notify("folder-delete", norm, trashed, removedFiles);
       return trashed;
     });
   }
@@ -471,6 +486,23 @@ async function collectTrash(
   }
 }
 
+// Every real file under a directory, recursively, notes and non-markdown
+// attachments alike (unlike walk(), this does NOT skip .media: deleteFolder
+// needs the concrete path of every tracked file being removed, not just
+// the subset that shows up as a "note" in the tree). Still skips
+// SKIP_DIRS, there's nothing of the vault's own to report there.
+async function collectAllFiles(absDir: string, relPrefix: string, out: string[]): Promise<void> {
+  const entries = await readdir(absDir, { withFileTypes: true }).catch(() => []);
+  for (const ent of entries) {
+    if (ent.isDirectory()) {
+      if (SKIP_DIRS.has(ent.name)) continue;
+      await collectAllFiles(join(absDir, ent.name), `${relPrefix}/${ent.name}`, out);
+    } else if (ent.isFile()) {
+      out.push(`${relPrefix}/${ent.name}`);
+    }
+  }
+}
+
 // Same shape as walk(), but rooted at an arbitrary directory (a restored
 // trash subtree) rather than the vault root, and only cares about notes.
 async function collectNoteFiles(absDir: string, relPrefix: string, out: string[]): Promise<void> {
@@ -506,48 +538,6 @@ async function walk(
       const childRel = rel === "" ? name : `${rel}/${name}`;
       notes.push(childRel);
     }
-  }
-}
-
-// `${abs}.tmp-${pid}-${Date.now()}` collided whenever two writes to the same
-// destination landed in the same millisecond: both opened the same tmp
-// path, so one write's content could be clobbered by the other's, and the
-// renamer that lost the race got ENOENT. A random suffix plus exclusive
-// ("wx") creation makes each write's tmp file unique and guarantees nobody
-// else can be holding it.
-function tmpNameFor(abs: string): string {
-  return `${abs}.tmp-${process.pid}-${randomBytes(6).toString("hex")}`;
-}
-
-async function atomicWrite(abs: string, content: string): Promise<void> {
-  const tmp = tmpNameFor(abs);
-  const handle = await fsOpen(tmp, "wx");
-  try {
-    await handle.writeFile(content, "utf8");
-  } finally {
-    await handle.close();
-  }
-  try {
-    await rename(tmp, abs);
-  } catch (e) {
-    await unlink(tmp).catch(() => {});
-    throw e;
-  }
-}
-
-async function atomicWriteBytes(abs: string, bytes: Uint8Array): Promise<void> {
-  const tmp = tmpNameFor(abs);
-  const handle = await fsOpen(tmp, "wx");
-  try {
-    await handle.writeFile(bytes);
-  } finally {
-    await handle.close();
-  }
-  try {
-    await rename(tmp, abs);
-  } catch (e) {
-    await unlink(tmp).catch(() => {});
-    throw e;
   }
 }
 

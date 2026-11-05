@@ -1,6 +1,7 @@
 import { createApp } from "./app";
 import { loadConfig } from "./config";
 import { parseArgs, getUsage, CliError } from "./cli";
+import { LoginConfigError } from "./auth/login-config";
 import { mkdir } from "node:fs/promises";
 import { VERSION } from "./version";
 
@@ -29,24 +30,23 @@ async function main() {
   // mkdir -p so first run on a fresh XDG default doesn't crash
   await mkdir(config.vaultDir, { recursive: true });
 
-  const {
-    app,
-    vault,
-    index,
-    repo,
-    autocommit,
-    settings,
-    ragStore,
-    ragPipeline,
-    authStore,
-    tokenStore,
-    apiKeys,
-  } = createApp({
-    vaultDir: config.vaultDir,
-    gitAutocommit: config.gitAutocommit,
-    gitDebounceMs: config.gitDebounceMs,
-    mcpDisabled: action.options.mcpDisabled,
-  });
+  let handle;
+  try {
+    handle = createApp({
+      vaultDir: config.vaultDir,
+      gitAutocommit: config.gitAutocommit,
+      gitDebounceMs: config.gitDebounceMs,
+      mcpDisabled: action.options.mcpDisabled,
+    });
+  } catch (e) {
+    if (e instanceof LoginConfigError) {
+      process.stderr.write(`brainmd: invalid login configuration: ${e.message}\n`);
+      process.exit(1);
+    }
+    throw e;
+  }
+  const { app, vault, index, repo, autocommit, settings, ragStore, ragPipeline, authStore, tokenStore, apiKeys } =
+    handle;
 
   await authStore.load();
   // B19 + V66: persist session tokens + named API keys to vault.

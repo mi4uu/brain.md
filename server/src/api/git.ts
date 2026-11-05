@@ -1,10 +1,12 @@
 import { Elysia, t } from "elysia";
 import type { GitRepo } from "../git/git";
 import type { Autocommit } from "../git/autocommit";
+import { singleActorCommitOpts } from "../git/autocommit";
+import { currentIdentity } from "../auth/identity";
 import type { SettingsStore } from "../settings/settings";
 import type { Vault } from "../vault/vault";
 import { asError } from "./errors";
-import { assertSafePath, assertMarkdown } from "../vault/paths";
+import { assertSafePath, assertMarkdown, assertRestoreTargetIsFile } from "../vault/paths";
 import { requireRead, requireWrite, requireOwner } from "./perm-guard";
 import { principalFor } from "./auth-middleware";
 import { isOwnerPrincipal } from "./principal";
@@ -154,6 +156,12 @@ export function gitRoutes(
           // (auth.json, tokens.json, …) over the live one.
           assertSafePath(body.path);
           assertMarkdown(body.path);
+          // Audit P0: a directory literally named "<x>.md" passes the
+          // suffix check above; git.ts's own object-type check catches
+          // the historical side (a tree committed at that path), this
+          // catches the live side (that path currently being a directory
+          // on disk), before anything is written.
+          await assertRestoreTargetIsFile(vault.root, body.path);
           await requireWrite(vault, request, body.path);
           await repo.restore(body.path, body.sha);
           // `repo.restore` writes straight to the working tree via `git
@@ -161,8 +169,21 @@ export function gitRoutes(
           // the index and RAG never learn the file changed (V-concurrency
           // #18). Route it through the same notify() everything else uses.
           await vault.notifyWrite(body.path);
+          // Audit P0: this used to call commitAll(msg) with no `paths`,
+          // staging and committing the ENTIRE working tree (stageAll()),
+          // including whatever else was dirty at the time, not just the
+          // restored file. Scoping it to the one touched path matches
+          // what the commit message claims happened.
+          //
+          // Attribution: /restore is reachable by any credential with
+          // write access (requireWrite above), not just the owner, unlike
+          // /commit and /checkpoint, which requireOwner. Without this,
+          // every restore lands as the default committer identity
+          // (brain.md/brain@local) no matter who actually ran it.
+          const identity = currentIdentity();
           const sha = await repo.commitAll(
             `restore ${body.path} → ${body.sha.slice(0, 7)}`,
+            { paths: [body.path], ...(identity ? singleActorCommitOpts(identity) : {}) },
           );
           return { ok: true, sha };
         } catch (e) {

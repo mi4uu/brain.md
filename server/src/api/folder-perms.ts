@@ -1,7 +1,8 @@
 import { Elysia, t } from "elysia";
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Vault } from "../vault/vault";
+import { atomicWrite } from "../vault/atomic-write";
 import { normalizeRel, parentDir } from "../vault/paths";
 import { asError } from "./errors";
 import { decodeWildcard } from "./wildcard";
@@ -28,9 +29,37 @@ export interface FolderMetaWithMcp {
 
 export const DEFAULT_MCP_PERMS: McpFolderPerms = { read: true, write: true };
 
+// Audit P0: a corrupt or unreadable folder-meta.json used to fail the
+// same way as a missing one, an empty `mcp` map, which resolveFolderPerms
+// then reads as "no override anywhere" and defaults to DEFAULT_MCP_PERMS
+// (read+write) for every single folder. A corrupt file and a missing one
+// are not the same thing: a missing file means permissions were never
+// set, open-by-default is the documented behaviour; a corrupt file means
+// real permissions exist on disk and could not be read, and defaulting
+// to full access in that case is exactly backwards. This sentinel makes
+// resolveFolderPerms deny every folder instead (see its own comment):
+// it's the ONLY entry in the map, so every path's walk up to the root
+// lands on it, with no nearer override to win over it.
+const FAIL_CLOSED_PERMS: McpFolderPerms = { read: false, write: false };
+function failClosedMeta(): FolderMetaWithMcp {
+  return { version: 1, icons: {}, colors: {}, mcp: { "": FAIL_CLOSED_PERMS } };
+}
+
 export async function loadFolderMeta(vault: Vault): Promise<FolderMetaWithMcp> {
+  let raw: string;
   try {
-    const raw = await readFile(vault.abs(META_REL), "utf8");
+    raw = await readFile(vault.abs(META_REL), "utf8");
+  } catch (e) {
+    if ((e as { code?: string }).code === "ENOENT") {
+      return { version: 1, icons: {}, colors: {}, mcp: {} };
+    }
+    console.error(
+      `[folder-perms] cannot read ${META_REL} (${(e as { code?: string }).code ?? e}); ` +
+        "failing closed: denying read/write on every folder until this is fixed",
+    );
+    return failClosedMeta();
+  }
+  try {
     const parsed = JSON.parse(raw) as Partial<FolderMetaWithMcp>;
     return {
       version: 1,
@@ -38,8 +67,12 @@ export async function loadFolderMeta(vault: Vault): Promise<FolderMetaWithMcp> {
       colors: parsed.colors ?? {},
       mcp: normalizeMcpMap(parsed.mcp),
     };
-  } catch {
-    return { version: 1, icons: {}, colors: {}, mcp: {} };
+  } catch (e) {
+    console.error(
+      `[folder-perms] ${META_REL} is corrupt (${e instanceof Error ? e.message : String(e)}); ` +
+        "failing closed: denying read/write on every folder until this is fixed",
+    );
+    return failClosedMeta();
   }
 }
 
@@ -64,14 +97,7 @@ export async function saveFolderMeta(
 ): Promise<void> {
   const abs = vault.abs(META_REL);
   await mkdir(dirname(abs), { recursive: true });
-  const tmp = `${abs}.tmp-${process.pid}-${Date.now()}`;
-  await writeFile(tmp, JSON.stringify(meta, null, 2));
-  try {
-    await rename(tmp, abs);
-  } catch (e) {
-    await unlink(tmp).catch(() => {});
-    throw e;
-  }
+  await atomicWrite(abs, JSON.stringify(meta, null, 2));
 }
 
 // api/meta.ts (icons/colors) and this module (mcp perms) both read-modify-

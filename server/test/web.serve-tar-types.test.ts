@@ -54,11 +54,15 @@ describe("listTarEntries", () => {
       const fileName = "a file.txt";
       await writeFile(join(dir, fileName), "hi");
       const tarPath = join(dir, "out.tar.gz");
-      // bsdtar/GNU tar's -s rewrites the in-archive name without needing
-      // an actual path on disk called "../escape harmless.js" (which the
-      // filesystem wouldn't allow as a direct child anyway).
+      // Rewrite the in-archive name without needing a path on disk called
+      // "../escape harmless.js". bsdtar (macOS) uses -s; GNU tar (Linux CI)
+      // uses --transform and needs -P, or it strips the leading "../".
+      const version = await new Response(Bun.spawn(["tar", "--version"], { stdout: "pipe" }).stdout).text();
+      const rename = version.includes("GNU tar")
+        ? ["-P", "--transform", "s,^a file.txt$,../escape harmless.js,"]
+        : ["-s", ",^a file.txt$,../escape harmless.js,"];
       const proc = Bun.spawn(
-        ["tar", "-czf", tarPath, "-s", ",^a file.txt$,../escape harmless.js,", "-C", dir, fileName],
+        ["tar", "-czf", tarPath, ...rename, "-C", dir, fileName],
         { stderr: "pipe" },
       );
       const code = await proc.exited;

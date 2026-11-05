@@ -1,0 +1,188 @@
+// board-plan Part B: optional external login (OIDC + GitHub) alongside
+// the V53 password login, which stays the default.
+//
+// Parsing is pure (reads process.env once per call, no side effects);
+// validation is a separate step so callers that just want to inspect the
+// shape (tests, /api/auth/config) don't have to catch an exception.
+
+export interface OidcProviderConfig {
+  issuer: string;
+  clientId: string;
+  clientSecret: string;
+  name: string;
+  scopes: string[];
+  groupsClaim?: string;
+  allowedGroups?: string[];
+}
+
+export interface GithubProviderConfig {
+  clientId: string;
+  clientSecret: string;
+}
+
+export interface LoginConfig {
+  passwordLogin: boolean;
+  publicUrl?: string;
+  oidc?: OidcProviderConfig;
+  github?: GithubProviderConfig;
+  allowedEmails: string[];
+  allowedDomains: string[];
+}
+
+export class LoginConfigError extends Error {}
+
+function csv(raw: string | undefined): string[] {
+  return (raw ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+function boolEnv(name: string, def: boolean): boolean {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return def;
+  return raw === "1" || raw.toLowerCase() === "true" || raw.toLowerCase() === "on";
+}
+
+function readOidc(): OidcProviderConfig | undefined {
+  const issuer = process.env.BRAINMD_OIDC_ISSUER?.trim();
+  const clientId = process.env.BRAINMD_OIDC_CLIENT_ID?.trim();
+  const clientSecret = process.env.BRAINMD_OIDC_CLIENT_SECRET?.trim();
+  if (!issuer && !clientId && !clientSecret) return undefined;
+  if (!issuer || !clientId || !clientSecret) {
+    throw new LoginConfigError(
+      "BRAINMD_OIDC_ISSUER, BRAINMD_OIDC_CLIENT_ID and BRAINMD_OIDC_CLIENT_SECRET must all be set to enable OIDC login",
+    );
+  }
+  const name = process.env.BRAINMD_OIDC_NAME?.trim() || "SSO";
+  const scopes = csv(process.env.BRAINMD_OIDC_SCOPES);
+  const groupsClaim = process.env.BRAINMD_OIDC_GROUPS_CLAIM?.trim() || undefined;
+  const allowedGroups = csv(process.env.BRAINMD_OIDC_ALLOWED_GROUPS);
+  return {
+    issuer,
+    clientId,
+    clientSecret,
+    name,
+    scopes: scopes.length > 0 ? scopes : ["openid", "email", "profile"],
+    groupsClaim,
+    allowedGroups: allowedGroups.length > 0 ? allowedGroups : undefined,
+  };
+}
+
+function readGithub(): GithubProviderConfig | undefined {
+  const clientId = process.env.BRAINMD_GITHUB_CLIENT_ID?.trim();
+  const clientSecret = process.env.BRAINMD_GITHUB_CLIENT_SECRET?.trim();
+  if (!clientId && !clientSecret) return undefined;
+  if (!clientId || !clientSecret) {
+    throw new LoginConfigError(
+      "BRAINMD_GITHUB_CLIENT_ID and BRAINMD_GITHUB_CLIENT_SECRET must both be set to enable GitHub login",
+    );
+  }
+  return { clientId, clientSecret };
+}
+
+export function loadLoginConfig(): LoginConfig {
+  return {
+    passwordLogin: boolEnv("BRAINMD_PASSWORD_LOGIN", true),
+    publicUrl: process.env.BRAINMD_PUBLIC_URL?.trim() || undefined,
+    oidc: readOidc(),
+    github: readGithub(),
+    allowedEmails: csv(process.env.BRAINMD_OAUTH_ALLOWED_EMAILS).map((e) => e.toLowerCase()),
+    allowedDomains: csv(process.env.BRAINMD_OAUTH_ALLOWED_DOMAINS).map((d) => d.toLowerCase()),
+  };
+}
+
+export function hasExternalProvider(cfg: LoginConfig): boolean {
+  return cfg.oidc !== undefined || cfg.github !== undefined;
+}
+
+// Throws LoginConfigError with a human-readable reason on any invalid
+// combination. Called once at startup (index.ts) and by createApp(), so
+// both the CLI and anything embedding the server fail the same way.
+export function validateLoginConfig(cfg: LoginConfig): void {
+  const external = hasExternalProvider(cfg);
+  if (!cfg.passwordLogin && !external) {
+    throw new LoginConfigError(
+      "BRAINMD_PASSWORD_LOGIN=off requires at least one external login provider (OIDC or GitHub) to be configured",
+    );
+  }
+  if (external) {
+    if (!cfg.publicUrl) {
+      throw new LoginConfigError(
+        "BRAINMD_PUBLIC_URL is required when an external login provider is configured (used to build the OAuth redirect URI)",
+      );
+    }
+    // A string that isn't a URL at all (a bare host, a typo, stray
+    // whitespace mid-value) used to pass straight through: idp-auth.ts's
+    // cookie Secure flag and redirect_uri only ever check it with a
+    // string-prefix test ("https://"), which a malformed value just
+    // fails silently, serving Secure-less cookies and a broken
+    // redirect_uri instead of refusing to start. Parse it for real here.
+    let url: URL;
+    try {
+      url = new URL(cfg.publicUrl);
+    } catch {
+      throw new LoginConfigError(`BRAINMD_PUBLIC_URL (${cfg.publicUrl}) is not a valid URL`);
+    }
+    const isLoopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1";
+    if (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopback)) {
+      throw new LoginConfigError(
+        `BRAINMD_PUBLIC_URL (${cfg.publicUrl}) must be https:// (plain http:// is only allowed for localhost/127.0.0.1 development)`,
+      );
+    }
+    // Replace the raw env string with new URL()'s normalised form (scheme
+    // and host lowercased, trailing slash added then stripped below): a
+    // value like "HTTPS://brain.example.com" passes the protocol check
+    // above (new URL() lowercases the scheme before comparing it) but
+    // would otherwise keep its original casing everywhere else this
+    // config is read, including idp-auth.ts's cookie Secure flag, which a
+    // defensive parse there covers too, but this is the one place that
+    // actually gets to fix the value instead of just working around it.
+    cfg.publicUrl = url.toString().replace(/\/+$/, "");
+    const hasGroupAllowlist = Boolean(cfg.oidc?.groupsClaim && cfg.oidc.allowedGroups);
+    const hasAllowlist =
+      cfg.allowedEmails.length > 0 || cfg.allowedDomains.length > 0 || hasGroupAllowlist;
+    if (!hasAllowlist) {
+      throw new LoginConfigError(
+        "an external login provider is configured but no allowlist is set, set BRAINMD_OAUTH_ALLOWED_EMAILS, BRAINMD_OAUTH_ALLOWED_DOMAINS, or BRAINMD_OIDC_GROUPS_CLAIM + BRAINMD_OIDC_ALLOWED_GROUPS",
+      );
+    }
+  }
+}
+
+// Domain comparison only ever runs on a syntactically plausible mailbox:
+// a non-empty local part and a non-empty domain, where the local part is
+// either unquoted and contains no '@' of its own, or quoted end to end
+// (RFC 5321 quoted-string, which may legally contain '@'). Rejects things
+// like "@example.com" (empty local part) and "a@@example.com" (unquoted
+// local part with a bare '@' in it), which the lastIndexOf('@') split
+// below would otherwise still slice a domain out of and compare.
+function hasValidMailboxSyntax(email: string, at: number): boolean {
+  if (at <= 0 || at === email.length - 1) return false;
+  const local = email.slice(0, at);
+  const isQuoted = local.length >= 2 && local.startsWith('"') && local.endsWith('"');
+  if (!isQuoted && local.includes("@")) return false;
+  return true;
+}
+
+// Shared allowlist check: email and group membership are both "is this
+// person allowed in", independent of which provider vouched for them.
+export function isAllowed(
+  cfg: LoginConfig,
+  identity: { email: string; groups?: string[] },
+): boolean {
+  const email = identity.email.toLowerCase();
+  if (cfg.allowedEmails.includes(email)) return true;
+  // Take the domain after the LAST '@', not split("@")[1]: a quoted
+  // local part can legally contain '@' (RFC 5321), e.g.
+  // "a@example.com"@evil.test, where split("@")[1] would read back
+  // "example.com" and let an attacker pass an allowed-domain check with
+  // a mailbox that actually lives at evil.test.
+  const at = email.lastIndexOf("@");
+  const domain = hasValidMailboxSyntax(email, at) ? email.slice(at + 1) : "";
+  if (domain && cfg.allowedDomains.includes(domain)) return true;
+  if (cfg.oidc?.groupsClaim && cfg.oidc.allowedGroups && identity.groups) {
+    if (identity.groups.some((g) => cfg.oidc!.allowedGroups!.includes(g))) return true;
+  }
+  return false;
+}

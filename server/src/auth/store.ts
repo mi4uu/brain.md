@@ -1,6 +1,7 @@
-import { mkdir, readFile, rename, unlink, writeFile, stat, unlink as fsUnlink } from "node:fs/promises";
+import { mkdir, readFile, stat, unlink as fsUnlink } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Vault } from "../vault/vault";
+import { atomicWrite } from "../vault/atomic-write";
 
 // V53: persistent password hash at <VAULT>/.brain/auth.json.
 // Schema: { hash: string, createdAt: number, updatedAt: number }
@@ -94,14 +95,7 @@ export class AuthStore {
   private async persist(data: AuthFile): Promise<void> {
     const abs = this.vault.abs(REL);
     await mkdir(dirname(abs), { recursive: true, mode: 0o700 });
-    const tmp = `${abs}.tmp-${process.pid}-${Date.now()}`;
-    await writeFile(tmp, JSON.stringify(data, null, 2), { mode: 0o600 });
-    try {
-      await rename(tmp, abs);
-    } catch (e) {
-      await unlink(tmp).catch(() => {});
-      throw e;
-    }
+    await atomicWrite(abs, JSON.stringify(data, null, 2), { mode: 0o600 });
   }
 
   // For diagnostic / tests

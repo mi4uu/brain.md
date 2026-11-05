@@ -1,7 +1,7 @@
 {
   "name": "@brain/server",
   "private": true,
-  "version": "0.4.12",
+  "version": "0.5.0",
   "license": "AGPL-3.0-or-later",
   "description": "brain.md backend — Elysia + Bun. Vault FS, search index, git autocommit, RAG pipeline (LanceDB), MCP server, optional auth.",
   "author": {
@@ -25,15 +25,17 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@elysiajs/cors": "^1.1.1",
+    "@elysiajs/cors": "^1.4.3",
     "@lancedb/lancedb": "^0.20.0",
-    "@modelcontextprotocol/sdk": "^1.0.4",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "apache-arrow": "^18.1.0",
-    "elysia": "^1.1.25",
+    "arctic": "^3.7.0",
+    "elysia": "^1.4.31",
     "gpt-tokenizer": "^2.8.1",
+    "jose": "^6.2.15",
     "onnxruntime-web": "^1.26.0",
     "yaml": "^2.6.0",
-    "zod": "^3.25.0"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/bun": "latest",

@@ -1,4 +1,5 @@
 import { Elysia } from "elysia";
+import { originOf } from "./origin";
 
 // V64: OAuth 2.1 discovery surface for MCP authorization spec 2025-11-25.
 //
@@ -18,46 +19,6 @@ import { Elysia } from "elysia";
 // later commits — this file only advertises them.
 
 const SUPPORTED_SCOPES = ["vault:read", "vault:write"] as const;
-
-function originOf(req: Request): string {
-  // Honour proxy / tunnel headers so the advertised URLs match the
-  // hostname the client actually used. Priority:
-  //   1. Cloudflare `cf-visitor` JSON (`{"scheme":"https"}`) — set by
-  //      Cloudflare Tunnel, which does NOT populate x-forwarded-proto.
-  //      Without this, OAuth advertises http:// URLs even though the
-  //      client connected over https → spec violation, client refuses.
-  //   2. Standard x-forwarded-{proto,host}.
-  //   3. Fallback to the request URL, but force HTTPS for any non-
-  //      localhost host (assume reverse proxy with TLS termination).
-  const host =
-    req.headers.get("x-forwarded-host") ||
-    req.headers.get("host") ||
-    new URL(req.url).host;
-
-  let proto: string | undefined;
-  const cfVisitor = req.headers.get("cf-visitor");
-  if (cfVisitor) {
-    try {
-      const v = JSON.parse(cfVisitor) as { scheme?: string };
-      if (v.scheme === "http" || v.scheme === "https") proto = v.scheme;
-    } catch {
-      // ignore malformed
-    }
-  }
-  if (!proto) proto = req.headers.get("x-forwarded-proto") ?? undefined;
-  if (!proto) {
-    const u = new URL(req.url);
-    proto = u.protocol.replace(":", "");
-  }
-  // Spec defence: AS endpoints MUST be HTTPS. If the host looks public
-  // (anything not localhost), upgrade. Direct local hits keep http.
-  const isLocal =
-    host.startsWith("localhost") ||
-    host.startsWith("127.0.0.1") ||
-    host.startsWith("[::1]");
-  if (!isLocal && proto === "http") proto = "https";
-  return `${proto}://${host}`;
-}
 
 export function oauthDiscoveryRoutes() {
   return new Elysia()
