@@ -97,7 +97,7 @@ async function readPerms(vault: Vault): Promise<Record<string, McpFolderPerms>> 
 
 function denied(perm: "read" | "write", path: string): never {
   const e: Error & { code?: string } = new Error(
-    `[mcp] ${perm} denied for ${path} by folder permissions (V52)`,
+    `[mcp] ${perm} denied for ${path} by folder permissions`,
   );
   e.code = perm === "read" ? "MCP_READ_DENIED" : "MCP_WRITE_DENIED";
   throw e;
@@ -145,6 +145,26 @@ function logCall(name: string, args: unknown, ok: boolean): void {
   // V46: audit log to stderr (servers usually capture stderr)
   const argSummary = JSON.stringify(args).slice(0, 200);
   console.error(`[mcp] tool=${name} ok=${ok} args=${argSummary}`);
+}
+
+// Single error shape for every tool: {error, code}. Keeps the caller's own
+// .code (e.g. MCP_READ_DENIED from denied()/scopeDenied(), or a
+// RagDisabledError's RAG_DISABLED) instead of letting the MCP SDK's default
+// error handler flatten it down to a plain message, which it does for any
+// exception a tool handler lets escape.
+function toolError(name: string, args: unknown, err: unknown) {
+  logCall(name, args, false);
+  const isDisabled = err instanceof RagDisabledError;
+  const code = isDisabled
+    ? "RAG_DISABLED"
+    : err instanceof Error && typeof (err as { code?: unknown }).code === "string"
+      ? (err as { code: string }).code
+      : "MCP_ERROR";
+  const message = isDisabled ? "RAG disabled" : err instanceof Error ? err.message : String(err);
+  return {
+    isError: true,
+    content: [{ type: "text", text: JSON.stringify({ error: message, code }) }],
+  } as const;
 }
 
 // MCP clients (Claude Desktop, LM Studio, …) open and close transports
@@ -245,12 +265,16 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
       inputSchema: { path: z.string().min(1) },
     },
     async ({ path }) => {
-      await checkRead(vault, principal, path);
-      const note = await vault.readNote(path);
-      logCall("read_note", { path }, true);
-      return {
-        content: [{ type: "text", text: JSON.stringify(note) }],
-      };
+      try {
+        await checkRead(vault, principal, path);
+        const note = await vault.readNote(path);
+        logCall("read_note", { path }, true);
+        return {
+          content: [{ type: "text", text: JSON.stringify(note) }],
+        };
+      } catch (err) {
+        return toolError("read_note", { path }, err);
+      }
     },
   );
 
@@ -289,11 +313,15 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
       inputSchema: { path: z.string().min(1) },
     },
     async ({ path }) => {
-      await checkRead(vault, principal, path);
-      const allowedPath = await readFilter();
-      const bls = index.backlinks(path, allowedPath);
-      logCall("get_backlinks", { path }, true);
-      return { content: [{ type: "text", text: JSON.stringify(bls) }] };
+      try {
+        await checkRead(vault, principal, path);
+        const allowedPath = await readFilter();
+        const bls = index.backlinks(path, allowedPath);
+        logCall("get_backlinks", { path }, true);
+        return { content: [{ type: "text", text: JSON.stringify(bls) }] };
+      } catch (err) {
+        return toolError("get_backlinks", { path }, err);
+      }
     },
   );
 
@@ -377,14 +405,18 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
       },
     },
     async ({ path, content }) => {
-      await checkWrite(vault, principal, path);
-      const r = await vault.writeNote(path, content);
-      logCall("write_note", { path, bytes: content.length }, true);
-      // write_note replaces the whole body with content the caller just
-      // sent us, so echoing it back discloses nothing new, unlike
-      // append_note, which would otherwise hand back pre-existing content
-      // the caller may not have read permission for.
-      return { content: [{ type: "text", text: JSON.stringify({ ok: true, ...r }) }] };
+      try {
+        await checkWrite(vault, principal, path);
+        const r = await vault.writeNote(path, content);
+        logCall("write_note", { path, bytes: content.length }, true);
+        // write_note replaces the whole body with content the caller just
+        // sent us, so echoing it back discloses nothing new, unlike
+        // append_note, which would otherwise hand back pre-existing content
+        // the caller may not have read permission for.
+        return { content: [{ type: "text", text: JSON.stringify({ ok: true, ...r }) }] };
+      } catch (err) {
+        return toolError("write_note", { path, bytes: content.length }, err);
+      }
     },
   );
 
@@ -401,17 +433,21 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
       },
     },
     async ({ path, content }) => {
-      await checkWrite(vault, principal, path);
-      // V-concurrency #10: appendNote reads+writes under a per-path lock,
-      // so two concurrent appends can't both read the same body and have
-      // the second write clobber the first's addition.
-      const r = await vault.appendNote(path, content);
-      logCall("append_note", { path, bytes: content.length }, true);
-      // Metadata only, a write-only folder (read:false, write:true) must
-      // not leak the pre-existing content this call just appended to.
-      return {
-        content: [{ type: "text", text: JSON.stringify({ ok: true, path: r.path, mtime: r.mtime }) }],
-      };
+      try {
+        await checkWrite(vault, principal, path);
+        // V-concurrency #10: appendNote reads+writes under a per-path lock,
+        // so two concurrent appends can't both read the same body and have
+        // the second write clobber the first's addition.
+        const r = await vault.appendNote(path, content);
+        logCall("append_note", { path, bytes: content.length }, true);
+        // Metadata only, a write-only folder (read:false, write:true) must
+        // not leak the pre-existing content this call just appended to.
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ok: true, path: r.path, mtime: r.mtime }) }],
+        };
+      } catch (err) {
+        return toolError("append_note", { path, bytes: content.length }, err);
+      }
     },
   );
 
@@ -422,23 +458,6 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
   // call checkRead() themselves (semantic_outline, context_for_query,
   // find_orphans, weekly_digest, compare_notes previously didn't).
   const ragDeps: RagDeps = { vault, index, pipeline, ragEnabled, principal };
-
-  const ragError = (name: string, args: unknown, err: unknown) => {
-    logCall(name, args, false);
-    const isDisabled = err instanceof RagDisabledError;
-    return {
-      isError: true,
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({
-            error: isDisabled ? "RAG disabled" : (err instanceof Error ? err.message : String(err)),
-            code: isDisabled ? "RAG_DISABLED" : "RAG_ERROR",
-          }),
-        },
-      ],
-    };
-  };
 
   server.registerTool(
     "find_similar_tasks",
@@ -458,7 +477,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
         logCall("find_similar_tasks", { query, k, filter, scope }, true);
         return { content: [{ type: "text", text: JSON.stringify(hits) }] };
       } catch (err) {
-        return ragError("find_similar_tasks", { query, k, filter, scope }, err);
+        return toolError("find_similar_tasks", { query, k, filter, scope }, err);
       }
     },
   );
@@ -485,7 +504,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
         logCall("find_related", { path, k, scope }, true);
         return { content: [{ type: "text", text: JSON.stringify(hits) }] };
       } catch (err) {
-        return ragError("find_related", { path, k, scope }, err);
+        return toolError("find_related", { path, k, scope }, err);
       }
     },
   );
@@ -506,7 +525,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
         logCall("semantic_outline", { path, threshold }, true);
         return { content: [{ type: "text", text: JSON.stringify(clusters) }] };
       } catch (err) {
-        return ragError("semantic_outline", { path, threshold }, err);
+        return toolError("semantic_outline", { path, threshold }, err);
       }
     },
   );
@@ -528,7 +547,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
         logCall("context_for_query", { query, budget_tokens, scope }, true);
         return { content: [{ type: "text", text: JSON.stringify(out) }] };
       } catch (err) {
-        return ragError("context_for_query", { query, budget_tokens, scope }, err);
+        return toolError("context_for_query", { query, budget_tokens, scope }, err);
       }
     },
   );
@@ -550,7 +569,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
         logCall("find_orphans", { limit, min_isolation, scope }, true);
         return { content: [{ type: "text", text: JSON.stringify(out) }] };
       } catch (err) {
-        return ragError("find_orphans", { limit, min_isolation, scope }, err);
+        return toolError("find_orphans", { limit, min_isolation, scope }, err);
       }
     },
   );
@@ -572,7 +591,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
         logCall("weekly_digest", { since, threshold, scope }, true);
         return { content: [{ type: "text", text: JSON.stringify(out) }] };
       } catch (err) {
-        return ragError("weekly_digest", { since, threshold, scope }, err);
+        return toolError("weekly_digest", { since, threshold, scope }, err);
       }
     },
   );
@@ -593,7 +612,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
         logCall("compare_notes", { a, b }, true);
         return { content: [{ type: "text", text: JSON.stringify(out) }] };
       } catch (err) {
-        return ragError("compare_notes", { a, b }, err);
+        return toolError("compare_notes", { a, b }, err);
       }
     },
   );

@@ -97,6 +97,13 @@ async function callTool(client: Client, name: string, args: Record<string, unkno
   return client.callTool({ name, arguments: args });
 }
 
+// Every denied tool call returns the same {error, code} JSON shape in its
+// first content block, regardless of which tool produced it.
+function errorPayload(res: Awaited<ReturnType<typeof callTool>>): { error: string; code: string } {
+  const content = res.content as Array<{ type: string; text: string }>;
+  return JSON.parse(content[0]!.text);
+}
+
 describe("MCP folder-perm filtering (unauthenticated, back-compat)", () => {
   test("search_notes / list_tags / get_tasks skip denied folders", async () => {
     await handle.vault.writeNote("secret/a.md", "# A\n\nsearchable-term here\n- [ ] do thing #tag1\n");
@@ -227,6 +234,109 @@ describe("MCP OAuth scope enforcement: read-only token cannot mutate", () => {
     const client = await mcpClient(pair.accessToken);
     const write = await callTool(client, "write_note", { path: "public/b.md", content: "x" });
     expect(write.isError).toBeFalsy();
+    await client.close();
+  });
+
+  test("vault:read-only token's write_note/append_note denial carries MCP_WRITE_DENIED", async () => {
+    const pair = handle.oauthStore.issueTokenPair({
+      clientId: "test-client",
+      scope: "vault:read",
+      resource: "http://localhost/mcp",
+    });
+    const client = await mcpClient(pair.accessToken);
+
+    const write = await callTool(client, "write_note", { path: "public/b.md", content: "x" });
+    expect(errorPayload(write).code).toBe("MCP_WRITE_DENIED");
+
+    const append = await callTool(client, "append_note", { path: "public/b.md", content: "x" });
+    expect(errorPayload(append).code).toBe("MCP_WRITE_DENIED");
+
+    await client.close();
+  });
+});
+
+describe("MCP permission-denied errors carry a stable machine-readable code", () => {
+  let ownerToken!: string;
+
+  beforeEach(async () => {
+    await setPassword("hunter2hunter2");
+    await handle.authStore.load();
+    ownerToken = await login("hunter2hunter2");
+    await handle.vault.writeNote("secret/a.md", "# A\n\nbody\n");
+    await handle.vault.writeNote("public/b.md", "# B\n\nbody\n");
+    await handle.vault.writeNote("secret/linker.md", "See [[public/b]] for more.\n");
+    await handle.index.updatePath("secret/a.md");
+    await handle.index.updatePath("public/b.md");
+    await handle.index.updatePath("secret/linker.md");
+    await denyRead(ownerToken, "secret");
+  });
+
+  test("read_note on a denied folder returns code MCP_READ_DENIED, not just free text", async () => {
+    const key = await createApiKey(ownerToken);
+    const client = await mcpClient(key);
+    const res = await callTool(client, "read_note", { path: "secret/a.md" });
+    expect(res.isError).toBeTruthy();
+    expect(errorPayload(res).code).toBe("MCP_READ_DENIED");
+    await client.close();
+  });
+
+  test("get_backlinks on a denied path returns code MCP_READ_DENIED", async () => {
+    const key = await createApiKey(ownerToken);
+    const client = await mcpClient(key);
+    const res = await callTool(client, "get_backlinks", { path: "secret/a.md" });
+    expect(res.isError).toBeTruthy();
+    expect(errorPayload(res).code).toBe("MCP_READ_DENIED");
+    await client.close();
+  });
+
+  test("write_note on a read-only folder returns code MCP_WRITE_DENIED", async () => {
+    await denyRead(ownerToken, "writeprotected");
+    const r = await handle.app.handle(
+      new Request("http://localhost/api/folder-mcp-perms", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${ownerToken}` },
+        body: JSON.stringify({ path: "writeprotected", read: true, write: false }),
+      }),
+    );
+    expect(r.status).toBe(200);
+    await handle.vault.writeNote("writeprotected/note.md", "x\n");
+    await handle.index.updatePath("writeprotected/note.md");
+
+    const key = await createApiKey(ownerToken);
+    const client = await mcpClient(key);
+    const res = await callTool(client, "write_note", { path: "writeprotected/note.md", content: "y" });
+    expect(res.isError).toBeTruthy();
+    expect(errorPayload(res).code).toBe("MCP_WRITE_DENIED");
+    await client.close();
+  });
+
+  test("append_note on a read-only folder returns code MCP_WRITE_DENIED", async () => {
+    const r = await handle.app.handle(
+      new Request("http://localhost/api/folder-mcp-perms", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${ownerToken}` },
+        body: JSON.stringify({ path: "readonly2", read: true, write: false }),
+      }),
+    );
+    expect(r.status).toBe(200);
+    await handle.vault.writeNote("readonly2/note.md", "x\n");
+    await handle.index.updatePath("readonly2/note.md");
+
+    const key = await createApiKey(ownerToken);
+    const client = await mcpClient(key);
+    const res = await callTool(client, "append_note", { path: "readonly2/note.md", content: "y" });
+    expect(res.isError).toBeTruthy();
+    expect(errorPayload(res).code).toBe("MCP_WRITE_DENIED");
+    await client.close();
+  });
+
+  test("the denial message never leaks an internal version tag like (V52)", async () => {
+    const key = await createApiKey(ownerToken);
+    const client = await mcpClient(key);
+    const res = await callTool(client, "read_note", { path: "secret/a.md" });
+    const payload = errorPayload(res);
+    expect(payload.error).not.toContain("V52");
+    expect(payload.error).not.toMatch(/\(V\d+\)/);
     await client.close();
   });
 });
