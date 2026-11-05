@@ -1,14 +1,12 @@
 import {
   mkdir,
-  open as fsOpen,
   readdir,
   readFile,
   rename,
   rm,
   stat,
-  unlink,
 } from "node:fs/promises";
-import { randomBytes, createHash } from "node:crypto";
+import { createHash } from "node:crypto";
 import { dirname, join, posix, resolve } from "node:path";
 import {
   assertMarkdown,
@@ -21,6 +19,7 @@ import {
   relFromAbs,
   safeJoin,
 } from "./paths";
+import { atomicWrite, atomicWriteBytes } from "./atomic-write";
 import { VaultError } from "./types";
 import type { NoteData, StatInfo, TreeNode } from "./types";
 
@@ -539,48 +538,6 @@ async function walk(
       const childRel = rel === "" ? name : `${rel}/${name}`;
       notes.push(childRel);
     }
-  }
-}
-
-// `${abs}.tmp-${pid}-${Date.now()}` collided whenever two writes to the same
-// destination landed in the same millisecond: both opened the same tmp
-// path, so one write's content could be clobbered by the other's, and the
-// renamer that lost the race got ENOENT. A random suffix plus exclusive
-// ("wx") creation makes each write's tmp file unique and guarantees nobody
-// else can be holding it.
-function tmpNameFor(abs: string): string {
-  return `${abs}.tmp-${process.pid}-${randomBytes(6).toString("hex")}`;
-}
-
-async function atomicWrite(abs: string, content: string): Promise<void> {
-  const tmp = tmpNameFor(abs);
-  const handle = await fsOpen(tmp, "wx");
-  try {
-    await handle.writeFile(content, "utf8");
-  } finally {
-    await handle.close();
-  }
-  try {
-    await rename(tmp, abs);
-  } catch (e) {
-    await unlink(tmp).catch(() => {});
-    throw e;
-  }
-}
-
-async function atomicWriteBytes(abs: string, bytes: Uint8Array): Promise<void> {
-  const tmp = tmpNameFor(abs);
-  const handle = await fsOpen(tmp, "wx");
-  try {
-    await handle.writeFile(bytes);
-  } finally {
-    await handle.close();
-  }
-  try {
-    await rename(tmp, abs);
-  } catch (e) {
-    await unlink(tmp).catch(() => {});
-    throw e;
   }
 }
 

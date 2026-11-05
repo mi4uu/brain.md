@@ -1,6 +1,7 @@
-import { mkdir, readFile, writeFile, rename, unlink, stat } from "node:fs/promises";
+import { mkdir, readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { Vault, MutationEvent } from "../vault/vault";
+import { atomicWrite } from "../vault/atomic-write";
 import { basenameNoExt } from "../vault/paths";
 import { parseNote } from "./parse";
 
@@ -296,14 +297,7 @@ export class VaultIndex {
   async persist(): Promise<void> {
     const abs = this.vault.abs(INDEX_REL);
     await mkdir(dirname(abs), { recursive: true });
-    const tmp = `${abs}.tmp-${process.pid}-${Date.now()}`;
-    await writeFile(tmp, JSON.stringify(this.data));
-    try {
-      await rename(tmp, abs);
-    } catch (e) {
-      await unlink(tmp).catch(() => {});
-      throw e;
-    }
+    await atomicWrite(abs, JSON.stringify(this.data));
   }
 
   async load(): Promise<boolean> {

@@ -1,7 +1,8 @@
 import { randomBytes, createHash } from "node:crypto";
-import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
+import { readFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Vault } from "../vault/vault";
+import { atomicWrite } from "../vault/atomic-write";
 import { LOCAL_SUB } from "./identity";
 
 // V66: long-lived named API keys. Survive restarts (persist to
@@ -79,6 +80,10 @@ export class APIKeyStore {
   private vault?: Vault;
   private dirty = false;
   private flushTimer?: ReturnType<typeof setTimeout>;
+  // Chains flush() calls so a flush scheduled while a previous one is
+  // still writing waits for its rename to finish before starting its own,
+  // instead of racing another in-flight write to the same destination.
+  private flushChain: Promise<void> = Promise.resolve();
 
   async bindVault(vault: Vault): Promise<void> {
     this.vault = vault;
@@ -145,7 +150,13 @@ export class APIKeyStore {
     this.flushTimer.unref?.();
   }
 
-  private async flush(): Promise<void> {
+  private flush(): Promise<void> {
+    const next = this.flushChain.then(() => this.doFlush());
+    this.flushChain = next;
+    return next;
+  }
+
+  private async doFlush(): Promise<void> {
     if (!this.vault) return;
     this.dirty = false;
     const data: PersistedFile = {
@@ -155,9 +166,7 @@ export class APIKeyStore {
     const abs = this.vault.abs(REL);
     try {
       await mkdir(dirname(abs), { recursive: true, mode: 0o700 });
-      const tmp = `${abs}.tmp`;
-      await writeFile(tmp, JSON.stringify(data, null, 2), { encoding: "utf8", mode: 0o600 });
-      await rename(tmp, abs);
+      await atomicWrite(abs, JSON.stringify(data, null, 2), { mode: 0o600 });
     } catch (e) {
       // eslint-disable-next-line no-console
       console.warn(

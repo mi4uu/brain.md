@@ -1,6 +1,7 @@
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Vault } from "../vault/vault";
+import { atomicWrite } from "../vault/atomic-write";
 import { DEFAULT_RAG_CONFIG, type RagConfig } from "../rag/types";
 
 export interface GitSettings {
@@ -75,17 +76,10 @@ export class SettingsStore {
   private async persist(): Promise<void> {
     const abs = this.vault.abs(REL);
     await mkdir(dirname(abs), { recursive: true });
-    const tmp = `${abs}.tmp-${process.pid}-${Date.now()}`;
     // Never persist the apiKey to disk in plaintext if someone wants it
     // env-only — for v1 we DO persist (vault is single-user; auth.json
     // gates remote access). Document in V49 if revisited.
-    await writeFile(tmp, JSON.stringify(this.data, null, 2));
-    try {
-      await rename(tmp, abs);
-    } catch (e) {
-      await unlink(tmp).catch(() => {});
-      throw e;
-    }
+    await atomicWrite(abs, JSON.stringify(this.data, null, 2));
   }
 }
 

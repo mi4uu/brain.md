@@ -1,7 +1,8 @@
 import { Elysia, t } from "elysia";
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Vault } from "../vault/vault";
+import { atomicWrite } from "../vault/atomic-write";
 import { normalizeRel, parentDir } from "../vault/paths";
 import { asError } from "./errors";
 import { decodeWildcard } from "./wildcard";
@@ -96,14 +97,7 @@ export async function saveFolderMeta(
 ): Promise<void> {
   const abs = vault.abs(META_REL);
   await mkdir(dirname(abs), { recursive: true });
-  const tmp = `${abs}.tmp-${process.pid}-${Date.now()}`;
-  await writeFile(tmp, JSON.stringify(meta, null, 2));
-  try {
-    await rename(tmp, abs);
-  } catch (e) {
-    await unlink(tmp).catch(() => {});
-    throw e;
-  }
+  await atomicWrite(abs, JSON.stringify(meta, null, 2));
 }
 
 // api/meta.ts (icons/colors) and this module (mcp perms) both read-modify-
