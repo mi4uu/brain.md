@@ -7,8 +7,8 @@ reporting anything that a newer release might already have fixed.
 
 | Version | Supported |
 |---|---|
-| 0.4.x (latest minor) | yes |
-| < 0.4 | no |
+| 0.5.x (latest minor) | yes |
+| < 0.5 | no |
 
 ## Reporting a vulnerability
 
