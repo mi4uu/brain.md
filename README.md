@@ -351,6 +351,19 @@ header is `localhost`/`127.0.0.1`/`[::1]` or an entry in
 (you want one anyway outside loopback) or add your LAN name or tunnel
 hostname to `ALLOWED_HOSTS`. With a password set the check is off.
 
+Behind a tunnel or reverse proxy, the login and OAuth-consent rate
+limiter keys on the real TCP peer by default, which is the tunnel
+itself (loopback), not the actual client: every request shares one
+bucket. Set `BRAINMD_TRUST_PROXY=cloudflare` when a Cloudflare Tunnel
+(`cloudflared`) runs on the same host and forwards to a local port,
+to key on the `CF-Connecting-IP` header Cloudflare's edge sets
+instead, only honoured when the direct peer is loopback. For any
+other local reverse proxy, set `BRAINMD_TRUST_PROXY` to a
+comma-separated list of its IPs to key on `X-Forwarded-For` instead
+(the right-most entry that isn't itself one of those IPs), only
+honoured when the direct peer is one of them. Leave it unset if
+there's no local proxy in front of the server at all.
+
 The mobile layout adapts: editor and preview swap in place via a
 bottom tab, the topbar scrolls horizontally with a sticky brand +
 hamburger, the sidebar slides in as a drawer.
