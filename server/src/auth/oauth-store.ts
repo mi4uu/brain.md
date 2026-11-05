@@ -279,7 +279,9 @@ export class OAuthStore {
 
   // ---- maintenance ----
 
-  private sweepExpired(): void {
+  // Not private: exercised directly by tests (and the interval in
+  // startSweeper) rather than only through a timer.
+  sweepExpired(): void {
     const now = Date.now();
     for (const [k, v] of this.codes) if (v.expiresAt < now) this.codes.delete(k);
     for (const [k, v] of this.access) if (v.expiresAt < now) this.access.delete(k);
@@ -288,7 +290,12 @@ export class OAuthStore {
   }
 
   // For tests + admin UI (step 4).
-  stats(): { codes: number; access: number; refresh: number } {
-    return { codes: this.codes.size, access: this.access.size, refresh: this.refresh.size };
+  stats(): { codes: number; access: number; refresh: number; consumedRefresh: number } {
+    return {
+      codes: this.codes.size,
+      access: this.access.size,
+      refresh: this.refresh.size,
+      consumedRefresh: this.consumedRefresh.size,
+    };
   }
 }
