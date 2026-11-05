@@ -856,6 +856,7 @@ Every env knob:
 | `GIT_AUTOCOMMIT`               | `1`     | `1` / `0`. Bootstrap default only.        |
 | `GIT_AUTOCOMMIT_DEBOUNCE_MS`   | `15000` | Bootstrap default only.                   |
 | `ALLOWED_HOSTS`                | none    | Comma-separated extra hostnames accepted on the Host header without a password, beyond `localhost`/`127.0.0.1`/`[::1]`. Not needed once a password is set. See [Mobile](#-mobile). |
+| `BRAINMD_TRUST_PROXY`          | none    | `cloudflare`, or a comma-separated list of trusted reverse-proxy IPs. Changes which header the login/OAuth-consent rate limiter trusts for the real client IP behind a tunnel or reverse proxy. Unset means forwarded headers are never trusted. See [Mobile](#-mobile). |
 
 ### 💾 Backups
 
