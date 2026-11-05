@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.0
+## 0.5.0 - 2026-11-05
 
 Optional OIDC/GitHub login, next to the existing password login. Password
 login and passwordless (no auth configured) installs are unaffected unless
