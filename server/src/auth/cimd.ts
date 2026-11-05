@@ -33,12 +33,12 @@ const FETCH_TIMEOUT_MS = 5000;
 const MAX_RESPONSE_BYTES = 64 * 1024;       // metadata docs are tiny — 64KB is generous
 
 // IPv4 private / loopback / link-local / "this network".
-function isPrivateV4(ip: string): boolean {
+export function isPrivateV4(ip: string): boolean {
   const parts = ip.split(".").map(Number);
   if (parts.length !== 4 || parts.some((n) => Number.isNaN(n) || n < 0 || n > 255)) {
     return true; // unparseable → treat as untrusted
   }
-  const [a, b] = parts as [number, number, number, number];
+  const [a, b, c] = parts as [number, number, number, number];
   if (a === 10) return true;
   if (a === 127) return true;
   if (a === 0) return true;
@@ -46,6 +46,9 @@ function isPrivateV4(ip: string): boolean {
   if (a === 172 && b >= 16 && b <= 31) return true;
   if (a === 192 && b === 168) return true;
   if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT 100.64.0.0/10
+  if (a === 192 && b === 0 && c === 0) return true; // 192.0.0.0/24 IETF protocol assignments (incl. NAT64 well-known prefix)
+  if (a === 192 && b === 88 && c === 99) return true; // 192.88.99.0/24 6to4 relay anycast
+  if (a === 198 && (b === 18 || b === 19)) return true; // 198.18.0.0/15 benchmarking
   if (a >= 224) return true; // multicast + reserved
   return false;
 }
