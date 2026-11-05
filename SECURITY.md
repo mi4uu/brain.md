@@ -70,6 +70,14 @@ use):
   Dynamic client registration is open (RFC 7591); trust comes from that
   gate, not from pre-registration.
 
+**No per-user restriction yet (0.5.x):** every identity that gets past
+login, whether password, an allowlisted OIDC/GitHub account, or an API key,
+is the single unrestricted owner. There is no editor or viewer role: adding
+a second person to `BRAINMD_OAUTH_ALLOWED_EMAILS` (or an allowed domain or
+OIDC group) hands them full read/write on the whole vault, including other
+people's notes and the admin endpoints (folder perms, settings, API keys).
+A role/permission axis per identity is planned for 0.6.
+
 With neither password login nor an external provider configured, the
 server relies on a Host/Origin allowlist (`ALLOWED_HOSTS`) to block
 browser-based DNS-rebinding attacks instead, fine for pure loopback or a

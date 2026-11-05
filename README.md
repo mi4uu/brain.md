@@ -760,6 +760,15 @@ session token password login does. Nothing about the rest of the app
 changes, per-folder MCP permissions and the owner-only admin routes
 work the same regardless of which door someone came in through.
 
+> **⚠️ No per-user restriction yet.** This is single-owner auth with
+> multiple doors in, not multi-user access control. Everyone who gets
+> past login, password or any allowlisted OIDC/GitHub identity, is the
+> same unrestricted owner: full read/write on the whole vault (including
+> other people's notes) and the owner-only admin routes (folder perms,
+> settings, API keys). "Adding a user" today means "adding a second
+> owner". Per-identity roles (owner/editor/viewer) are planned for 0.6,
+> not in 0.5.x.
+
 ### 📒 Audit trail
 
 Every autocommit names who actually made the change, not just that
