@@ -857,6 +857,24 @@ Every env knob:
 | `GIT_AUTOCOMMIT_DEBOUNCE_MS`   | `15000` | Bootstrap default only.                   |
 | `ALLOWED_HOSTS`                | none    | Comma-separated extra hostnames accepted on the Host header without a password, beyond `localhost`/`127.0.0.1`/`[::1]`. Not needed once a password is set. See [Mobile](#-mobile). |
 
+### 💾 Backups
+
+Git autocommit (see [Auto versioning & history](#-auto-versioning--history))
+versions **note content only**: files directly under the vault root and its
+subfolders. `.brain/` is git-ignored entirely, so a restore from git history
+alone does not bring back settings, per-folder MCP permissions, the password
+hash, session tokens or the RAG index. To actually restore a working
+instance, back up `.brain/` separately (a plain file copy, no git needed):
+
+- `settings.json`, `folder-meta.json`: bookmarks, daily-note dir, git
+  autocommit config, RAG config, per-folder MCP permissions.
+- `auth.json`: the owner password hash. Losing it without a backup means
+  resetting the password, not recovering it.
+- `tokens.json`: active session tokens (hashed). Losing it just logs
+  everyone out, nothing to restore.
+- `vectors.json`: the embedded RAG index. Losing it only costs a
+  re-embed, it rebuilds from note content on next save/search.
+
 ---
 
 ## 🏗️ Architecture
