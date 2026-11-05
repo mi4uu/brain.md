@@ -4,14 +4,58 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: write # needed by the release job
 
 jobs:
+  test:
+    name: Test & typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck (server + web)
+        run: bun run typecheck
+
+      - name: Server test suite
+        run: bun run test
+
+      - name: Check version strings agree
+        run: |
+          VERSION_TS=$(sed -nE 's/.*VERSION = "([^"]+)".*/\1/p' server/src/version.ts)
+          PKG_ROOT=$(node -p "require('./package.json').version")
+          PKG_SERVER=$(node -p "require('./server/package.json').version")
+          PKG_WEB=$(node -p "require('./web/package.json').version")
+          echo "version.ts=$VERSION_TS package.json=$PKG_ROOT server/package.json=$PKG_SERVER web/package.json=$PKG_WEB"
+          for v in "$PKG_ROOT" "$PKG_SERVER" "$PKG_WEB"; do
+            if [ "$v" != "$VERSION_TS" ]; then
+              echo "::error::server/src/version.ts VERSION ($VERSION_TS) does not match a package.json version ($v)"
+              exit 1
+            fi
+          done
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            TAG_VERSION="${GITHUB_REF_NAME#v}"
+            if [ "$TAG_VERSION" != "$VERSION_TS" ]; then
+              echo "::error::tag $GITHUB_REF_NAME does not match VERSION ($VERSION_TS)"
+              exit 1
+            fi
+          fi
+
   build:
     name: ${{ matrix.target }}
+    needs: test
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -98,7 +142,7 @@ jobs:
 
   release:
     name: GitHub Release
-    needs: build
+    needs: [test, build]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
