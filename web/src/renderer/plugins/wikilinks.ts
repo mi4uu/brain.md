@@ -2,7 +2,7 @@ import type { Plugin } from "unified";
 import type { Root, Text, Parent, PhrasingContent } from "mdast";
 import { visit } from "unist-util-visit";
 
-const WIKILINK_RE = /(!?)\[\[([^\[\]\n]+?)\]\]/g;
+const WIKILINK_RE = /(!?)\[\[([^[\]\n]+?)\]\]/g;
 const DIM_RE = /^(\d+)(?:x(\d+))?$/;
 
 interface WikilinkNode {
@@ -25,8 +25,7 @@ declare module "mdast" {
   }
 }
 
-export const remarkWikilinks: Plugin<[], Root> = function () {
-  return (tree) => {
+export const remarkWikilinks: Plugin<[], Root> = () => (tree) => {
     visit(tree, "text", (node: Text, index, parent) => {
       if (!parent || typeof index !== "number") return;
       const value = node.value;
@@ -45,7 +44,7 @@ export const remarkWikilinks: Plugin<[], Root> = function () {
         }
         const embed = bang === "!";
         const pipe = inner.indexOf("|");
-        let target = pipe >= 0 ? inner.slice(0, pipe).trim() : inner;
+        const target = pipe >= 0 ? inner.slice(0, pipe).trim() : inner;
         const aliasRaw = pipe >= 0 ? inner.slice(pipe + 1).trim() : null;
         const hashIdx = target.indexOf("#");
         const caretIdx = target.indexOf("^");
@@ -88,6 +87,5 @@ export const remarkWikilinks: Plugin<[], Root> = function () {
       return index + out.length;
     });
   };
-};
 
 export type { WikilinkNode };

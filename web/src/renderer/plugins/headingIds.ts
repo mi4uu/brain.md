@@ -12,8 +12,7 @@ function slug(s: string): string {
 
 const HEADINGS = new Set(["h1", "h2", "h3", "h4", "h5", "h6"]);
 
-export const rehypeHeadingIds: Plugin<[], Root> = function () {
-  return (tree) => {
+export const rehypeHeadingIds: Plugin<[], Root> = () => (tree) => {
     const seen = new Map<string, number>();
     visit(tree, "element", (node: Element) => {
       if (!HEADINGS.has(node.tagName)) return;
@@ -29,7 +28,6 @@ export const rehypeHeadingIds: Plugin<[], Root> = function () {
       (node.properties as Record<string, unknown>) = { ...props, id };
     });
   };
-};
 
 function collectText(el: Element): string {
   let out = "";

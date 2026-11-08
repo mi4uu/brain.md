@@ -7,7 +7,7 @@ import { hasExternalProvider, type LoginConfig } from "../auth/login-config";
 import type { LoginLimiter } from "../auth/login-limiter";
 import { checkOwnerPassword } from "../auth/password-policy";
 import { getClientIp } from "./client-ip";
-import { CimdResolver, isCimdClientId, type ClientMetadata } from "../auth/cimd";
+import { type CimdResolver, isCimdClientId, type ClientMetadata } from "../auth/cimd";
 import { CSP } from "../web/serve";
 import { LOCAL_SUB } from "../auth/identity";
 

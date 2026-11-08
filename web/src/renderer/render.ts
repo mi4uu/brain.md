@@ -30,9 +30,7 @@ import { visit } from "unist-util-visit";
 // pipeline, and its generic unified() type, identical either way. The
 // option is wrapped in an object: unified treats a bare `false`/`true`
 // plugin argument as "disable"/"no options", not as a value to pass on.
-const rehypeMaybeSanitize: Plugin<[{ enabled: boolean }], HastRoot> = function ({ enabled }) {
-  return (tree) => (enabled ? (sanitize(tree, previewSchema) as HastRoot) : tree);
-};
+const rehypeMaybeSanitize: Plugin<[{ enabled: boolean }], HastRoot> = ({ enabled }) => (tree) => (enabled ? (sanitize(tree, previewSchema) as HastRoot) : tree);
 
 const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 
@@ -92,8 +90,7 @@ function slug(s: string): string {
     .replace(/\s+/g, "-");
 }
 
-const remarkWikilinkToHast: Plugin<[RenderOptions], Root> = function (opts) {
-  return (tree) => {
+const remarkWikilinkToHast: Plugin<[RenderOptions], Root> = (opts) => (tree) => {
     visit(tree, "wikilink", (node) => {
       const n = node as unknown as {
         target: string;
@@ -258,10 +255,8 @@ const remarkWikilinkToHast: Plugin<[RenderOptions], Root> = function (opts) {
       data.hChildren = [{ type: "text", value: display }];
     });
   };
-};
 
-const remarkTagToHast: Plugin<[], Root> = function () {
-  return (tree) => {
+const remarkTagToHast: Plugin<[], Root> = () => (tree) => {
     visit(tree, "tag", (node) => {
       const n = node as unknown as { name: string; data?: Record<string, unknown> };
       const data = (n.data ??= {});
@@ -274,7 +269,6 @@ const remarkTagToHast: Plugin<[], Root> = function () {
       data.hChildren = [{ type: "text", value: `#${n.name}` }];
     });
   };
-};
 
 export function renderMarkdown(
   content: string,

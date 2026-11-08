@@ -1,4 +1,4 @@
-import { GitRepo, type CommitTrailer } from "./git";
+import type { GitRepo, CommitTrailer } from "./git";
 import type { Identity } from "../auth/identity";
 
 export interface AutocommitOpts {

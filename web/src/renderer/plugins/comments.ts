@@ -4,8 +4,7 @@ import { visit, SKIP } from "unist-util-visit";
 
 const INLINE_RE = /%%([\s\S]*?)%%/g;
 
-export const remarkComments: Plugin<[], Root> = function () {
-  return (tree) => {
+export const remarkComments: Plugin<[], Root> = () => (tree) => {
     // strip inline %%...%% from text nodes
     visit(tree, "text", (node: Text, index, parent) => {
       if (!parent || typeof index !== "number") return;
@@ -34,4 +33,3 @@ export const remarkComments: Plugin<[], Root> = function () {
       }
     });
   };
-};

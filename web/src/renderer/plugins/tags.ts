@@ -2,7 +2,7 @@ import type { Plugin } from "unified";
 import type { Root, Text, Parent, PhrasingContent } from "mdast";
 import { visit } from "unist-util-visit";
 
-const TAG_RE = /(^|[\s.,;:!?(){}\[\]])#([A-Za-z0-9_][A-Za-z0-9_\-\/]*)/g;
+const TAG_RE = /(^|[\s.,;:!?(){}[\]])#([A-Za-z0-9_][A-Za-z0-9_\-/]*)/g;
 
 interface TagNode {
   type: "tag";
@@ -18,8 +18,7 @@ declare module "mdast" {
   }
 }
 
-export const remarkTags: Plugin<[], Root> = function () {
-  return (tree) => {
+export const remarkTags: Plugin<[], Root> = () => (tree) => {
     visit(tree, "text", (node: Text, index, parent) => {
       if (!parent || typeof index !== "number") return;
       const value = node.value;
@@ -46,4 +45,3 @@ export const remarkTags: Plugin<[], Root> = function () {
       return index + out.length;
     });
   };
-};

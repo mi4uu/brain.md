@@ -55,7 +55,9 @@ describe("RAG chunker — V48", () => {
   test("chunk has correct chunkIndex starting at 0", () => {
     const md = `a\n\nb\n\nc`;
     const chunks = chunkNote("p.md", md, { targetTokens: 1, overlapTokens: 0 });
-    chunks.forEach((c, i) => expect(c.chunkIndex).toBe(i));
+    chunks.forEach((c, i) => {
+      expect(c.chunkIndex).toBe(i);
+    });
   });
 
   test("respects token target — sum of chunk tokens ≤ target * 1.5 for non-degenerate inputs", () => {

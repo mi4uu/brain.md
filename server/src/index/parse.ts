@@ -48,8 +48,8 @@ export function splitFrontmatter(content: string): {
   return { fm, fmError, body: content.slice(fullLen), bodyOffset: fullLen };
 }
 
-const WIKILINK_RE = /(!?)\[\[([^\[\]\n]+?)\]\]/g;
-const TAG_RE = /(^|[\s.,;:!?(){}\[\]])#([A-Za-z0-9_][A-Za-z0-9_\-\/]*)/g;
+const WIKILINK_RE = /(!?)\[\[([^[\]\n]+?)\]\]/g;
+const TAG_RE = /(^|[\s.,;:!?(){}[\]])#([A-Za-z0-9_][A-Za-z0-9_\-/]*)/g;
 const HEADING_RE = /^(#{1,6})\s+(.+?)\s*$/;
 const FENCE_RE = /^([`~]{3,})([^\n]*)$/;
 const INLINE_CODE_RE = /`[^`\n]*`/g;

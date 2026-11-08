@@ -65,7 +65,7 @@ function reducer(state: State, action: Action): State {
     case "DISMISS_TOAST": {
       const { toastId } = action;
       if (toastId) addToRemoveQueue(toastId);
-      else state.toasts.forEach((t) => addToRemoveQueue(t.id));
+      else for (const t of state.toasts) addToRemoveQueue(t.id);
       return {
         ...state,
         toasts: state.toasts.map((t) =>
@@ -84,7 +84,7 @@ let memoryState: State = { toasts: [] };
 
 function dispatch(action: Action): void {
   memoryState = reducer(memoryState, action);
-  listeners.forEach((listener) => listener(memoryState));
+  for (const listener of listeners) listener(memoryState);
 }
 
 type ToastInput = Omit<ToasterToast, "id">;

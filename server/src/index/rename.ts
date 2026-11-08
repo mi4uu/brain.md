@@ -3,7 +3,7 @@ import type { VaultIndex } from "./index";
 import { basenameNoExt } from "../vault/paths";
 import { VaultError } from "../vault/types";
 
-const WIKILINK_RE = /(!?)\[\[([^\[\]\n]+?)\]\]/g;
+const WIKILINK_RE = /(!?)\[\[([^[\]\n]+?)\]\]/g;
 
 export interface RenameResult {
   patchedFiles: string[];

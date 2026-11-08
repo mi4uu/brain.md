@@ -18,8 +18,7 @@ declare module "mdast" {
   }
 }
 
-export const remarkHighlight: Plugin<[], Root> = function () {
-  return (tree) => {
+export const remarkHighlight: Plugin<[], Root> = () => (tree) => {
     visit(tree, "text", (node: Text, index, parent) => {
       if (!parent || typeof index !== "number") return;
       const value = node.value;
@@ -51,4 +50,3 @@ export const remarkHighlight: Plugin<[], Root> = function () {
       return index + out.length;
     });
   };
-};
