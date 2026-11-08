@@ -18,8 +18,7 @@ export interface RelativeMediaOptions {
   buildMediaUrl: (target: string) => string;
 }
 
-export const rehypeRelativeMedia: Plugin<[RelativeMediaOptions], Root> = function (opts) {
-  return (tree) => {
+export const rehypeRelativeMedia: Plugin<[RelativeMediaOptions], Root> = (opts) => (tree) => {
     visit(tree, "element", (node: Element) => {
       if (!TAGS.has(node.tagName)) return;
       const props = node.properties as Record<string, unknown> | undefined;
@@ -30,4 +29,3 @@ export const rehypeRelativeMedia: Plugin<[RelativeMediaOptions], Root> = functio
       props.src = opts.buildMediaUrl(src);
     });
   };
-};

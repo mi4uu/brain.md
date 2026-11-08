@@ -56,7 +56,7 @@ export const previewSchema: Schema = {
     // data-mermaid (diagram source kept as an opaque string attribute).
     // `className` unconditional on `*` lets any of our own or hand-written
     // classes through; it does not grant script execution.
-    "*": [...(defaultSchema.attributes?.["*"] ?? []), "data*", "className", "style", "loading", "controls"],
+    "*": [...(defaultSchema.attributes?.["*"] ?? []), "data*", "className", "style", "loading", "controls", "ariaHidden"],
     // The default schema restricts `className` on `a` and `code` to GitHub's
     // own narrow values (a footnote-backref class; a `language-*` regex).
     // That specific entry is checked before the unconditional `className`
@@ -72,7 +72,7 @@ export const previewSchema: Schema = {
     video: ["src", "controls", "width", "height"],
     audio: ["src", "controls"],
     source: [...(defaultSchema.attributes?.source ?? []), "src", "type"],
-    svg: ["viewBox", "width", "height", "fill", "stroke", "strokeWidth", "strokeLinecap", "strokeLinejoin", "xmlns", "preserveAspectRatio"],
+    svg: ["viewBox", "width", "height", "fill", "stroke", "strokeWidth", "strokeLineCap", "strokeLineJoin", "xmlns", "preserveAspectRatio"],
     path: ["d"],
     polyline: ["points"],
     line: ["x1", "y1", "x2", "y2"],

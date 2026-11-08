@@ -6,7 +6,7 @@ import { mkdir } from "node:fs/promises";
 import { VERSION } from "./version";
 
 async function main() {
-  let action;
+  let action: ReturnType<typeof parseArgs>;
   try {
     action = parseArgs(process.argv.slice(2));
   } catch (e) {
@@ -30,7 +30,7 @@ async function main() {
   // mkdir -p so first run on a fresh XDG default doesn't crash
   await mkdir(config.vaultDir, { recursive: true });
 
-  let handle;
+  let handle: Awaited<ReturnType<typeof createApp>>;
   try {
     handle = createApp({
       vaultDir: config.vaultDir,

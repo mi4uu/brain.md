@@ -1,7 +1,7 @@
 {
   "name": "brain.md",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.5.1",
   "license": "AGPL-3.0-or-later",
   "description": "A local-first second brain for you — and for your AI agents. Markdown vault, live editor, semantic search (RAG via WASM ONNX), and an MCP server with OAuth 2.1.",
   "author": {
@@ -38,9 +38,12 @@
     "build": "bun run --cwd web build",
     "start": "bun run --cwd server start",
     "test": "bun --cwd server test",
+    "test:web": "cd web && bun test",
+    "lint": "biome lint --diagnostic-level=error",
     "typecheck": "bun run --cwd server typecheck && bun run --cwd web typecheck"
   },
   "devDependencies": {
+    "@biomejs/biome": "2",
     "typescript": "^5.6.3"
   },
   "overrides": {

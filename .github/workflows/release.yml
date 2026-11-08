@@ -25,11 +25,17 @@ jobs:
       - name: Install deps
         run: bun install --frozen-lockfile
 
+      - name: Lint
+        run: bun run lint
+
       - name: Typecheck (server + web)
         run: bun run typecheck
 
       - name: Server test suite
         run: bun run test
+
+      - name: Web test suite
+        run: bun run test:web
 
       - name: Check version strings agree
         run: |

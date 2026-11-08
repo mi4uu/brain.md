@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5.1 - 2026-11-08
+
+Polish release. No config changes needed.
+
+### Fixed
+
+- The markdown sanitizer dropped `stroke-linecap` and `stroke-linejoin`
+  from inline SVG (wrong hast property names in the schema) and
+  `aria-hidden` from every element, so KaTeX's visual copy of an equation
+  was read out by screen readers next to its MathML copy.
+
+### Changed
+
+- The sanitizer coverage test now checks what its name claims: tags,
+  classes, attributes per tag, link and media URLs, and text content all
+  survive sanitising for every note in the example vault.
+- Added Biome as the linter (`bun run lint`, errors only). CI now runs
+  lint and the web test suite next to the server tests and typecheck.
+- README: dropped the emoji from headings and table rows; anchor links
+  updated to match.
+
 ## 0.5.0 - 2026-11-05
 
 Optional OIDC/GitHub login, next to the existing password login. Password

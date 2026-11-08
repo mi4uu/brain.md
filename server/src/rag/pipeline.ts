@@ -4,7 +4,7 @@ import { LocalEmbedderWasm as LocalEmbedder } from "./embedder-local-wasm";
 import { OpenAICompatEmbedder } from "./embedder-openai";
 import type { Embedder } from "./provider";
 import { describeProvider } from "./provider";
-import { RagStore } from "./store";
+import type { RagStore } from "./store";
 import type { EmbeddedChunk, EmbeddedTaskChunk, RagConfig } from "./types";
 
 // V47 + V49: high-level RAG pipeline. Owns:

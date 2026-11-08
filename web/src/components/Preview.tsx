@@ -354,7 +354,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
           if (cancelled) break;
           el.innerHTML = svg;
         } catch (err) {
-          el.innerHTML = `<pre class="mermaid-error">${escape(String(err))}</pre>`;
+          el.innerHTML = `<pre class="mermaid-error">${escapeHtml(String(err))}</pre>`;
         }
       }
     })();
@@ -375,6 +375,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
         {content.trim() === "" ? (
           <p className="muted">empty note</p>
         ) : (
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: renderMarkdown runs hast-util-sanitize with previewSchema
           <div dangerouslySetInnerHTML={{ __html: html }} />
         )}
       </div>
@@ -402,7 +403,7 @@ function formatValue(v: unknown): string {
   return String(v);
 }
 
-function escape(s: string): string {
+function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

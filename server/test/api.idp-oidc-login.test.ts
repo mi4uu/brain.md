@@ -528,7 +528,7 @@ describe("OIDC fixture: fake issuer startup failure", () => {
   });
 
   test("afterEach's guard does not throw when beforeEach never assigned issuer", () => {
-    let ready = false;
+    const ready = false;
     let localIssuer: Awaited<ReturnType<typeof startFakeIssuer>> | undefined;
     expect(() => {
       if (ready) localIssuer!.stop();

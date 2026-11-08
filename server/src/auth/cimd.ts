@@ -1,4 +1,5 @@
 import { lookup as dnsLookup } from "node:dns/promises";
+import type { LookupAddress } from "node:dns";
 import { request as httpsRequest } from "node:https";
 
 // V67: OAuth Client ID Metadata Documents (CIMD,
@@ -91,7 +92,7 @@ async function assertSafeURL(url: string): Promise<SafeURL> {
   }
   // Resolve hostname to IP. If it resolves to a private range, reject —
   // this is the SSRF gate the spec warns about (Section 6 of CIMD draft).
-  let addrs;
+  let addrs: LookupAddress[];
   try {
     addrs = await dnsLookup(u.hostname, { all: true });
   } catch {

@@ -510,7 +510,7 @@ export function App() {
   const jumpToHeadingSlug = useCallback((slug: string, body: string) => {
     const lines = body.split(/\r?\n/);
     let inFence = false;
-    let seen = new Map<string, number>();
+    const seen = new Map<string, number>();
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? "";
       const trim = line.trim();

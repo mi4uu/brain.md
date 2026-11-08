@@ -4,8 +4,7 @@ import { visit, SKIP } from "unist-util-visit";
 
 const CALLOUT_RE = /^\[!([a-zA-Z]+)\](-|\+)?(?:\s+(.*))?$/;
 
-export const remarkCallouts: Plugin<[], Root> = function () {
-  return (tree) => {
+export const remarkCallouts: Plugin<[], Root> = () => (tree) => {
     visit(tree, "blockquote", (node: Blockquote) => {
       const first = node.children[0];
       if (!first || first.type !== "paragraph") return;
@@ -37,4 +36,3 @@ export const remarkCallouts: Plugin<[], Root> = function () {
       return SKIP;
     });
   };
-};

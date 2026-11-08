@@ -1,4 +1,5 @@
 // Mirror of server's assertSafeBasename rule (§V42). Keep in sync.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: NUL is one of the forbidden characters
 const FORBIDDEN = /[/\\%\x00\r\n]/;
 
 export function validateBasename(name: string): string | null {

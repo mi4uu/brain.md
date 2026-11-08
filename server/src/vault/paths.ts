@@ -1,5 +1,6 @@
 import { resolve, sep, posix, isAbsolute, relative, join } from "node:path";
 import { lstat } from "node:fs/promises";
+import type { Stats } from "node:fs";
 import { VaultError } from "./types";
 
 export function normalizeRel(rel: string): string {
@@ -29,6 +30,7 @@ export function normalizeRel(rel: string): string {
 // `%` round-trips ambiguously through URL encoding.
 // NUL/CR/LF break filesystem + HTTP layers.
 // Leading `.` is reserved for vault control dirs (.brain, .media, .git).
+// biome-ignore lint/suspicious/noControlCharactersInRegex: NUL is one of the forbidden characters
 const FORBIDDEN_CHARS = /[/\\%\x00\r\n]/;
 export function assertSafeBasename(name: string): void {
   if (typeof name !== "string" || name.length === 0) {
@@ -94,7 +96,7 @@ export async function assertRealContainment(vaultDir: string, abs: string): Prom
   for (const part of rel.split(sep)) {
     if (part === "") continue;
     cur = join(cur, part);
-    let st;
+    let st: Stats;
     try {
       st = await lstat(cur);
     } catch (e) {
@@ -123,7 +125,7 @@ export function assertMarkdown(rel: string): void {
 // nothing to recurse into.
 export async function assertRestoreTargetIsFile(vaultDir: string, rel: string): Promise<void> {
   const abs = safeJoin(vaultDir, rel);
-  let st;
+  let st: Stats;
   try {
     st = await lstat(abs);
   } catch (e) {

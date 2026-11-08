@@ -49,7 +49,9 @@ export function authRoutes(
     }))
     .get("/api/auth/status", ({ request }) => {
       const headers: Record<string, string> = {};
-      request.headers.forEach((v, k) => (headers[k.toLowerCase()] = v));
+      request.headers.forEach((v, k) => {
+        headers[k.toLowerCase()] = v;
+      });
       const tok = bearer(headers);
       return {
         // "configured" means "auth is required", which an external login

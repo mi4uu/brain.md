@@ -9,7 +9,7 @@
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Runtime: Bun](https://img.shields.io/badge/runtime-Bun-black.svg)](https://bun.com)
 [![MCP: streamable-http](https://img.shields.io/badge/MCP-streamable--http-7c3aed.svg)](docs/mcp.md)
-[![RAG: WASM ONNX](https://img.shields.io/badge/RAG-WASM%20ONNX-ec4899.svg)](#-semantic-search-rag)
+[![RAG: WASM ONNX](https://img.shields.io/badge/RAG-WASM%20ONNX-ec4899.svg)](#semantic-search-rag)
 [![Glama MCP server](https://glama.ai/mcp/servers/mi4uu/brain.md/badges/score.svg)](https://glama.ai/mcp/servers/mi4uu/brain.md)
 
 </div>
@@ -24,16 +24,16 @@
 
 | | |
 |---|---|
-| 📝 &nbsp; **Obsidian-compatible markdown** | Wikilinks, embeds, callouts, math, mermaid, tasks, frontmatter, aliases. Open your existing Obsidian vault and it just works. |
-| ⚡ &nbsp; **Live editor + preview** | CodeMirror 6 with cursor-anchored scroll sync, autosave, instant tooltips, command palette, quick switcher. |
-| 🔍 &nbsp; **Semantic search built in** | Per-vault embedded vector store (pure JS, no external DB). Notes are chunked, embedded and indexed on every save. |
-| 🤖 &nbsp; **Pluggable embedders** | Default: `bge-small-en-v1.5` running locally via **bundled WASM ONNX**, works in the prebuilt single binary, zero native deps. Or point at **Ollama**, **LM Studio**, or **OpenAI**: anything with `/v1/embeddings`. |
-| 🛰️ &nbsp; **MCP server (streamable HTTP)** | 17 tools and 2 resources mounted on the same port. Claude Desktop, Claude Code, Cursor and any MCP-compliant agent can read, search, query and write your notes. |
-| 🔒 &nbsp; **Per-folder agent permissions** | Right-click a folder → set `{read, write}` for the MCP surface. Keep `Journal/Private/` out of agent reach without locking down the vault. |
-| 🔑 &nbsp; **Optional password auth** | argon2id, bearer tokens, 24-hour TTL, gates both HTTP API and MCP. Off by default, on with one click. |
-| 📜 &nbsp; **Git autocommit with a full audit trail** | Every save lands in git, attributed to whoever (or whichever agent) made it. Full history, diff, restore, manual checkpoints. The vault is a real git repo on disk. |
-| 🌍 &nbsp; **No vendor lock-in** | Your vault is a folder of `.md` files. Open it in VSCode, Obsidian, `cat`, anything. brain.md is just one more way to view and query it. |
-| 💸 &nbsp; **Zero API keys required** | Out of the box it runs fully offline. Cloud embedders are an opt-in, not a default. |
+| **Obsidian-compatible markdown** | Wikilinks, embeds, callouts, math, mermaid, tasks, frontmatter, aliases. Open your existing Obsidian vault and it just works. |
+| **Live editor + preview** | CodeMirror 6 with cursor-anchored scroll sync, autosave, instant tooltips, command palette, quick switcher. |
+| **Semantic search built in** | Per-vault embedded vector store (pure JS, no external DB). Notes are chunked, embedded and indexed on every save. |
+| **Pluggable embedders** | Default: `bge-small-en-v1.5` running locally via **bundled WASM ONNX**, works in the prebuilt single binary, zero native deps. Or point at **Ollama**, **LM Studio**, or **OpenAI**: anything with `/v1/embeddings`. |
+| **MCP server (streamable HTTP)** | 17 tools and 2 resources mounted on the same port. Claude Desktop, Claude Code, Cursor and any MCP-compliant agent can read, search, query and write your notes. |
+| **Per-folder agent permissions** | Right-click a folder → set `{read, write}` for the MCP surface. Keep `Journal/Private/` out of agent reach without locking down the vault. |
+| **Optional password auth** | argon2id, bearer tokens, 24-hour TTL, gates both HTTP API and MCP. Off by default, on with one click. |
+| **Git autocommit with a full audit trail** | Every save lands in git, attributed to whoever (or whichever agent) made it. Full history, diff, restore, manual checkpoints. The vault is a real git repo on disk. |
+| **No vendor lock-in** | Your vault is a folder of `.md` files. Open it in VSCode, Obsidian, `cat`, anything. brain.md is just one more way to view and query it. |
+| **Zero API keys required** | Out of the box it runs fully offline. Cloud embedders are an opt-in, not a default. |
 
 ---
 
@@ -87,30 +87,30 @@ Model Context Protocol.
 
 ## Table of contents
 
-- [Quick start](#-quick-start)
-- [Install](#-install)
-- [The interface](#-the-interface)
+- [Quick start](#quick-start)
+- [Install](#install)
+- [The interface](#the-interface)
   - [Editor + preview](#editor--preview)
   - [Markdown that actually does things](#markdown-that-actually-does-things)
   - [Command palette + quick switcher](#command-palette--quick-switcher)
   - [Tasks across the vault](#tasks-across-the-vault)
-- [AI for agents](#-ai-for-agents)
-  - [Semantic search (RAG)](#-semantic-search-rag)
-  - [MCP server](#-mcp-server)
-  - [Per-folder permissions](#-per-folder-permissions)
-  - [Optional password auth](#-optional-password-auth)
-  - [Login with Google, GitHub, Keycloak or Authentik](#-login-with-google-github-keycloak-or-authentik)
-  - [Audit trail](#-audit-trail)
-- [CLI](#-cli)
-- [Defaults & paths](#-defaults--paths)
-- [Architecture](#-architecture)
-- [Roadmap](#-roadmap)
-- [Contributing](#-contributing)
-- [License](#-license)
+- [AI for agents](#ai-for-agents)
+  - [Semantic search (RAG)](#semantic-search-rag)
+  - [MCP server](#mcp-server)
+  - [Per-folder permissions](#per-folder-permissions)
+  - [Optional password auth](#optional-password-auth)
+  - [Login with Google, GitHub, Keycloak or Authentik](#login-with-google-github-keycloak-or-authentik)
+  - [Audit trail](#audit-trail)
+- [CLI](#cli)
+- [Defaults & paths](#defaults--paths)
+- [Architecture](#architecture)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
-## ⚡ Quick start
+## Quick start
 
 One line, no clone, no Bun, no Node: the installer detects your OS and
 arch, downloads the matching prebuilt binary from the latest GitHub
@@ -155,9 +155,9 @@ Python, no native deps).
 
 ---
 
-## 📦 Install
+## Install
 
-### Option A: install script *(recommended, see [Quick start](#-quick-start))*
+### Option A: install script *(recommended, see [Quick start](#quick-start))*
 
 ```sh
 # macOS / Linux
@@ -182,15 +182,15 @@ against. No Bun runtime, no Node.js, no `git clone`, no `bun install`.
 Just download, mark executable, run.
 
 Grab the file for your machine from the latest release:
-👉 **[github.com/mi4uu/brain.md/releases/latest](https://github.com/mi4uu/brain.md/releases/latest)**
+**[github.com/mi4uu/brain.md/releases/latest](https://github.com/mi4uu/brain.md/releases/latest)**
 
 | Platform                          | Architecture | Asset                                                                                                          |
 |-----------------------------------|--------------|----------------------------------------------------------------------------------------------------------------|
-| 🍎 &nbsp; macOS (Apple Silicon)  | `arm64`      | [`brain-md-darwin-arm64`](https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-darwin-arm64)    |
-| 🍎 &nbsp; macOS (Intel)          | `x64`        | [`brain-md-darwin-x64`](https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-darwin-x64)        |
-| 🐧 &nbsp; Linux                   | `x64`        | [`brain-md-linux-x64`](https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-linux-x64)          |
-| 🐧 &nbsp; Linux                   | `arm64`      | [`brain-md-linux-arm64`](https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-linux-arm64)      |
-| 🪟 &nbsp; Windows                  | `x64`        | [`brain-md-windows-x64.exe`](https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-windows-x64.exe) |
+| macOS (Apple Silicon)  | `arm64`      | [`brain-md-darwin-arm64`](https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-darwin-arm64)    |
+| macOS (Intel)          | `x64`        | [`brain-md-darwin-x64`](https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-darwin-x64)        |
+| Linux                   | `x64`        | [`brain-md-linux-x64`](https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-linux-x64)          |
+| Linux                   | `arm64`      | [`brain-md-linux-arm64`](https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-linux-arm64)      |
+| Windows                  | `x64`        | [`brain-md-windows-x64.exe`](https://github.com/mi4uu/brain.md/releases/latest/download/brain-md-windows-x64.exe) |
 
 #### One-liner: macOS / Linux
 
@@ -258,7 +258,7 @@ once.
 
 ---
 
-## 🖥️ The interface
+## The interface
 
 ### Editor + preview
 
@@ -316,7 +316,7 @@ source line.
 
 ![Tasks view](docs/img/tasks-view.png)
 
-### 📜 Auto versioning & history
+### Auto versioning & history
 
 Every save is auto-committed to git in the background (debounced,
 ~15 s). Open any note's **History** panel to see every prior
@@ -328,13 +328,13 @@ the terminal too.
 
 A restore only touches the one file you asked for and commits only
 that path, never a sweep of whatever else happened to be dirty in the
-vault at the time. See [Audit trail](#-audit-trail) for who a commit
+vault at the time. See [Audit trail](#audit-trail) for who a commit
 is attributed to when more than one person or agent wrote to the vault
 in the same save window.
 
 ![Note history with unified diff and one-click restore](docs/img/gitautoversioninghistry.png)
 
-### 📱 Mobile
+### Mobile
 
 brain.md is not a desktop-only tool. The same vault, the same
 self-hosted instance, the same editor work from your phone too, over
@@ -379,11 +379,11 @@ move; the same RAG, tags, backlinks, and tasks you have on desktop.
 
 ---
 
-## 🤖 AI for agents
+## AI for agents
 
 This is what makes brain.md more than another markdown editor.
 
-### 🔍 Semantic search (RAG)
+### Semantic search (RAG)
 
 When a note is saved, brain.md chunks it (≤ 512 tokens, ~64-token
 overlap, paragraph-aligned, frontmatter excluded), embeds each chunk,
@@ -467,7 +467,7 @@ One click drops the tag into your frontmatter.
 
 ![Suggested tags toast appearing after a save, three chip buttons](docs/img/tag-suggest.png)
 
-### 🛰️ MCP server
+### MCP server
 
 brain.md mounts a **Model Context Protocol** server on the same Elysia
 app at `POST /mcp`. Transport is the **2024-11-05 streamable HTTP**
@@ -554,7 +554,7 @@ Drop that into `~/Library/Application Support/Claude/claude_desktop_config.json`
 
 Full reference: [docs/mcp.md](docs/mcp.md).
 
-### 🔒 Per-folder permissions
+### Per-folder permissions
 
 Right-click any folder → **MCP permissions…** to set explicit
 `{read, write}` flags. Resolution walks the parent chain to root;
@@ -565,7 +565,7 @@ nearest explicit override wins; default is read + write.
 This is how you keep `Journal/Private/` out of agent reach without
 locking down the whole vault.
 
-### 🔑 Optional password auth
+### Optional password auth
 
 Default: no auth. Set a password in **Settings → Security** to switch
 on bearer-token authentication for *both* the HTTP API and the MCP
@@ -678,7 +678,7 @@ ChatGPT Apps, and future Anthropic clients. Claude Code and Claude
 Desktop shipped before the spec stabilised, so they still want a
 static bearer or the `mcp-remote` stdio bridge, both documented above.
 
-### 🔐 Login with Google, GitHub, Keycloak or Authentik
+### Login with Google, GitHub, Keycloak or Authentik
 
 Password auth above is one human sharing one secret. If more than one
 person needs to sign in to the web app, or you want MFA without
@@ -760,7 +760,7 @@ session token password login does. Nothing about the rest of the app
 changes, per-folder MCP permissions and the owner-only admin routes
 work the same regardless of which door someone came in through.
 
-> **⚠️ No per-user restriction yet.** This is single-owner auth with
+> **No per-user restriction yet.** This is single-owner auth with
 > multiple doors in, not multi-user access control. Everyone who gets
 > past login, password or any allowlisted OIDC/GitHub identity, is the
 > same unrestricted owner: full read/write on the whole vault (including
@@ -769,7 +769,7 @@ work the same regardless of which door someone came in through.
 > owner". Per-identity roles (owner/editor/viewer) are planned for 0.6,
 > not in 0.5.x.
 
-### 📒 Audit trail
+### Audit trail
 
 Every autocommit names who actually made the change, not just that
 something changed. Each save window makes exactly one commit. When
@@ -800,7 +800,7 @@ be dirty in the vault at the time.
 
 ---
 
-## ⌨️ CLI
+## CLI
 
 ```sh
 brainmd [options]            # or: bun run start
@@ -816,7 +816,7 @@ stderr error + exit 2.
 
 ---
 
-## 🗂️ Defaults & paths
+## Defaults & paths
 
 | Purpose  | Env var            | Default                                     |
 |----------|--------------------|---------------------------------------------|
@@ -855,12 +855,12 @@ Every env knob:
 | `XDG_CONFIG_HOME`              | none    | Base for default settings location.       |
 | `GIT_AUTOCOMMIT`               | `1`     | `1` / `0`. Bootstrap default only.        |
 | `GIT_AUTOCOMMIT_DEBOUNCE_MS`   | `15000` | Bootstrap default only.                   |
-| `ALLOWED_HOSTS`                | none    | Comma-separated extra hostnames accepted on the Host header without a password, beyond `localhost`/`127.0.0.1`/`[::1]`. Not needed once a password is set. See [Mobile](#-mobile). |
-| `BRAINMD_TRUST_PROXY`          | none    | `cloudflare`, or a comma-separated list of trusted reverse-proxy IPs. Changes which header the login/OAuth-consent rate limiter trusts for the real client IP behind a tunnel or reverse proxy. Unset means forwarded headers are never trusted. See [Mobile](#-mobile). |
+| `ALLOWED_HOSTS`                | none    | Comma-separated extra hostnames accepted on the Host header without a password, beyond `localhost`/`127.0.0.1`/`[::1]`. Not needed once a password is set. See [Mobile](#mobile). |
+| `BRAINMD_TRUST_PROXY`          | none    | `cloudflare`, or a comma-separated list of trusted reverse-proxy IPs. Changes which header the login/OAuth-consent rate limiter trusts for the real client IP behind a tunnel or reverse proxy. Unset means forwarded headers are never trusted. See [Mobile](#mobile). |
 
-### 💾 Backups
+### Backups
 
-Git autocommit (see [Auto versioning & history](#-auto-versioning--history))
+Git autocommit (see [Auto versioning & history](#auto-versioning--history))
 versions **note content only**: files directly under the vault root and its
 subfolders. `.brain/` is git-ignored entirely, so a restore from git history
 alone does not bring back settings, per-folder MCP permissions, the password
@@ -878,7 +878,7 @@ instance, back up `.brain/` separately (a plain file copy, no git needed):
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 +----------------+        /api/*        +-------------------+
@@ -922,7 +922,7 @@ for the MCP reference.
 
 ---
 
-## 🛣️ Roadmap
+## Roadmap
 
 - Daily-note templates with variable interpolation
 - Snippet expansion in the editor (`/` trigger)
@@ -937,7 +937,7 @@ Want to nudge one of these up the list? Open an issue or PR.
 
 ---
 
-## 💖 Sponsor
+## Sponsor
 
 brain.md is a solo open-source effort. If it's useful to you and you
 can chip in, sponsorship pays for the time that goes into new features,
@@ -957,13 +957,13 @@ docs and review.
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Contributions welcome, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
-## ⭐ Star history
+## Star history
 
 [![Star History Chart](https://api.star-history.com/svg?repos=mi4uu/brain.md&type=Date)](https://star-history.com/#mi4uu/brain.md&Date)
 
@@ -973,7 +973,7 @@ follow-up email, just a signal that this exists.
 
 ---
 
-## 📄 License
+## License
 
 **GNU Affero General Public License v3.0 or later**, see
 [LICENSE](LICENSE).

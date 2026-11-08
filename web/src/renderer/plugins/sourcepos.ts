@@ -19,8 +19,7 @@ const TARGET = new Set<RootContent["type"] | string>([
   "definition",
 ]);
 
-export const remarkSourcepos: Plugin<[SourceposOptions], Root> = function (opts) {
-  return (tree) => {
+export const remarkSourcepos: Plugin<[SourceposOptions], Root> = (opts) => (tree) => {
     for (const child of tree.children) {
       if (!TARGET.has(child.type)) continue;
       const pos = (child as { position?: { start: { line: number } } }).position;
@@ -32,4 +31,3 @@ export const remarkSourcepos: Plugin<[SourceposOptions], Root> = function (opts)
       props["data-source-line"] = String(line);
     }
   };
-};

@@ -38,6 +38,31 @@ function classNames(html: string): Set<string> {
   return out;
 }
 
+function textContent(html: string): string {
+  return html
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function urlAttrs(html: string): string[] {
+  return [...html.matchAll(/\s(?:href|src)="([^"]*)"/g)].map((m) => m[1]!);
+}
+
+// `id` and `name` are left out: the sanitizer prefixes them with
+// `user-content-` on purpose, to stop DOM clobbering.
+function tagAttrPairs(html: string): Set<string> {
+  const out = new Set<string>();
+  for (const m of html.matchAll(/<([a-zA-Z][a-zA-Z0-9-]*)([^>]*)>/g)) {
+    const tag = m[1]!.toLowerCase();
+    for (const a of m[2]!.matchAll(/\s([a-zA-Z_:][-a-zA-Z0-9_:.]*)(?==|\s|$)/g)) {
+      const attr = a[1]!.toLowerCase();
+      if (attr !== "id" && attr !== "name") out.add(`${tag}[${attr}]`);
+    }
+  }
+  return out;
+}
+
 describe("sanitizer coverage against the example vault", () => {
   const notes = listNotes(VAULT_DIR);
   expect(notes.length).toBeGreaterThan(0);
@@ -56,8 +81,15 @@ describe("sanitizer coverage against the example vault", () => {
       const afterClasses = classNames(after.html);
       const missingClasses = [...beforeClasses].filter((c) => !afterClasses.has(c));
 
+      const beforeAttrs = tagAttrPairs(before.html);
+      const afterAttrs = tagAttrPairs(after.html);
+      const missingAttrs = [...beforeAttrs].filter((a) => !afterAttrs.has(a));
+
       expect(missingTags).toEqual([]);
       expect(missingClasses).toEqual([]);
+      expect(missingAttrs).toEqual([]);
+      expect(urlAttrs(after.html)).toEqual(urlAttrs(before.html));
+      expect(textContent(after.html)).toBe(textContent(before.html));
     });
   }
 });

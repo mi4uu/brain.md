@@ -98,7 +98,7 @@ export function Editor({
   useEffect(() => {
     if (!hostRef.current) return;
     const wikilinkCompletion = (ctx: CompletionContext): CompletionResult | null => {
-      const before = ctx.matchBefore(/\[\[[^\[\]\n]*$/);
+      const before = ctx.matchBefore(/\[\[[^[\]\n]*$/);
       if (!before) return null;
       const query = before.text.slice(2);
       const opts = basenamesRef.current
@@ -109,11 +109,11 @@ export function Editor({
           apply: `${n}]]`,
           type: "variable",
         }));
-      return { from: before.from + 2, options: opts, validFor: /^[^\[\]\n]*$/ };
+      return { from: before.from + 2, options: opts, validFor: /^[^[\]\n]*$/ };
     };
 
     const atMentionCompletion = (ctx: CompletionContext): CompletionResult | null => {
-      const before = ctx.matchBefore(/(^|[\s.,;:!?(){}\[\]])@[A-Za-z0-9_\-]*$/);
+      const before = ctx.matchBefore(/(^|[\s.,;:!?(){}[\]])@[A-Za-z0-9_-]*$/);
       if (!before) return null;
       const atIdx = before.text.lastIndexOf("@");
       if (atIdx < 0) return null;
@@ -131,7 +131,7 @@ export function Editor({
       return {
         from: before.from + atIdx,
         options: opts,
-        validFor: /^@[A-Za-z0-9_\-]*$/,
+        validFor: /^@[A-Za-z0-9_-]*$/,
       };
     };
 

@@ -387,6 +387,7 @@ function parseCommit(line: string): GitCommit {
 // in the commit message, so a name containing "\nSigned-off-by: x" would
 // otherwise inject a second, forged trailer line verbatim.
 function sanitizeAuthorPart(s: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping control characters is the point
   return s.replace(/[\x00-\x1f\x7f<>]/g, " ").trim();
 }
 
