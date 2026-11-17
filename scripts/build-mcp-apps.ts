@@ -23,8 +23,10 @@ function katexCss(): string {
   return css.replace(/@font-face\{[^}]*\}/g, "");
 }
 
+// `<!--` matters too: inside a script it can switch the HTML parser into
+// the "double escaped" state and swallow the closing tag.
 function inlineSafe(code: string, tag: "script" | "style"): string {
-  return code.replace(new RegExp(`</${tag}`, "gi"), `<\\/${tag}`);
+  return code.replace(new RegExp(`</${tag}`, "gi"), `<\\/${tag}`).replace(/<!--/g, "<\\!--");
 }
 
 mkdirSync(OUT_DIR, { recursive: true });

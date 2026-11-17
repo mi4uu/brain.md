@@ -27,8 +27,9 @@ interface Backlink {
 const root = document.getElementById("root") as HTMLElement;
 const app = new App({ name: "brain.md note", version: "1" }, {}, { autoResize: true });
 
-let notes: string[] | null = null;
+let notes: string[] = [];
 const history: string[] = [];
+let seq = 0;
 
 function textOf(result: { content?: Array<{ type: string; text?: string }> }): string {
   const first = result.content?.find((c) => c.type === "text");
@@ -52,12 +53,11 @@ function errorMessage(text: string): string {
 }
 
 async function loadNoteList(): Promise<string[]> {
-  if (notes) return notes;
   try {
     const tree = await callJson<{ notes: string[] }>("list_notes", {});
     notes = tree.notes;
   } catch {
-    notes = [];
+    // keep the last list: a failed refresh should not break every link
   }
   return notes;
 }
@@ -80,8 +80,9 @@ function titleOf(path: string): string {
   return (path.split("/").pop() ?? path).replace(/\.md$/i, "");
 }
 
-async function render(note: Note): Promise<void> {
+async function render(note: Note, token: number): Promise<void> {
   const list = await loadNoteList();
+  if (token !== seq) return;
   const { html } = renderMarkdown(note.content, {
     resolveWikilink: (target) => resolveWikilinkIn(list, target),
     isMediaTarget: () => false,
@@ -151,22 +152,24 @@ async function fillBacklinks(path: string, section: HTMLElement): Promise<void> 
 let current: string | null = null;
 
 async function open(path: string, pushHistory: boolean): Promise<void> {
+  const token = ++seq;
   if (pushHistory && current) history.push(current);
   showStatus("Loading…");
   try {
     const note = await callJson<Note>("read_note", { path });
+    if (token !== seq) return;
     current = note.path;
-    await render(note);
+    await render(note, token);
   } catch (err) {
-    showStatus(`Could not open ${path}: ${(err as Error).message}`, true);
+    if (token === seq) showStatus(`Could not open ${path}: ${(err as Error).message}`, true);
   }
 }
 
 root.addEventListener("click", (e) => {
   const a = (e.target as Element | null)?.closest("a");
   if (!a) return;
-  const resolved = a.getAttribute("data-resolved");
-  if (resolved) {
+  const resolved = a.classList.contains("wikilink") ? a.getAttribute("data-resolved") : null;
+  if (resolved && notes.includes(resolved)) {
     e.preventDefault();
     void open(resolved, true);
     return;
@@ -198,7 +201,7 @@ app.ontoolresult = (result) => {
   try {
     const note = JSON.parse(text) as Note;
     current = note.path;
-    void render(note);
+    void render(note, ++seq);
   } catch {
     showStatus("Unexpected read_note result.", true);
   }
