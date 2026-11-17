@@ -26,6 +26,15 @@ import {
 } from "../api/principal";
 import { principalFor } from "../api/auth-middleware";
 import { loadMcpInstructions } from "./instructions";
+import {
+  MODEL_ONLY_META,
+  NOTE_VIEW_URI,
+  appResourceContents,
+  loadViews,
+  noteToolMeta,
+  type AppViews,
+  type ViewLoader,
+} from "./apps";
 import { VERSION } from "../version";
 import {
   related as qRelated,
@@ -88,6 +97,7 @@ interface McpDeps {
   index: VaultIndex;
   pipeline: RagPipeline;
   ragEnabled: () => boolean;
+  loadView?: ViewLoader;
 }
 
 async function readPerms(vault: Vault): Promise<Record<string, McpFolderPerms>> {
@@ -171,7 +181,12 @@ function toolError(name: string, args: unknown, err: unknown) {
 // at will. The SDK's stateless mode requires a NEW Server + Transport
 // per request, so we extract handler registration here and rebuild
 // both objects on every /mcp request inside mcpRoutes() below.
-function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal): void {
+function registerHandlers(
+  server: McpServer,
+  deps: McpDeps,
+  principal: Principal,
+  views: AppViews,
+): void {
   const { vault, index, pipeline, ragEnabled } = deps;
 
   // Shared read-permission predicate for this request: true if `principal`
@@ -263,6 +278,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
     {
       description: "Read a single note. Returns content + mtime.",
       inputSchema: { path: z.string().min(1) },
+      ...noteToolMeta(views),
     },
     async ({ path }) => {
       try {
@@ -399,6 +415,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
     "write_note",
     {
       description: "Create or overwrite a note. Content is full body.",
+      ...MODEL_ONLY_META,
       inputSchema: {
         path: z.string().min(1),
         content: z.string(),
@@ -427,6 +444,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
         "Append a paragraph to an existing note (ensures a blank-line separator). " +
         "Returns only path/mtime, never the resulting body, call read_note " +
         "separately if you also have read permission on this note.",
+      ...MODEL_ONLY_META,
       inputSchema: {
         path: z.string().min(1),
         content: z.string().min(1),
@@ -619,6 +637,20 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
 
   // ---------------- resources ----------------
 
+  const noteView = appResourceContents(views);
+  if (noteView) {
+    server.registerResource(
+      "note-view",
+      NOTE_VIEW_URI,
+      {
+        description: "MCP Apps view for read_note: rendered note with wikilinks and backlinks",
+        mimeType: noteView.mimeType,
+        _meta: noteView._meta,
+      },
+      async () => ({ contents: [noteView] }),
+    );
+  }
+
   server.registerResource(
     "vault-tree",
     "vault://tree",
@@ -677,6 +709,13 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
 // tools/list changed, log forwards) won't reach the client. brain.md's
 // tools don't emit those today, so this is invisible to users.
 export function createMcp(deps: McpDeps) {
+  const loader = deps.loadView ?? (async () => null);
+  let views: AppViews | undefined;
+  const getViews = async (): Promise<AppViews> => {
+    if (views?.note) return views;
+    views = await loadViews(loader);
+    return views;
+  };
   return {
     handleRequest: async (request: Request): Promise<Response> => {
       // V68: owner-editable, vault-scoped instructions surfaced to the model
@@ -687,7 +726,7 @@ export function createMcp(deps: McpDeps) {
         { name: "brain.md", version: VERSION },
         instructions ? { instructions } : undefined,
       );
-      registerHandlers(server, deps, principalFor(request));
+      registerHandlers(server, deps, principalFor(request), await getViews());
       const transport = new WebStandardStreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
         enableJsonResponse: true,

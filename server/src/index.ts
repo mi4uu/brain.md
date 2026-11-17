@@ -1,4 +1,5 @@
 import { createApp } from "./app";
+import { webViewLoader } from "./mcp/apps";
 import { loadConfig } from "./config";
 import { parseArgs, getUsage, CliError } from "./cli";
 import { LoginConfigError } from "./auth/login-config";
@@ -37,6 +38,7 @@ async function main() {
       gitAutocommit: config.gitAutocommit,
       gitDebounceMs: config.gitDebounceMs,
       mcpDisabled: action.options.mcpDisabled,
+      mcpViewLoader: webViewLoader,
     });
   } catch (e) {
     if (e instanceof LoginConfigError) {

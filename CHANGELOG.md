@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- MCP Apps support (`io.modelcontextprotocol/ui`). `read_note` links to a
+  `ui://brainmd/note.html` view: the rendered note with clickable
+  wikilinks, a back button and backlinks, light and dark from the host.
+  The view is one self-contained HTML file (no network), built with the
+  web bundle into `web/dist/mcp-apps/`. Hosts without MCP Apps get the
+  same text result as before.
+- `write_note` and `append_note` are marked `visibility: ["model"]`, so an
+  app view cannot call them.
+
 ## 0.5.1 - 2026-11-08
 
 Polish release. No config changes needed.

@@ -20,7 +20,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && bun ../scripts/build-mcp-apps.ts",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },
@@ -33,6 +33,7 @@
     "@codemirror/state": "^6.4.1",
     "@codemirror/view": "^6.35.0",
     "@lezer/highlight": "^1.2.1",
+    "@modelcontextprotocol/ext-apps": "1.7.5",
     "@radix-ui/react-accordion": "^1.2.2",
     "@radix-ui/react-context-menu": "^2.2.4",
     "@radix-ui/react-dialog": "^1.1.4",
