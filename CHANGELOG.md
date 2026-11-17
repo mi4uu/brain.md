@@ -10,8 +10,15 @@
   The view is one self-contained HTML file (no network), built with the
   web bundle into `web/dist/mcp-apps/`. Hosts without MCP Apps get the
   same text result as before.
-- `write_note` and `append_note` are marked `visibility: ["model"]`, so an
-  app view cannot call them.
+- `write_note` and `append_note` are marked `visibility: ["model"]`, so a
+  host that follows the MCP Apps spec will not let a view call them. The
+  host enforces this, not brain.md.
+
+### Fixed
+
+- A wikilink to a note with a dot in its name, like `[[brain.md launch]]`,
+  was treated as an attachment with the extension `md launch` and could
+  not be opened.
 
 ## 0.5.1 - 2026-11-08
 

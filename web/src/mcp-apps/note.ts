@@ -80,14 +80,25 @@ function titleOf(path: string): string {
   return (path.split("/").pop() ?? path).replace(/\.md$/i, "");
 }
 
-async function render(note: Note, token: number): Promise<void> {
-  const list = await loadNoteList();
-  if (token !== seq) return;
+function renderDoc(note: Note): HTMLElement {
+  const list = notes;
   const { html } = renderMarkdown(note.content, {
     resolveWikilink: (target) => resolveWikilinkIn(list, target),
     isMediaTarget: () => false,
     buildMediaUrl: () => "",
   });
+  const doc = el("article", { className: "doc" });
+  doc.innerHTML = html;
+  for (const media of doc.querySelectorAll("img, video, audio")) {
+    media.replaceWith(el("span", { className: "media-placeholder", textContent: "media not shown here" }));
+  }
+  return doc;
+}
+
+// Paint from the tool result first: list_notes goes through the host's
+// tool policy and may be slow, prompted or denied. Links are re-resolved
+// when the list arrives.
+async function render(note: Note, token: number): Promise<void> {
 
   const header = el("header", { className: "bar" }, [
     el("button", {
@@ -103,16 +114,23 @@ async function render(note: Note, token: number): Promise<void> {
     el("span", { className: "path", title: note.path, textContent: note.path }),
   ]);
 
-  const doc = el("article", { className: "doc" });
-  doc.innerHTML = html;
-  for (const img of doc.querySelectorAll("img, video, audio")) {
-    img.replaceWith(el("span", { className: "media-placeholder", textContent: "media not shown here" }));
-  }
-
+  const doc = renderDoc(note);
   const backlinks = el("section", { className: "backlinks" }, [el("h2", { textContent: "Backlinks" })]);
   const view = el("div", { className: "preview" }, [header, doc, backlinks]);
   root.replaceChildren(view);
   void fillBacklinks(note.path, backlinks);
+
+  const before = notes;
+  await loadNoteList();
+  if (token !== seq || notes === before) return;
+  doc.replaceWith(renderDoc(note));
+}
+
+async function openTarget(target: string): Promise<void> {
+  const name = target.split("#")[0] ?? target;
+  const list = await loadNoteList();
+  const hit = resolveWikilinkIn(list, name);
+  await open(hit ?? `${name.replace(/\.md$/i, "")}.md`, true);
 }
 
 async function fillBacklinks(path: string, section: HTMLElement): Promise<void> {
@@ -168,10 +186,12 @@ async function open(path: string, pushHistory: boolean): Promise<void> {
 root.addEventListener("click", (e) => {
   const a = (e.target as Element | null)?.closest("a");
   if (!a) return;
-  const resolved = a.classList.contains("wikilink") ? a.getAttribute("data-resolved") : null;
-  if (resolved && notes.includes(resolved)) {
+  if (a.classList.contains("wikilink")) {
     e.preventDefault();
-    void open(resolved, true);
+    const resolved = a.getAttribute("data-resolved");
+    const target = a.getAttribute("data-wikilink");
+    if (resolved && notes.includes(resolved)) void open(resolved, true);
+    else if (target) void openTarget(target);
     return;
   }
   const href = a.getAttribute("href") ?? "";
