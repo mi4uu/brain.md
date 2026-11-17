@@ -28,10 +28,12 @@ import { principalFor } from "../api/auth-middleware";
 import { loadMcpInstructions } from "./instructions";
 import {
   MODEL_ONLY_META,
+  NOTE_VIEW_META_KEY,
   NOTE_VIEW_URI,
   appResourceContents,
   loadViews,
   noteToolMeta,
+  noteViewData,
   type AppViews,
   type ViewLoader,
 } from "./apps";
@@ -285,9 +287,9 @@ function registerHandlers(
         await checkRead(vault, principal, path);
         const note = await vault.readNote(path);
         logCall("read_note", { path }, true);
-        return {
-          content: [{ type: "text", text: JSON.stringify(note) }],
-        };
+        const result = { content: [{ type: "text", text: JSON.stringify(note) }] };
+        if (!views.note) return result;
+        return { ...result, _meta: { [NOTE_VIEW_META_KEY]: noteViewData(index, note.path, await readFilter()) } };
       } catch (err) {
         return toolError("read_note", { path }, err);
       }

@@ -1,4 +1,5 @@
 import { RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
+import type { VaultIndex } from "../index/index";
 import { readWebAsset } from "../web/serve";
 
 export const NOTE_VIEW_URI = "ui://brainmd/note.html";
@@ -37,4 +38,24 @@ export function appResourceContents(views: AppViews) {
     text: views.note,
     _meta: { ui: { prefersBorder: true } },
   };
+}
+
+// Everything the note view needs for its first paint, so a host that asks
+// the user to approve each app-initiated call (OpenClaw does) shows the
+// note with zero extra calls. Lives in the result's _meta, which hosts keep
+// out of the model's context; `content` stays exactly what it was.
+export const NOTE_VIEW_META_KEY = "brainmd/note-view";
+
+export interface NoteViewData {
+  backlinks: Array<{ from: string; lineNo: number; context: string; embed: boolean }>;
+  links: Record<string, string | null>;
+}
+
+export function noteViewData(index: VaultIndex, path: string, allowed: (path: string) => boolean): NoteViewData {
+  const links: Record<string, string | null> = {};
+  for (const l of index.get(path)?.outLinks ?? []) {
+    if (l.targetLower in links) continue;
+    links[l.targetLower] = index.resolveAny(l.targetLower).matches.find(allowed) ?? null;
+  }
+  return { backlinks: index.backlinks(path, allowed), links };
 }

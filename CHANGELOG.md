@@ -10,6 +10,11 @@
   The view is one self-contained HTML file (no network), built with the
   web bundle into `web/dist/mcp-apps/`. Hosts without MCP Apps get the
   same text result as before.
+- With the view built, `read_note` adds `_meta["brainmd/note-view"]`
+  (backlinks and resolved wikilinks, filtered by read permissions), so
+  the view needs no extra tool calls. Hosts that ask the user to approve
+  each call from a view (OpenClaw) prompt once per note instead of four
+  times. `content` is unchanged.
 - `write_note` and `append_note` are marked `visibility: ["model"]`, so a
   host that follows the MCP Apps spec will not let a view call them. The
   host enforces this, not brain.md.
