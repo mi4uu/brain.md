@@ -15,6 +15,12 @@
   the view needs no extra tool calls. Hosts that ask the user to approve
   each call from a view (OpenClaw) prompt once per note instead of four
   times. `content` is unchanged.
+- MCP tool annotations on all 17 tools: `readOnlyHint` on every read and
+  search tool, honest `destructiveHint`/`idempotentHint` on `write_note`
+  (overwrites, same input gives the same note) and `append_note` (adds,
+  repeats add again). Hosts with an approval mode based on annotations,
+  such as OpenClaw's `auto`, can run reads without a prompt and still
+  ask before writes. They are hints; folder permissions still decide.
 - `write_note` and `append_note` are marked `visibility: ["model"]`, so a
   host that follows the MCP Apps spec will not let a view call them. The
   host enforces this, not brain.md.

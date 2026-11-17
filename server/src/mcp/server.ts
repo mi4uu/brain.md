@@ -52,6 +52,25 @@ import {
   type RagDeps,
 } from "../rag/queries";
 
+// MCP tool annotations. Hosts such as OpenClaw use them for approval modes:
+// read-only tools can run without a prompt while writes still ask. The RAG
+// tools leave openWorldHint unset because a configured remote embedder
+// receives the query text.
+const READ_ONLY_LOCAL = { readOnlyHint: true, openWorldHint: false } as const;
+const READ_ONLY_RAG = { readOnlyHint: true } as const;
+const WRITE_NOTE_ANNOTATIONS = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: true,
+  openWorldHint: false,
+} as const;
+const APPEND_NOTE_ANNOTATIONS = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: false,
+} as const;
+
 const TASK_RE = /^(\s*[-*+])\s+\[([ xX])\]\s+(.*)$/;
 
 // V69: shared schema for the optional folder scope every search/RAG tool accepts.
@@ -205,6 +224,7 @@ function registerHandlers(
   server.registerTool(
     "search_notes",
     {
+      annotations: READ_ONLY_LOCAL,
       description:
         "Full-text search across the vault. Returns top 50 hits. Optional `scope` confines the search to one or more folders.",
       inputSchema: { query: z.string().min(1), scope: scopeSchema },
@@ -220,6 +240,7 @@ function registerHandlers(
   server.registerTool(
     "similar_notes",
     {
+      annotations: READ_ONLY_RAG,
       description:
         "Semantic (vector) search via RAG. Returns top-k chunks with paths and snippets. Optional `scope` confines results to one or more folders.",
       inputSchema: {
@@ -278,6 +299,7 @@ function registerHandlers(
   server.registerTool(
     "read_note",
     {
+      annotations: READ_ONLY_LOCAL,
       description: "Read a single note. Returns content + mtime.",
       inputSchema: { path: z.string().min(1) },
       ...noteToolMeta(views),
@@ -299,6 +321,7 @@ function registerHandlers(
   server.registerTool(
     "list_notes",
     {
+      annotations: READ_ONLY_LOCAL,
       description: "List all notes (and folders) in the vault.",
       inputSchema: { folder: z.string().optional() },
     },
@@ -327,6 +350,7 @@ function registerHandlers(
   server.registerTool(
     "get_backlinks",
     {
+      annotations: READ_ONLY_LOCAL,
       description: "Backlinks for a given note path.",
       inputSchema: { path: z.string().min(1) },
     },
@@ -346,6 +370,7 @@ function registerHandlers(
   server.registerTool(
     "list_tags",
     {
+      annotations: READ_ONLY_LOCAL,
       description: "All tags in the vault with usage counts.",
       inputSchema: {},
     },
@@ -360,6 +385,7 @@ function registerHandlers(
   server.registerTool(
     "current_datetime",
     {
+      annotations: READ_ONLY_LOCAL,
       description:
         "Server's current date, time, and timezone. Use this when you need absolute time orientation — many agents lose track of the date across long sessions or when invoked from a stale system prompt.",
       inputSchema: {},
@@ -395,6 +421,7 @@ function registerHandlers(
   server.registerTool(
     "get_tasks",
     {
+      annotations: READ_ONLY_LOCAL,
       description: "Aggregate tasks vault-wide.",
       inputSchema: { filter: z.enum(["open", "done", "all"]).optional() },
     },
@@ -416,6 +443,7 @@ function registerHandlers(
   server.registerTool(
     "write_note",
     {
+      annotations: WRITE_NOTE_ANNOTATIONS,
       description: "Create or overwrite a note. Content is full body.",
       ...MODEL_ONLY_META,
       inputSchema: {
@@ -442,6 +470,7 @@ function registerHandlers(
   server.registerTool(
     "append_note",
     {
+      annotations: APPEND_NOTE_ANNOTATIONS,
       description:
         "Append a paragraph to an existing note (ensures a blank-line separator). " +
         "Returns only path/mtime, never the resulting body, call read_note " +
@@ -482,6 +511,7 @@ function registerHandlers(
   server.registerTool(
     "find_similar_tasks",
     {
+      annotations: READ_ONLY_RAG,
       description:
         "Semantic search across task lines (- [ ] / - [x]). Filter open/done/all.",
       inputSchema: {
@@ -505,6 +535,7 @@ function registerHandlers(
   server.registerTool(
     "find_related",
     {
+      annotations: READ_ONLY_RAG,
       description:
         "Notes semantically close to a given note path (excludes self). Optional `scope` confines results to one or more folders.",
       inputSchema: {
@@ -532,6 +563,7 @@ function registerHandlers(
   server.registerTool(
     "semantic_outline",
     {
+      annotations: READ_ONLY_RAG,
       description:
         "Cluster a note's chunks into topical groups (cosine ≥ threshold). Returns one entry per cluster.",
       inputSchema: {
@@ -553,6 +585,7 @@ function registerHandlers(
   server.registerTool(
     "context_for_query",
     {
+      annotations: READ_ONLY_RAG,
       description:
         "Pack top-relevant chunks into a markdown context block under a token budget. Returns text + sources + truncated flag.",
       inputSchema: {
@@ -575,6 +608,7 @@ function registerHandlers(
   server.registerTool(
     "find_orphans",
     {
+      annotations: READ_ONLY_LOCAL,
       description:
         "Notes with zero backlinks AND low semantic neighbours (isolation = 1 - max cosine).",
       inputSchema: {
@@ -597,6 +631,7 @@ function registerHandlers(
   server.registerTool(
     "weekly_digest",
     {
+      annotations: READ_ONLY_RAG,
       description:
         "Topic clusters across notes modified in a recent window (e.g. '7d', '24h').",
       inputSchema: {
@@ -619,6 +654,7 @@ function registerHandlers(
   server.registerTool(
     "compare_notes",
     {
+      annotations: READ_ONLY_RAG,
       description:
         "Compare two notes: cosine similarity of intros + naive unified diff + shared headings.",
       inputSchema: {

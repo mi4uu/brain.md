@@ -90,6 +90,22 @@ describe("MCP Apps note view", () => {
   });
 });
 
+describe("MCP tool annotations", () => {
+  test("every tool is annotated; only write_note and append_note write", async () => {
+    const { c } = await client(false);
+    const { tools } = await c.listTools();
+    expect(tools.length).toBeGreaterThan(0);
+    for (const t of tools) {
+      expect(t.annotations).toBeDefined();
+      const writes = t.name === "write_note" || t.name === "append_note";
+      expect(t.annotations?.readOnlyHint).toBe(!writes);
+    }
+    const byName = Object.fromEntries(tools.map((t) => [t.name, t.annotations]));
+    expect(byName.write_note).toMatchObject({ destructiveHint: true, idempotentHint: true });
+    expect(byName.append_note).toMatchObject({ destructiveHint: false, idempotentHint: false });
+  });
+});
+
 describe("MCP Apps view data respects folder permissions", () => {
   test("an API key does not learn about notes in a folder it cannot read", async () => {
     const { handle } = await client(true);
