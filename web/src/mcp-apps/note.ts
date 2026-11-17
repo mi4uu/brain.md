@@ -45,8 +45,9 @@ async function callJson<T>(name: string, args: Record<string, unknown>): Promise
 
 function errorMessage(text: string): string {
   try {
-    const parsed = JSON.parse(text) as { error?: string };
-    return parsed.error ?? text;
+    const parsed = JSON.parse(text) as { error?: string; code?: string };
+    if (!parsed.error) return text;
+    return parsed.code ? `${parsed.error} (${parsed.code})` : parsed.error;
   } catch {
     return text || "unknown error";
   }
@@ -212,7 +213,72 @@ function applyContext(ctx: McpUiHostContext | undefined): void {
 
 app.onhostcontextchanged = (ctx) => applyContext({ ...app.getHostContext(), ...ctx });
 
+// Some hosts mount the view but never forward the tool result, e.g. when
+// the model runs the tool from a code sandbox instead of a direct call.
+// After FALLBACK_MS the view loads the note itself, or offers a picker.
+const FALLBACK_MS = 6000;
+let gotResult = false;
+let connected = false;
+let inputPath: string | null = null;
+
+async function showPicker(): Promise<void> {
+  const token = ++seq;
+  showStatus("Loading notes…");
+  let list: string[];
+  try {
+    list = (await callJson<{ notes: string[] }>("list_notes", {})).notes;
+  } catch (err) {
+    if (token === seq) showStatus(`No note to show, and the note list failed: ${(err as Error).message}`, true);
+    return;
+  }
+  if (token !== seq) return;
+  notes = list;
+  const results = el("ul", { className: "picker-list" });
+  const fill = (q: string) => {
+    const needle = q.trim().toLowerCase();
+    const hits = list.filter((p) => p.toLowerCase().includes(needle)).slice(0, 100);
+    results.replaceChildren(
+      ...hits.map((p) =>
+        el("li", {}, [
+          el("a", {
+            href: "#",
+            className: "picker-item",
+            textContent: titleOf(p),
+            title: p,
+            onclick: (e: MouseEvent) => {
+              e.preventDefault();
+              void open(p, false);
+            },
+          }),
+          el("span", { className: "context", textContent: p }),
+        ]),
+      ),
+    );
+    if (hits.length === 0) results.append(el("li", { className: "muted", textContent: "No matching notes." }));
+  };
+  const search = el("input", {
+    type: "search",
+    className: "picker-search",
+    placeholder: "Filter notes",
+    oninput: () => fill(search.value),
+  });
+  root.replaceChildren(
+    el("div", { className: "preview picker" }, [
+      el("p", { className: "status", textContent: "The host did not send a note. Pick one:" }),
+      search,
+      results,
+    ]),
+  );
+  fill("");
+}
+
+app.ontoolinput = (params) => {
+  const path = params.arguments?.path;
+  if (typeof path === "string" && path) inputPath = path;
+};
+
 app.ontoolresult = (result) => {
+  gotResult = true;
   const text = textOf(result);
   if (result.isError) {
     showStatus(errorMessage(text), true);
@@ -228,5 +294,15 @@ app.ontoolresult = (result) => {
 };
 
 showStatus("Waiting for the note…");
+setTimeout(() => {
+  if (gotResult) return;
+  if (!connected) {
+    showStatus("The host did not connect to this view.", true);
+    return;
+  }
+  if (inputPath) void open(inputPath, false);
+  else void showPicker();
+}, FALLBACK_MS);
 await app.connect();
+connected = true;
 applyContext(app.getHostContext());
