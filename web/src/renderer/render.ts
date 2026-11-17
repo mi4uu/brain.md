@@ -340,7 +340,7 @@ export function isAttachmentName(name: string): boolean {
   const dot = last.lastIndexOf(".");
   if (dot <= 0) return false;
   const ext = last.slice(dot + 1).toLowerCase();
-  if (!ext || ext === "md") return false;
+  if (!/^[a-z0-9]{1,10}$/.test(ext) || ext === "md") return false;
   return !MEDIA_EXT.has(ext);
 }
 
