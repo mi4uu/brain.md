@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.2 - 2026-11-18
+
+### Fixed
+
+- An ambiguous `[[Index]]` in a subfolder with no Index of its own went
+  to the shortest path anywhere in the vault (for example `ludzie/Index`
+  from `work/job-search/direct/`). It now goes to the note nearest in the
+  folder tree, here `work/job-search/Index`, and only then to the shortest
+  path.
+
 ## 0.7.1 - 2026-11-18
 
 Log out from the web app, and backlinks that find path links. No config

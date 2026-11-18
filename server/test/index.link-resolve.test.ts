@@ -59,6 +59,11 @@ describe("LinkResolver", () => {
     expect(r.resolve("ludzie/ola.md", "Index")).toBe("ludzie/Index.md");
   });
 
+  test("ambiguous name from a subfolder: the nearest folder up wins over a shorter path", () => {
+    expect(r.resolve("work/job-search/direct/offer.md", "Index")).toBe("work/job-search/Index.md");
+    expect(r.resolve("archive/old/notes/x.md", "Index")).toBe("archive/old/Index.md");
+  });
+
   test("ambiguous name from elsewhere: shortest path, then alphabetical", () => {
     expect(r.resolve("Start.md", "Index")).toBe("ludzie/Index.md");
   });
