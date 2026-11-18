@@ -26,11 +26,14 @@ import {
 } from "../api/principal";
 import { principalFor } from "../api/auth-middleware";
 import { loadMcpInstructions } from "./instructions";
+import { buildGraph, graphSummary, neighbourhood } from "../index/graph";
 import {
   MODEL_ONLY_META,
+  GRAPH_VIEW_MAX_NODES,
+  GRAPH_VIEW_META_KEY,
   NOTE_VIEW_META_KEY,
-  NOTE_VIEW_URI,
-  appResourceContents,
+  appResources,
+  graphToolMeta,
   loadViews,
   noteToolMeta,
   noteViewData,
@@ -346,6 +349,45 @@ function registerHandlers(
         : { folders: allowedFolders, notes: allowedNotes };
       logCall("list_notes", { folder }, true);
       return { content: [{ type: "text", text: JSON.stringify(filtered) }] };
+    },
+  );
+
+  server.registerTool(
+    "graph_view",
+    {
+      annotations: READ_ONLY_LOCAL,
+      description:
+        "Graph of notes and their wikilinks. With `center`, only the notes within `depth` hops (default 1) of that note; with `folder`, only notes in that folder. Returns a short summary (counts, most linked notes); hosts with MCP Apps show it as an interactive graph.",
+      inputSchema: {
+        center: z.string().min(1).optional(),
+        depth: z.number().int().min(1).max(3).optional(),
+        folder: z.string().optional(),
+      },
+      ...graphToolMeta(views),
+    },
+    async ({ center, depth, folder }) => {
+      const args = { center, depth, folder };
+      try {
+        if (center) await checkRead(vault, principal, center);
+        let g = buildGraph(index, await readFilter());
+        if (folder) {
+          const prefix = folder.replace(/^\/+|\/+$/g, "");
+          const inFolder = new Set(g.nodes.filter((n) => n.id === prefix || n.id.startsWith(`${prefix}/`)).map((n) => n.id));
+          g = { nodes: g.nodes.filter((n) => inFolder.has(n.id)), links: g.links.filter((l) => inFolder.has(l.source) && inFolder.has(l.target)) };
+        }
+        if (center) g = neighbourhood(g, center, depth ?? 1);
+        const scope = center ? `${center} (${depth ?? 1} hop${(depth ?? 1) > 1 ? "s" : ""})` : folder ? `folder ${folder}` : "the vault";
+        logCall("graph_view", args, true);
+        const result = { content: [{ type: "text", text: graphSummary(g, scope) }] };
+        if (!views.graph) return result;
+        const truncated = g.nodes.length > GRAPH_VIEW_MAX_NODES;
+        const nodes = truncated ? g.nodes.slice(0, GRAPH_VIEW_MAX_NODES) : g.nodes;
+        const kept = new Set(nodes.map((n) => n.id));
+        const data = { nodes, links: g.links.filter((l) => kept.has(l.source) && kept.has(l.target)), center: center ?? null, truncated };
+        return { ...result, _meta: { [GRAPH_VIEW_META_KEY]: data } };
+      } catch (err) {
+        return toolError("graph_view", args, err);
+      }
     },
   );
 
@@ -677,18 +719,11 @@ function registerHandlers(
 
   // ---------------- resources ----------------
 
-  const noteView = appResourceContents(views);
-  if (noteView) {
-    server.registerResource(
-      "note-view",
-      NOTE_VIEW_URI,
-      {
-        description: "MCP Apps view for read_note: rendered note with wikilinks and backlinks",
-        mimeType: noteView.mimeType,
-        _meta: noteView._meta,
-      },
-      async () => ({ contents: [noteView] }),
-    );
+  for (const view of appResources(views)) {
+    const { name, description, ...contents } = view;
+    server.registerResource(name, view.uri, { description, mimeType: view.mimeType, _meta: view._meta }, async () => ({
+      contents: [contents],
+    }));
   }
 
   server.registerResource(
@@ -752,7 +787,7 @@ export function createMcp(deps: McpDeps) {
   const loader = deps.loadView ?? (async () => null);
   let views: AppViews | undefined;
   const getViews = async (): Promise<AppViews> => {
-    if (views?.note) return views;
+    if (views && (views.note || views.graph)) return views;
     views = await loadViews(loader);
     return views;
   };

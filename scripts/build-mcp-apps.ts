@@ -14,7 +14,10 @@ const WEB = join(REPO_ROOT, "web");
 const OUT_DIR = join(WEB, "dist", "mcp-apps");
 const MAX_BYTES = 2 * 1024 * 1024;
 
-const VIEWS = [{ name: "note", entry: join(WEB, "src", "mcp-apps", "note.ts"), title: "brain.md note" }];
+const VIEWS = [
+  { name: "note", entry: join(WEB, "src", "mcp-apps", "note.ts"), title: "brain.md note", katex: true },
+  { name: "graph", entry: join(WEB, "src", "mcp-apps", "graph.ts"), title: "brain.md graph", katex: false },
+];
 
 // The sandbox CSP has no font-src for data: or remote origins, so KaTeX
 // falls back to system fonts instead of shipping ~1 MB of web fonts.
@@ -48,7 +51,7 @@ for (const view of VIEWS) {
     process.exit(1);
   }
   let js = "";
-  let css = katexCss();
+  let css = view.katex ? katexCss() : "";
   for (const out of result.outputs) {
     if (out.path.endsWith(".js")) js += await out.text();
     else if (out.path.endsWith(".css")) css += await out.text();
