@@ -657,7 +657,8 @@ Default: no auth. Set a password in **Settings → Security** to switch
 on bearer-token authentication for *both* the HTTP API and the MCP
 endpoints. Password is hashed with **argon2id** (Bun's built-in
 `Bun.password`, no native crypto build needed); tokens live in memory
-with a 24-hour TTL.
+with a 24-hour TTL. Log out from the toolbar or from **Settings →
+Security**, which also shows who is signed in.
 
 ![Settings, Security](docs/img/settings-security.png)
 

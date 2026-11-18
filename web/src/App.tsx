@@ -29,6 +29,7 @@ import {
   PlusIcon,
   SearchIcon,
   SettingsIcon,
+  LogOutIcon,
   StarIcon,
   SunIcon,
   CalendarIcon,
@@ -69,6 +70,7 @@ import {
 import { validateBasename } from "./lib/validate";
 import { extractTagsFromMd, insertFrontmatterTag } from "./lib/tags";
 import { useAuth } from "./hooks/useAuth";
+import { signedInAs } from "./auth/api";
 import { LoginDialog } from "./components/LoginDialog";
 import { FolderPermsDialog } from "./components/FolderPermsDialog";
 import { AboutDialog } from "./components/AboutDialog";
@@ -333,7 +335,9 @@ export function App() {
       const t = await api.tree();
       setTree(t);
     } catch (e) {
-      setToast(`Load failed: ${e instanceof Error ? e.message : String(e)}`);
+      const msg = e instanceof Error ? e.message : String(e);
+      // Signed out: the login dialog already says so.
+      if (!msg.startsWith("401")) setToast(`Load failed: ${msg}`);
     }
     try {
       const r = await fetch("/api/tags");
@@ -1016,6 +1020,11 @@ export function App() {
         <IconBtn label="Settings" onClick={() => setShowSettings(true)}>
           <SettingsIcon />
         </IconBtn>
+        {auth.configured && auth.authenticated && !auth.loading ? (
+          <IconBtn label={`Log out (signed in as ${signedInAs(auth.user)})`} onClick={() => void auth.logout()}>
+            <LogOutIcon />
+          </IconBtn>
+        ) : null}
         <IconBtn label="About brain.md" onClick={() => setShowAbout(true)}>
           <InfoCircledIcon />
         </IconBtn>

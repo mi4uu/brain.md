@@ -114,6 +114,12 @@ export function useAuth(): UseAuthValue {
     const tok = getToken();
     if (tok) await authApi.logout(tok).catch(() => {});
     setToken(null);
+    // Same reason as login: every data hook loaded with the old token, so a
+    // reload drops the vault from memory and lands on the login screen.
+    if (typeof window !== "undefined") {
+      window.location.reload();
+      return;
+    }
     await refresh();
   }, [refresh]);
 
