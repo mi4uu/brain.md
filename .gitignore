@@ -5,9 +5,7 @@ build
 *.log
 .env
 .env.local
-vault
-!example/vault/
-!example/vault/**
+/vault/
 .brain
 
 # living spec — kept local, not shipped in the repo
