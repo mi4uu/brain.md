@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 - 2026-11-18
+
+Notes as an interactive view in MCP Apps hosts, and safety annotations
+on every MCP tool. No config changes needed; clients without MCP Apps
+see no difference.
 
 ### Added
 
@@ -30,6 +34,15 @@
 - A wikilink to a note with a dot in its name, like `[[brain.md launch]]`,
   was treated as an attachment with the extension `md launch` and could
   not be opened.
+- `[[#Heading]]` links to a heading in the same note rendered as broken
+  in the web preview; they now jump to the heading.
+
+### Changed
+
+- CI runs the web build (including the MCP Apps view) on every PR, not
+  only at release.
+- `docs/mcp.md` covered 9 tools and an SSE endpoint that no longer exists;
+  it now documents all 17 tools, the annotations and MCP Apps.
 
 ## 0.5.1 - 2026-11-08
 
