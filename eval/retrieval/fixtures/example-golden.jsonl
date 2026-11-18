@@ -1,0 +1,16 @@
+{"id":"e01","type":"real","q":"wikilinks","rel":["Features/Wikilinks.md"]}
+{"id":"e02","type":"real","q":"mermaid","rel":["Features/Mermaid Diagrams.md"]}
+{"id":"e03","type":"paraphrase","q":"how do I link one note to another","rel":["Features/Wikilinks.md"]}
+{"id":"e04","type":"paraphrase","q":"keep my private journal away from AI agents","rel":["AI for Agents/Folder Permissions.md"]}
+{"id":"e05","type":"synonym","q":"vector search over my notes","rel":["AI for Agents/RAG (Semantic Search).md"]}
+{"id":"e06","type":"synonym","q":"equations and formulas","rel":["Features/Math.md"]}
+{"id":"e07","type":"paraphrase","q":"draw a flowchart in a note","rel":["Features/Mermaid Diagrams.md"]}
+{"id":"e08","type":"crosslang","q":"jak połączyć agenta AI z notatkami","rel":["AI for Agents/MCP Server.md"]}
+{"id":"e09","type":"crosslang","q":"lista zadań do odhaczenia","rel":["Features/Tasks & Tables.md"]}
+{"id":"e10","type":"crosslang","q":"wstawienie jednej notatki w drugą","rel":["Features/Embeds & Transclusion.md"]}
+{"id":"e11","type":"crosslang","q":"kolorowanie składni kodu","rel":["Features/Code Highlighting.md"]}
+{"id":"e12","type":"paraphrase","q":"plans for next quarter","rel":["Projects/Q3 roadmap.md"]}
+{"id":"e13","type":"real","q":"aliases frontmatter","rel":["Features/Frontmatter & Aliases.md"]}
+{"id":"e14","type":"synonym","q":"warning and tip boxes","rel":["Features/Callouts.md"]}
+{"id":"e15","type":"paraphrase","q":"announcement and video script for the release","rel":["Projects/brain.md launch.md"]}
+{"id":"e16","type":"crosslang","q":"uprawnienia do folderów dla agentów","rel":["AI for Agents/Folder Permissions.md"]}
