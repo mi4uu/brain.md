@@ -40,9 +40,11 @@ export function activeModelId(cfg: RagConfig): string {
 
 export function resolveFormat(cfg: RagConfig): EmbedFormat {
   const d = defaultFormat(activeModelId(cfg));
+  // Settings are one-line inputs, so a typed "\n" stands for a newline.
+  const own = (t: string | undefined) => (t?.trim() ? t.replaceAll("\\n", "\n") : undefined);
   return {
-    query: cfg.queryTemplate?.trim() ? cfg.queryTemplate : d.query,
-    document: cfg.documentTemplate?.trim() ? cfg.documentTemplate : d.document,
+    query: own(cfg.queryTemplate) ?? d.query,
+    document: own(cfg.documentTemplate) ?? d.document,
   };
 }
 

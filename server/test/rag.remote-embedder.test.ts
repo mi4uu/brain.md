@@ -43,6 +43,7 @@ describe("prompt formats", () => {
     const cfg: RagConfig = { ...DEFAULT_RAG_CONFIG, queryTemplate: "Q: {text}", documentTemplate: "" };
     expect(resolveFormat(cfg).query).toBe("Q: {text}");
     expect(resolveFormat(cfg).document).toBe("{title}\n{text}");
+    expect(resolveFormat({ ...cfg, documentTemplate: "T: {title}\\n{text}" }).document).toBe("T: {title}\n{text}");
   });
 });
 

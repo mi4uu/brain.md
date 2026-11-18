@@ -4,6 +4,7 @@ import type { SettingsStore } from "../settings/settings";
 import type { Vault } from "../vault/vault";
 import type { VaultIndex } from "../index/index";
 import { describeProvider } from "../rag/provider";
+import { resolveFormat } from "../rag/format";
 import { LocalEmbedderWasm as LocalEmbedder } from "../rag/embedder-local-wasm";
 import {
   OpenAICompatEmbedder,
@@ -153,6 +154,7 @@ export function ragRoutes(
         lastIndexedAt: pipeline.lastIndexedAt,
         needsReindex,
         lastError: pipeline.lastProbeError,
+        format: resolveFormat(cfg),
       };
     })
     .post("/api/rag/reindex", async ({ set, request }) => {

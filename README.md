@@ -427,6 +427,7 @@ deleted note never comes back through semantic search.
 | Provider                | Model                                       | dim   | Local? | API key |
 |-------------------------|---------------------------------------------|------:|:------:|:-------:|
 | Local *(default)*       | `bge-small-en-v1.5` (WASM)                  |   384 |   ✓    |   no    |
+| llama-server *(best)*   | `embeddinggemma-300m` (GGUF Q8)             |   768 |   ✓    | optional |
 | Ollama                  | e.g. `nomic-embed-text`                     |   768 |   ✓    |   no    |
 | LM Studio               | any served GGUF embedder                    | varies|   ✓    |   no    |
 | OpenRouter *(free tier)*| `nvidia/llama-nemotron-embed-vl-1b-v2:free` |  2048 |   no    |   yes     |
@@ -440,6 +441,59 @@ deleted note never comes back through semantic search.
 > after that, on macOS / Linux / Windows alike. Want to keep your
 > existing Ollama or hosted endpoint? Switch to *OpenAI-compatible*
 > in the same panel.
+
+#### Best quality: EmbeddingGemma on your own llama-server
+
+The default bge-small model is English-only and small. On a real
+Polish/English vault (52 queries, see [eval/retrieval](eval/retrieval/))
+it found the right note in the top results far less often than a
+multilingual model:
+
+| Embedder | nDCG@10 | Cross-language queries |
+|---|---:|---:|
+| bge-small (default, WASM) | 0.61 | 0.42 |
+| EmbeddingGemma-300M Q8 via llama-server | **0.89** | **1.00** |
+
+EmbeddingGemma-300M needs about 550 MB of RAM and answers a query in
+about 40 ms on a 4-core laptop CPU, so a spare box on your network is
+enough. On the box that will embed:
+
+```sh
+# llama.cpp release build, then the model (Q8, 334 MB)
+curl -LO https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/main/embeddinggemma-300M-Q8_0.gguf
+openssl rand -hex 32 > embed-key && chmod 600 embed-key
+llama-server -m embeddinggemma-300M-Q8_0.gguf --embedding \
+  --host <address brain.md can reach> --port 8091 \
+  --api-key-file embed-key -c 4096 -ub 2048 --parallel 2
+```
+
+Then in **Settings → AI / RAG**: Provider *OpenAI-compatible*, Base URL
+`http://<that address>:8091/v1`, Model `embeddinggemma-300m`, DIM `768`,
+and the key. brain.md knows the model's prompts (`task: search result |
+query: …` for searches, the note title plus the text for notes) and uses
+them on its own. To keep the key out of the settings file, set
+`BRAINMD_EMBED_API_KEY` in brain.md's environment (for example a
+systemd `EnvironmentFile` with mode 600); it wins over the saved key.
+
+EmbeddingGemma is under the [Gemma terms of use](https://ai.google.dev/gemma/terms).
+If you want a licence-clean alternative, `bge-m3` (MIT, `ggml-org/bge-m3-Q8_0-GGUF`,
+DIM `1024`) scored the same on dense search but is about twice as slow on CPU.
+
+**What leaves the machine.** With any HTTP embedder, the text of every
+note brain.md indexes is sent to that server: on every save, and for
+the whole vault on a reindex. Searches send the query text. Notes
+matching **Never send to the embedder** in the same panel (globs, one
+per line, default `**/secrets/**`) are never sent; they stay out of
+semantic search but keyword search still finds them, and their old
+vectors are removed on the next reindex.
+
+**When the embedder is away.** If it is down, asleep or slow (no answer
+within 4 seconds), `similar_notes`, `context_for_query` and the search
+API answer with keyword search instead, each hit marked
+`"source": "keyword"`, and the Related panel stays empty. Notes saved
+meanwhile are embedded once it is back. Changing the model, the
+endpoint or the prompt templates rebuilds the index in the background;
+until it is done, the same keyword fallback answers.
 
 #### OpenRouter: free embeddings, zero local deps
 

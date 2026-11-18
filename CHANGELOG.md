@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.8.0 - 2026-11-18
+
+Much better semantic search with a remote embedder, and it degrades to
+keyword search instead of failing. Upgrading rebuilds the vector index
+once in the background (the prompt format changed); keyword search
+answers until it is done.
+
+### Added
+
+- Prompt templates per model: searches and notes are embedded with the
+  model's own retrieval prompts, and every chunk carries its note title.
+  Known defaults for EmbeddingGemma, Qwen3-Embedding/F2LLM, e5, mmlw,
+  bge-en and nomic; both templates can be overridden in Settings. On a
+  52-query Polish/English test set, EmbeddingGemma-300M through
+  llama-server scores nDCG@10 0.89 against 0.61 for 0.7's bge-small.
+- Settings, AI / RAG: **Never send to the embedder**, a list of path
+  globs (default `**/secrets/**`). Matching notes are never embedded and
+  their old vectors are purged; keyword search still finds them.
+- `BRAINMD_EMBED_API_KEY`: the embedder key from the environment, so it
+  can live in a systemd `EnvironmentFile` instead of settings.json. It
+  wins over a saved key and the UI shows it as set by the server.
+- `eval/retrieval/`: the harness used to choose the embedder, with a
+  16-query fixture over the example vault.
+
+### Changed
+
+- When the embedder is down, asleep or slow (4 s per query) or the index
+  is being rebuilt, `similar_notes`, `context_for_query` and
+  `/api/similar` answer with keyword search, each hit marked
+  `"source": "keyword"`; Related and similar tasks return nothing
+  instead of an error.
+- Remote embedder requests go in batches of 8 with a timeout. A note is
+  embedded before its old vectors are removed, so an outage never drops
+  it from search. A full reindex stops when the embedder goes away and
+  the disk sync resumes it later without redoing finished notes; one note
+  the embedder rejects no longer blocks the rest.
+- Changing the model, endpoint or prompt templates marks the index for a
+  rebuild, which now starts on its own at startup.
+
 ## 0.7.2 - 2026-11-18
 
 Semantic search forgets deleted notes, and `[[Index]]` from a subfolder

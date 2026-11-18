@@ -78,6 +78,8 @@ export interface RagStatus {
   // V59: most recent embedder failure, if any. Null when probe last succeeded
   // OR when no probe has ever run. UI surfaces this in a persistent banner.
   lastError: string | null;
+  // The prompt templates in effect (settings or the model's default).
+  format: { query: string; document: string };
 }
 
 // V49: chunker constants

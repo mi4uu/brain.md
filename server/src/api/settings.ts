@@ -10,12 +10,17 @@ import { requireOwner } from "./perm-guard";
 // instead and change the key by sending a new one (an empty string
 // clears it); an omitted field leaves the stored key untouched
 // (SettingsStore.mergeRag only overwrites on a string value).
-function redact(s: AppSettings): AppSettings & { rag: { openaiCompat: { apiKeySet: boolean } } } {
+// A key from the server environment (BRAINMD_EMBED_API_KEY) wins over the
+// saved one and can't be changed from the UI; the UI is only told it exists.
+function redact(
+  s: AppSettings,
+): AppSettings & { rag: { openaiCompat: { apiKeySet: boolean; apiKeyFromEnv: boolean } } } {
   const { apiKey, ...rest } = s.rag.openaiCompat;
+  const fromEnv = !!process.env.BRAINMD_EMBED_API_KEY?.trim();
   return {
     ...s,
-    rag: { ...s.rag, openaiCompat: { ...rest, apiKeySet: !!apiKey } },
-  } as AppSettings & { rag: { openaiCompat: { apiKeySet: boolean } } };
+    rag: { ...s.rag, openaiCompat: { ...rest, apiKeySet: !!apiKey || fromEnv, apiKeyFromEnv: fromEnv } },
+  } as AppSettings & { rag: { openaiCompat: { apiKeySet: boolean; apiKeyFromEnv: boolean } } };
 }
 
 export function settingsRoutes(
@@ -102,6 +107,9 @@ export function settingsRoutes(
                   dim: t.Number(),
                 }),
               ),
+              queryTemplate: t.Optional(t.String()),
+              documentTemplate: t.Optional(t.String()),
+              exclude: t.Optional(t.Array(t.String())),
             }),
           ),
         }),
