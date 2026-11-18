@@ -33,7 +33,9 @@
 | **MCP Apps note view** | In hosts that support MCP Apps (tested with OpenClaw), `read_note` opens an interactive view of the note: clickable wikilinks, Back, backlinks, light and dark. Other clients get the same text as before. |
 | **Per-folder agent permissions** | Right-click a folder → set `{read, write}` for the MCP surface. Keep `Journal/Private/` out of agent reach without locking down the vault. |
 | **Optional password auth** | argon2id, bearer tokens, 24-hour TTL, gates both HTTP API and MCP. Off by default, on with one click. |
-| **Git autocommit with a full audit trail** | Every save lands in git, attributed to whoever (or whichever agent) made it. Full history, diff, restore, manual checkpoints. The vault is a real git repo on disk. |
+| **Git autocommit with a full audit trail** | Every save lands in git, attributed to whoever (or whichever agent) made it. Full history with author filter, diff, restore, manual checkpoints. The vault is a real git repo on disk. |
+| **Agents that don't overwrite each other** | `write_note` takes the revision an agent read; if another agent changed the note meanwhile, nothing is written and the agent is told to re-read and merge. |
+| **A tidy tree** | Hide agent scratch files and templates from the tree and search, sort each folder its own way, daily notes grouped by year and month, a homepage note. |
 | **No vendor lock-in** | Your vault is a folder of `.md` files. Open it in VSCode, Obsidian, `cat`, anything. brain.md is just one more way to view and query it. |
 | **Zero API keys required** | Out of the box it runs fully offline. Cloud embedders are an opt-in, not a default. |
 
@@ -97,6 +99,7 @@ Model Context Protocol.
   - [Command palette + quick switcher](#command-palette--quick-switcher)
   - [Tasks across the vault](#tasks-across-the-vault)
   - [Graph view](#graph-view)
+  - [Keeping the vault tidy](#keeping-the-vault-tidy)
 - [AI for agents](#ai-for-agents)
   - [Semantic search (RAG)](#semantic-search-rag)
   - [MCP server](#mcp-server)
@@ -343,12 +346,39 @@ It stays smooth on big vaults. On a generated 3,000-note vault
 
 ![A generated 3,000-note vault in the graph view](docs/img/graph-3000.png)
 
+### Keeping the vault tidy
+
+Agents leave working files behind (inboxes, phone logs, templates). Keep
+them out of the way without moving them:
+
+- **Hidden notes.** Settings, Vault: one glob per line (`Journal/telefon.md`,
+  `**/_*`, `Archive/**`), or right-click a note or folder, **Hide**. A note
+  can also hide itself with `hidden: true` in its frontmatter, or stay in
+  the tree but out of search with `search: false`. Hidden notes leave the
+  tree, search, the graph and semantic search; the eye in the sidebar
+  header shows them again, dimmed. Agents still read and write them by
+  path.
+- **Sort per folder.** Right-click a folder: name A to Z or Z to A, recently
+  changed first or oldest first. Stored in the vault, so it travels with it.
+- **Daily notes by year and month.** Notes named `YYYY-MM-DD` in the daily
+  notes folder show up grouped by year and month, newest first. The files
+  stay where they are.
+- **Homepage.** Right-click a note, **Set as homepage** (or Settings,
+  Vault). It opens whenever the app starts without a note in the URL.
+- **Bookmarks** follow their note when it is renamed and go away when it
+  is deleted; one left pointing nowhere is struck through, with an ×.
+- **Links to missing notes** ask before creating anything, so a typo in a
+  `[[link]]` doesn't leave an empty file behind.
+
+![Daily notes grouped by year and month, hidden notes shown dimmed](docs/img/tree-journal-hidden.png)
+
 ### Auto versioning & history
 
 Every save is auto-committed to git in the background (debounced,
 ~15 s). Open any note's **History** panel to see every prior
-revision, side-by-side unified diffs, and a one-click **Restore
-this version**. Filter by the current note or by the whole vault.
+revision, who made it (a person or which agent), side-by-side unified
+diffs, and a one-click **Restore this version**. Filter by the current
+note or by the whole vault, and by author.
 No "save as", no daily snapshots cron: the vault is a real git
 repo on disk, so `git log`, `git blame`, `git diff` all work from
 the terminal too.
@@ -937,6 +967,14 @@ Changed-by: notes/log.md ci-bot
 An API key or OAuth client also gets `Agent:` and `On-Behalf-Of:`
 trailers on its own commits, so `git log` tells you which credential
 acted and for which subject, without a separate audit log to check.
+
+Several agents sharing one key can each send an `X-Brainmd-Agent:
+<name>` header; their commits are then authored `<key>/<name>` (for
+example `openclaw/sekretarz`) and kept apart in History. A web edit is
+attributed to the signed-in person: the Google or GitHub account, or
+`BRAINMD_OWNER_NAME` / `BRAINMD_OWNER_EMAIL` for a password login. See
+[docs/mcp.md](docs/mcp.md) for the header and for `base_revision`, which
+keeps agents from overwriting each other's edits.
 History, diff and restore in the **History** panel read straight off
 this git log, so the attribution you see there is the same one
 `git blame` would give you from the terminal.

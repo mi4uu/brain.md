@@ -31,19 +31,72 @@ import {
 import { FolderIconRender, IconBare } from "./FolderIconCatalog";
 import type { TreeData } from "../api/types";
 
-interface Node {
+export interface Node {
   name: string;
   path: string;
   type: "folder" | "note";
   children: Node[];
+  // Shown only with "Show hidden", dimmed.
+  hidden?: boolean;
+  // Year/month group in the journal folder: a view, not a real folder.
+  virtual?: boolean;
 }
 
-function buildTree(data: TreeData): Node {
+export type FolderSort = "name-asc" | "name-desc" | "modified-desc" | "modified-asc";
+const SORT_LABELS: Array<[FolderSort, string]> = [
+  ["name-asc", "Name A to Z"],
+  ["name-desc", "Name Z to A"],
+  ["modified-desc", "Recently changed first"],
+  ["modified-asc", "Oldest change first"],
+];
+
+export interface TreeView {
+  showHidden: boolean;
+  sort: Record<string, string>;
+  dailyDir: string;
+}
+
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const DAILY = /^(\d{4})-(\d{2})-\d{2}/;
+
+// Daily notes straight under the journal folder are shown in year and
+// month groups; the files stay where they are.
+function groupJournal(journal: Node): void {
+  const keep: Node[] = [];
+  const years = new Map<string, Node>();
+  for (const c of journal.children) {
+    const m = c.type === "note" ? DAILY.exec(c.name) : null;
+    if (!m) {
+      keep.push(c);
+      continue;
+    }
+    const [, y, mo] = m;
+    let year = years.get(y!);
+    if (!year) {
+      year = { name: y!, path: `${journal.path}/${y}`, type: "folder", children: [], virtual: true };
+      years.set(y!, year);
+    }
+    const monthPath = `${year.path}/${mo}`;
+    let month = year.children.find((n) => n.path === monthPath);
+    if (!month) {
+      month = { name: `${mo} ${MONTHS[Number(mo) - 1] ?? ""}`.trim(), path: monthPath, type: "folder", children: [], virtual: true };
+      year.children.push(month);
+    }
+    month.children.push(c);
+  }
+  journal.children = [...keep, ...years.values()];
+}
+
+export function buildTree(data: TreeData, view: TreeView): Node {
+  const hiddenNotes = new Set(data.hiddenNotes ?? []);
+  const hiddenFolders = new Set(data.hiddenFolders ?? []);
+  const mtimes = data.mtimes ?? {};
   const root: Node = { name: "", path: "", type: "folder", children: [] };
   const dirIndex = new Map<string, Node>();
   dirIndex.set("", root);
 
   for (const folder of data.folders) {
+    if (hiddenFolders.has(folder) && !view.showHidden) continue;
     const parts = folder.split("/");
     let cur = root;
     let accum = "";
@@ -51,7 +104,7 @@ function buildTree(data: TreeData): Node {
       accum = accum === "" ? part : `${accum}/${part}`;
       let next = dirIndex.get(accum);
       if (!next) {
-        next = { name: part, path: accum, type: "folder", children: [] };
+        next = { name: part, path: accum, type: "folder", children: [], hidden: hiddenFolders.has(accum) };
         cur.children.push(next);
         dirIndex.set(accum, next);
       }
@@ -59,6 +112,7 @@ function buildTree(data: TreeData): Node {
     }
   }
   for (const note of data.notes) {
+    if (hiddenNotes.has(note) && !view.showHidden) continue;
     const idx = note.lastIndexOf("/");
     const dir = idx >= 0 ? note.slice(0, idx) : "";
     const base = idx >= 0 ? note.slice(idx + 1) : note;
@@ -79,19 +133,31 @@ function buildTree(data: TreeData): Node {
       }
     }
     const owner = dirIndex.get(dir) ?? root;
-    owner.children.push({ name: base, path: note, type: "note", children: [] });
+    owner.children.push({ name: base, path: note, type: "note", children: [], hidden: hiddenNotes.has(note) });
   }
+  const journal = view.dailyDir ? dirIndex.get(view.dailyDir) : undefined;
+  if (journal) groupJournal(journal);
 
   // Journal/daily notes are named YYYY-MM-DD.md. Plain alpha sort buries the
   // newest entry at the bottom; sort dated notes descending so newest is on top.
   const datePrefix = /^\d{4}-\d{2}-\d{2}/;
+  const byName = (a: Node, b: Node) => a.name.localeCompare(b.name, undefined, { numeric: true });
   const sortRec = (n: Node) => {
+    // Journal year/month groups: newest first, unless the folder has its own order.
+    const mode = (view.sort[n.path] as FolderSort | undefined) ?? (n.virtual || n === journal ? "name-desc" : undefined);
     n.children.sort((a, b) => {
       if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
+      if (mode === "name-asc") return byName(a, b);
+      if (mode === "name-desc") return byName(b, a);
+      if (mode === "modified-desc" || mode === "modified-asc") {
+        if (a.type === "folder") return byName(a, b);
+        const d = (mtimes[a.path] ?? 0) - (mtimes[b.path] ?? 0);
+        return (mode === "modified-desc" ? -d : d) || byName(a, b);
+      }
       const aDated = a.type === "note" && datePrefix.test(a.name);
       const bDated = b.type === "note" && datePrefix.test(b.name);
       if (aDated && bDated) return b.name.localeCompare(a.name);
-      return a.name.localeCompare(b.name);
+      return byName(a, b);
     });
     for (const c of n.children) sortRec(c);
   };
@@ -111,10 +177,21 @@ interface TreeProps {
   onDelete: (path: string, isFolder: boolean) => void;
   onSetIcon: (path: string) => void;
   onSetMcpPerms?: (path: string) => void;
+  showHidden?: boolean;
+  folderSort?: Record<string, string>;
+  dailyDir?: string;
+  homepage?: string;
+  onSetHomepage?: (path: string) => void;
+  onSetHidden?: (path: string, isFolder: boolean, hidden: boolean) => void;
+  onSetSort?: (folder: string, sort: FolderSort | null) => void;
 }
 
 export function FileTree(props: TreeProps) {
-  const root = useMemo(() => buildTree(props.data), [props.data]);
+  const { data, showHidden = false, folderSort, dailyDir = "" } = props;
+  const root = useMemo(
+    () => buildTree(data, { showHidden, sort: folderSort ?? {}, dailyDir }),
+    [data, showHidden, folderSort, dailyDir],
+  );
 
   if (root.children.length === 0) {
     return (
@@ -129,6 +206,23 @@ export function FileTree(props: TreeProps) {
 
   const ctxItems = (node: Node): MenuItem[] => {
     const isFolder = node.type === "folder";
+    if (node.virtual) return [];
+    const hideItem: MenuItem[] = props.onSetHidden
+      ? [
+          {
+            label: node.hidden ? "Show again" : isFolder ? "Hide folder" : "Hide note",
+            icon: <IconBare iconKey={node.hidden ? "folder-open" : "lock"} />,
+            onClick: () => props.onSetHidden!(node.path, isFolder, !node.hidden),
+          },
+        ]
+      : [];
+    const current = (folderSort?.[node.path] as FolderSort | undefined) ?? null;
+    const sortItems: MenuItem[] = props.onSetSort
+      ? SORT_LABELS.map(([mode, label]) => ({
+          label: `Sort: ${label}${current === mode ? "  ✓" : ""}`,
+          onClick: () => props.onSetSort!(node.path, current === mode ? null : mode),
+        }))
+      : [];
     return isFolder
       ? [
           { label: "New note here", icon: <PlusIcon />, onClick: () => props.onCreateNote(node.path) },
@@ -143,11 +237,24 @@ export function FileTree(props: TreeProps) {
                 } as MenuItem,
               ]
             : []),
+          ...sortItems,
+          ...hideItem,
           { label: "Rename folder", icon: <PencilIcon />, onClick: () => props.onRename(node.path, true) },
           { label: "Delete folder", icon: <TrashIcon />, destructive: true, onClick: () => props.onDelete(node.path, true) },
         ]
       : [
           { label: "Open", icon: <FileIcon />, onClick: () => props.onOpen(node.path) },
+          ...(props.onSetHomepage
+            ? [
+                {
+                  label: props.homepage === node.path ? "Homepage  ✓" : "Set as homepage",
+                  icon: <IconBare iconKey="compass" />,
+                  onClick: () => props.onSetHomepage!(node.path),
+                  disabled: props.homepage === node.path,
+                } as MenuItem,
+              ]
+            : []),
+          ...hideItem,
           { label: "Rename note", icon: <PencilIcon />, onClick: () => props.onRename(node.path, false) },
           { label: "Delete note", icon: <TrashIcon />, destructive: true, onClick: () => props.onDelete(node.path, false) },
         ];
@@ -271,7 +378,7 @@ function FolderRow({
     <div>
       <RowContextMenu items={getCtxItems(node)}>
         <div
-          className={clsx("tree-row", expanded && "expanded")}
+          className={clsx("tree-row", expanded && "expanded", node.hidden && "is-hidden")}
           role="treeitem"
           aria-expanded={expanded}
           onClick={() => setExpanded((v) => !v)}
@@ -287,9 +394,11 @@ function FolderRow({
             />
           </span>
           <span className="label">{node.name}</span>
-          <div className="tree-actions" onClick={(e) => e.stopPropagation()}>
-            <RowDropdownMenu items={getCtxItems(node)} />
-          </div>
+          {node.virtual ? null : (
+            <div className="tree-actions" onClick={(e) => e.stopPropagation()}>
+              <RowDropdownMenu items={getCtxItems(node)} />
+            </div>
+          )}
         </div>
       </RowContextMenu>
       {expanded ? (
@@ -324,7 +433,7 @@ function NoteRow({
   return (
     <RowContextMenu items={getCtxItems(node)}>
       <div
-        className={clsx("tree-row", active && "active")}
+        className={clsx("tree-row", active && "active", node.hidden && "is-hidden")}
         role="treeitem"
         draggable
         onDragStart={(e) => {

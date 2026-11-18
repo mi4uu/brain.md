@@ -112,7 +112,8 @@ export function HistoryPanel({ path, onClose, onRestored }: Props) {
           <span className="flex-1" />
           {authors.length > 1 ? (
             <select
-              className="input h-8 w-auto py-0 text-sm"
+              className="input h-8 py-0 text-sm"
+              style={{ width: "auto", maxWidth: 220, flex: "none" }}
               aria-label="Filter by author"
               value={authorFilter}
               onChange={(e) => setAuthorFilter(e.target.value)}

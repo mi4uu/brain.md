@@ -15,10 +15,10 @@ or a login provider is configured, every request needs a bearer token
 
 | Tool                  | Read-only | Folder perm | What it does                                                       |
 |-----------------------|-----------|-------------|--------------------------------------------------------------------|
-| `search_notes`        | yes       | read        | Full-text vault search (top 50, optional folder scope)             |
+| `search_notes`        | yes       | read        | Full-text vault search (top 50, optional folder scope, `include_hidden`) |
 | `similar_notes`       | yes       | read        | Semantic RAG search, top-k chunks (needs RAG enabled)              |
 | `read_note`           | yes       | read        | Note body + mtime; links the MCP Apps note view                    |
-| `list_notes`          | yes       | read        | Vault tree, filtered                                               |
+| `list_notes`          | yes       | read        | Vault tree, filtered (`include_hidden` for hidden notes)           |
 | `get_backlinks`       | yes       | read        | Inbound wikilinks with line and context                            |
 | `graph_view`          | yes       | read        | Notes and wikilinks: vault, `folder`, or `center` + `depth` hops   |
 | `list_tags`           | yes       | read        | Tag to count map                                                   |
@@ -31,8 +31,8 @@ or a login provider is configured, every request needs a bearer token
 | `find_orphans`        | yes       | read        | Notes with no backlinks and few semantic neighbours                |
 | `weekly_digest`       | yes       | read        | Topic clusters across recently modified notes                      |
 | `compare_notes`       | yes       | read        | Similarity, unified diff and shared headings of two notes          |
-| `write_note`          | no        | write       | Create or overwrite a note                                         |
-| `append_note`         | no        | write       | Append a paragraph; returns only path and mtime                    |
+| `write_note`          | no        | write       | Create or overwrite a note (`base_revision`, `create_only`)        |
+| `append_note`         | no        | write       | Append a paragraph; returns only path and mtime (`base_revision`)  |
 
 "Folder perm: read" means results from folders the caller can't read are
 left out, or the call is refused for a single note.
@@ -53,6 +53,59 @@ prompt:
 
 Annotations are hints for the host. Access is enforced by brain.md: the
 caller's scope (owner, API key, OAuth grant) plus per-folder permissions.
+
+## Agents editing the same notes
+
+`read_note` returns a `revision` (a hash of the content). Pass it back as
+`base_revision` and the write only happens if nobody changed the note in
+between:
+
+```jsonc
+// read_note {"path": "work/plan.md"}  ->  {"content": "...", "revision": "9f2c..."}
+// write_note:
+{ "path": "work/plan.md", "content": "...my edit...", "base_revision": "9f2c..." }
+// if another agent wrote first, nothing is written and the tool returns:
+{ "error": "work/plan.md changed since you read it (current revision 41ab...)",
+  "code": "CONFLICT", "current_revision": "41ab...",
+  "hint": "read_note again, merge your change into the current content, and retry with the new base_revision" }
+```
+
+- `write_note` with `create_only: true` refuses to overwrite an existing note.
+- `append_note` never loses another append (appends to one note are
+  serialised); `base_revision` is for text that only makes sense after
+  the content you read.
+- Without these parameters both tools behave as before (last write wins).
+- Revision checks need read access to the note, since a conflict reply
+  carries the current revision.
+
+## Which agent made a change
+
+Every change is committed to the vault's git history with the identity
+that made it: the signed-in person, or the API key / MCP client name. When
+several agents share one credential, each can name itself in an HTTP
+header:
+
+```jsonc
+"headers": {
+  "Authorization": "Bearer <api key named openclaw>",
+  "X-Brainmd-Agent": "sekretarz"
+}
+```
+
+Commits from that agent are authored `openclaw/sekretarz` and listed
+separately in the web History panel and its author filter. Letters,
+digits, `.`, `_`, `-` and spaces, up to 48 characters. The header only
+says which agent it is; permissions still come from the key, and it is
+ignored for people.
+
+## Hidden notes
+
+Notes the owner hides (Settings, Vault, hidden globs; `hidden: true` in a
+note's frontmatter) are left out of `list_notes`, `search_notes`,
+`graph_view` and semantic search; `search: false` keeps a note listed but
+out of search. `include_hidden: true` on `list_notes` and `search_notes`
+brings them back. `read_note`, `write_note` and `append_note` work on any
+note by path.
 
 ## Per-folder permissions
 

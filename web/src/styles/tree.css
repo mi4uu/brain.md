@@ -240,3 +240,10 @@
     opacity: 1;
   }
 }
+
+.tree-row.is-hidden {
+  opacity: 0.55;
+}
+.tree-row.is-hidden .label {
+  font-style: italic;
+}

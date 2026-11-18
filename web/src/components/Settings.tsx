@@ -126,6 +126,7 @@ export function Settings({
                 placeholder="Journal"
               />
             </Field>
+            <VaultVisibilityPanel />
           </TabsContent>
 
           <TabsContent value="git" className="space-y-4 pt-2">
@@ -528,6 +529,70 @@ function RagPanel() {
       </div>
       {msg ? <p className="text-sm text-fg-3">{msg}</p> : null}
     </div>
+  );
+}
+
+// -------- 0.9: homepage and hidden notes --------
+
+function VaultVisibilityPanel() {
+  const [homepage, setHomepage] = useState("");
+  const [hidden, setHidden] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    void fetch("/api/settings")
+      .then((r) => r.json())
+      .then((s: { homepage?: string; hidden?: string[] }) => {
+        setHomepage(s.homepage ?? "");
+        setHidden((s.hidden ?? []).join("\n"));
+      })
+      .catch(() => {});
+  }, []);
+
+  const save = async (patch: { homepage?: string; hidden?: string[] }) => {
+    setMsg(null);
+    const r = await fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    setMsg(r.ok ? "Saved." : `Save failed: ${r.status}`);
+  };
+
+  return (
+    <>
+      <Field label="Homepage (opens when no note is in the URL)">
+        <input
+          className="input"
+          value={homepage}
+          placeholder="Start.md"
+          onChange={(e) => setHomepage(e.target.value)}
+          onBlur={() => void save({ homepage: homepage.trim() })}
+        />
+      </Field>
+      <Field label="Hidden notes and folders (one glob per line)">
+        <textarea
+          className="input min-h-20 font-mono text-xs"
+          value={hidden}
+          placeholder={"Journal/telefon.md\n**/_*\nArchive/**"}
+          onChange={(e) => setHidden(e.target.value)}
+          onBlur={() =>
+            void save({
+              hidden: hidden
+                .split("\n")
+                .map((g) => g.trim())
+                .filter(Boolean),
+            })
+          }
+        />
+      </Field>
+      <p className="text-xs text-fg-3">
+        Hidden notes leave the tree (the eye in the sidebar shows them), search, the graph and semantic search. A note can
+        also hide itself with <code>hidden: true</code> in its frontmatter, or stay in the tree but out of search with{" "}
+        <code>search: false</code>. Agents still read and write them by path.
+      </p>
+      {msg ? <p className="text-xs text-fg-3">{msg}</p> : null}
+    </>
   );
 }
 

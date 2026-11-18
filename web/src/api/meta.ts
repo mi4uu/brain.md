@@ -2,6 +2,7 @@ export interface FolderMeta {
   version: 1;
   icons: Record<string, string>;
   colors: Record<string, string>;
+  sort?: Record<string, string>;
 }
 
 async function jsonOrThrow<T>(res: Response): Promise<T> {
@@ -10,6 +11,15 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
 }
 
 export const metaApi = {
+  async setSort(path: string, sort: string | null): Promise<{ ok: true; sort: Record<string, string> }> {
+    return jsonOrThrow(
+      await fetch("/api/folder-meta/sort", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path, sort }),
+      }),
+    );
+  },
   async get(): Promise<FolderMeta> {
     return jsonOrThrow<FolderMeta>(await fetch("/api/folder-meta"));
   },

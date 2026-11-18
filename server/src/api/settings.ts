@@ -78,6 +78,8 @@ export function settingsRoutes(
         body: t.Object({
           bookmarks: t.Optional(t.Array(t.String())),
           dailyDir: t.Optional(t.String()),
+          hidden: t.Optional(t.Array(t.String())),
+          homepage: t.Optional(t.String()),
           git: t.Optional(
             t.Object({
               autocommit: t.Optional(t.Boolean()),

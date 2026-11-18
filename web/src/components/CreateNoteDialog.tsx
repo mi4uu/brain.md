@@ -18,7 +18,7 @@ export function CreateNoteDialog({ path, onCreate, onClose }: Props) {
           <DialogTitle>Create this note?</DialogTitle>
           <DialogDescription className="break-all">{path}</DialogDescription>
         </DialogHeader>
-        <p className="text-sm text-fg-2">Nothing links to an existing note with this name yet.</p>
+        <p className="text-sm text-fg-2">There is no note with this name yet. It will be created as an empty note.</p>
         <div className="flex justify-end gap-2 pt-2">
           <button
             type="button"

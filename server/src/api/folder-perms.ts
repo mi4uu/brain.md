@@ -25,7 +25,11 @@ export interface FolderMetaWithMcp {
   icons: Record<string, string>;
   colors: Record<string, string>;
   mcp: Record<string, McpFolderPerms>;
+  // Per-folder sort order in the tree ("" = vault root): see FOLDER_SORTS.
+  sort?: Record<string, string>;
 }
+
+export const FOLDER_SORTS = ["name-asc", "name-desc", "modified-desc", "modified-asc"] as const;
 
 export const DEFAULT_MCP_PERMS: McpFolderPerms = { read: true, write: true };
 
@@ -66,6 +70,7 @@ export async function loadFolderMeta(vault: Vault): Promise<FolderMetaWithMcp> {
       icons: parsed.icons ?? {},
       colors: parsed.colors ?? {},
       mcp: normalizeMcpMap(parsed.mcp),
+      sort: parsed.sort ?? {},
     };
   } catch (e) {
     console.error(

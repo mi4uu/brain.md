@@ -2,7 +2,7 @@ import { Elysia, t } from "elysia";
 import type { Vault } from "../vault/vault";
 import { normalizeRel } from "../vault/paths";
 import { asError } from "./errors";
-import { loadFolderMeta, saveFolderMeta, withFolderMetaLock } from "./folder-perms";
+import { FOLDER_SORTS, loadFolderMeta, saveFolderMeta, withFolderMetaLock } from "./folder-perms";
 import { requireWrite, readFilterFor } from "./perm-guard";
 import { VaultError } from "../vault/types";
 
@@ -21,8 +21,37 @@ export function metaRoutes(vault: Vault) {
       const allowed = await readFilterFor(vault, request);
       const visible = (m: Record<string, string>) =>
         Object.fromEntries(Object.entries(m).filter(([path]) => allowed(`${path}/.md`)));
-      return { version: meta.version, icons: visible(meta.icons), colors: visible(meta.colors) };
+      const sort = Object.fromEntries(
+        Object.entries(meta.sort ?? {}).filter(([path]) => path === "" || allowed(`${path}/.md`)),
+      );
+      return { version: meta.version, icons: visible(meta.icons), colors: visible(meta.colors), sort };
     })
+    .post(
+      "/sort",
+      async ({ body, set, request }) => {
+        try {
+          const norm = normalizeRel(body.path);
+          await requireWrite(vault, request, norm === "" ? ".probe" : `${norm}/.probe`);
+          if (body.sort !== null && !(FOLDER_SORTS as readonly string[]).includes(body.sort)) {
+            throw new VaultError(`unknown sort: ${body.sort}`, "INVALID_PATH");
+          }
+          const meta = await withFolderMetaLock(async () => {
+            const m = await loadFolderMeta(vault);
+            m.sort ??= {};
+            if (body.sort === null) delete m.sort[norm];
+            else m.sort[norm] = body.sort;
+            await saveFolderMeta(vault, m);
+            return m;
+          });
+          return { ok: true, sort: meta.sort ?? {} };
+        } catch (e) {
+          const { status, body: err } = asError(e);
+          set.status = status;
+          return err;
+        }
+      },
+      { body: t.Object({ path: t.String(), sort: t.Union([t.String(), t.Null()]) }) },
+    )
     .post(
       "/",
       async ({ body, set, request }) => {

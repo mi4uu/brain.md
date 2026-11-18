@@ -163,6 +163,23 @@ export function App() {
   });
   const bookmarks = settings.bookmarks;
   const dailyDir = settings.dailyDir;
+  const [showHidden, setShowHidden] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("brain.showHidden") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggleShowHidden = useCallback(() => {
+    setShowHidden((v) => {
+      try {
+        localStorage.setItem("brain.showHidden", v ? "0" : "1");
+      } catch {
+        // per-browser preference only
+      }
+      return !v;
+    });
+  }, []);
   const [showSettings, setShowSettings] = useState(false);
   const [showTasks, setShowTasks] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
@@ -452,6 +469,15 @@ export function App() {
     }
     window.addEventListener("hashchange", onHash);
     onHash();
+    // No note in the URL: open the homepage, once settings are in.
+    if (!window.location.hash.startsWith("#/note/") && !window.location.hash.startsWith("#/tag/")) {
+      void settingsApi
+        .get()
+        .then((s) => {
+          if (s.homepage && !window.location.hash) openNote(s.homepage);
+        })
+        .catch(() => {});
+    }
     return () => window.removeEventListener("hashchange", onHash);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -860,6 +886,27 @@ export function App() {
     [],
   );
 
+  // Hide adds an exact rule (the note, or folder/**) to the vault's hidden
+  // list; "Show again" removes that rule. A note hidden by a broader rule
+  // or by `hidden: true` in its frontmatter says so instead.
+  const setHidden = useCallback(
+    async (p: string, isFolder: boolean, hide: boolean) => {
+      const rule = isFolder ? `${p}/**` : p;
+      const cur = settings.hidden ?? [];
+      if (hide) {
+        if (!cur.includes(rule)) await updateSettings({ hidden: [...cur, rule] });
+      } else if (cur.includes(rule)) {
+        await updateSettings({ hidden: cur.filter((g) => g !== rule) });
+      } else {
+        setToast(`${p} is hidden by a rule in Settings, Vault, or by "hidden: true" in the note`);
+        return;
+      }
+      await refreshTree();
+    },
+    [settings.hidden, updateSettings, refreshTree],
+  );
+
+
   const toggleBookmark = useCallback(() => {
     if (!path) return;
     const next = bookmarks.includes(path) ? bookmarks.filter((b) => b !== path) : [...bookmarks, path];
@@ -1084,6 +1131,9 @@ export function App() {
           <IconBtn label="New folder" onClick={() => createFolder("")}>
             <FolderPlusIcon />
           </IconBtn>
+          <IconBtn label={showHidden ? "Hide hidden notes" : "Show hidden notes"} onClick={toggleShowHidden}>
+            <EyeIcon style={showHidden ? undefined : { opacity: 0.45 }} />
+          </IconBtn>
         </header>
         <div className="sidebar-scroll">
           <Accordion
@@ -1151,6 +1201,18 @@ export function App() {
                   onDelete={deleteItem}
                   onSetIcon={(p) => setIconPickerPath(p)}
                   onSetMcpPerms={(p) => setPermsPath(p)}
+                  showHidden={showHidden}
+                  folderSort={folderMeta.sort}
+                  dailyDir={dailyDir}
+                  homepage={settings.homepage}
+                  onSetHomepage={(p) => void updateSettings({ homepage: p })}
+                  onSetHidden={setHidden}
+                  onSetSort={(folder, sort) =>
+                    void metaApi
+                      .setSort(folder, sort)
+                      .then((r) => setFolderMeta((m) => ({ ...m, sort: r.sort })))
+                      .catch((e: unknown) => setToast(`Sort failed: ${e instanceof Error ? e.message : String(e)}`))
+                  }
                 />
               </AccordionContent>
             </AccordionItem>
@@ -1344,7 +1406,11 @@ export function App() {
 
       {showSettings ? (
         <Settings
-          onClose={() => setShowSettings(false)}
+          onClose={() => {
+            setShowSettings(false);
+            void refreshSettings();
+            void refreshTree();
+          }}
           theme={theme}
           setTheme={setTheme}
           dailyDir={dailyDir}
