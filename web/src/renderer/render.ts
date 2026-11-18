@@ -78,6 +78,8 @@ export function splitFrontmatter(content: string): FrontmatterParse {
 
 export interface RenderOptions {
   resolveWikilink: (target: string) => string | null;
+  // Path of the note being rendered, so `[[#Heading]]` links resolve to it.
+  currentPath?: string;
   isMediaTarget: (target: string) => boolean;
   buildMediaUrl: (target: string) => string;
 }
@@ -104,7 +106,8 @@ const remarkWikilinkToHast: Plugin<[RenderOptions], Root> = (opts) => (tree) => 
       const display = n.alias ?? n.target;
       const isMedia = opts.isMediaTarget(n.target);
       const isAttach = !isMedia && isAttachmentName(n.target);
-      const resolved = isMedia || isAttach ? null : opts.resolveWikilink(n.target);
+      const sameNote = n.target === "" && n.section.startsWith("#") && opts.currentPath;
+      const resolved = isMedia || isAttach ? null : sameNote ? (opts.currentPath ?? null) : opts.resolveWikilink(n.target);
       const data = (n.data ??= {});
 
       if (isAttach) {
@@ -340,7 +343,7 @@ export function isAttachmentName(name: string): boolean {
   const dot = last.lastIndexOf(".");
   if (dot <= 0) return false;
   const ext = last.slice(dot + 1).toLowerCase();
-  if (!ext || ext === "md") return false;
+  if (!/^(?=[a-z0-9]*[a-z])[a-z0-9]{1,10}$/.test(ext) || ext === "md") return false;
   return !MEDIA_EXT.has(ext);
 }
 

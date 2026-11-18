@@ -29,6 +29,7 @@
 | **Semantic search built in** | Per-vault embedded vector store (pure JS, no external DB). Notes are chunked, embedded and indexed on every save. |
 | **Pluggable embedders** | Default: `bge-small-en-v1.5` running locally via **bundled WASM ONNX**, works in the prebuilt single binary, zero native deps. Or point at **Ollama**, **LM Studio**, or **OpenAI**: anything with `/v1/embeddings`. |
 | **MCP server (streamable HTTP)** | 17 tools and 2 resources mounted on the same port. Claude Desktop, Claude Code, Cursor and any MCP-compliant agent can read, search, query and write your notes. |
+| **MCP Apps note view** | In hosts that support MCP Apps (tested with OpenClaw), `read_note` opens an interactive view of the note: clickable wikilinks, Back, backlinks, light and dark. Other clients get the same text as before. |
 | **Per-folder agent permissions** | Right-click a folder → set `{read, write}` for the MCP surface. Keep `Journal/Private/` out of agent reach without locking down the vault. |
 | **Optional password auth** | argon2id, bearer tokens, 24-hour TTL, gates both HTTP API and MCP. Off by default, on with one click. |
 | **Git autocommit with a full audit trail** | Every save lands in git, attributed to whoever (or whichever agent) made it. Full history, diff, restore, manual checkpoints. The vault is a real git repo on disk. |
@@ -97,6 +98,7 @@ Model Context Protocol.
 - [AI for agents](#ai-for-agents)
   - [Semantic search (RAG)](#semantic-search-rag)
   - [MCP server](#mcp-server)
+  - [MCP Apps: notes as an interactive view](#mcp-apps-notes-as-an-interactive-view)
   - [Per-folder permissions](#per-folder-permissions)
   - [Optional password auth](#optional-password-auth)
   - [Login with Google, GitHub, Keycloak or Authentik](#login-with-google-github-keycloak-or-authentik)
@@ -483,13 +485,13 @@ Tools (17):
 
 | Tool                  | Folder perm | What it does                                                       |
 |-----------------------|-------------|--------------------------------------------------------------------|
-| `search_notes`        | none        | Full-text vault search                                             |
-| `similar_notes`       | none        | Semantic RAG (top-k chunks)                                        |
+| `search_notes`        | `read`      | Full-text vault search                                             |
+| `similar_notes`       | `read`      | Semantic RAG (top-k chunks)                                        |
 | `read_note`           | `read`      | Note body + mtime                                                  |
 | `list_notes`          | `read`      | Filtered vault tree                                                |
 | `get_backlinks`       | `read`      | Inbound wikilinks                                                  |
-| `list_tags`           | none        | Tag → count map                                                    |
-| `get_tasks`           | none        | Aggregate tasks (filter: open/done/all)                            |
+| `list_tags`           | `read`      | Tag → count map                                                    |
+| `get_tasks`           | `read`      | Aggregate tasks (filter: open/done/all)                            |
 | `write_note`          | `write`     | Create or overwrite a note                                         |
 | `append_note`         | `write`     | Append a paragraph (blank-line separator)                          |
 | `find_related`        | `read`      | Notes semantically close to a given path (excludes self)           |
@@ -500,6 +502,13 @@ Tools (17):
 | `weekly_digest`       | `read`      | Topic clusters across notes modified in a recent window (e.g. 7d)  |
 | `compare_notes`       | `read`      | Cosine sim + unified diff + shared headings between two notes      |
 | `current_datetime`    | none        | Server date, time and timezone, so agents never guess "now"        |
+
+Every tool carries MCP annotations. All of them are `readOnlyHint: true`
+except `write_note` (overwrites: `destructiveHint`; not idempotent, a
+repeat still bumps mtime) and `append_note` (adds: neither destructive
+nor idempotent). Hosts with an approval mode based on annotations can run
+reads without a prompt and still ask before writes. Annotations are hints
+for the host; folder permissions are what brain.md enforces.
 
 Resources (2):
 
@@ -553,6 +562,49 @@ Drop that into `~/Library/Application Support/Claude/claude_desktop_config.json`
 > URL and header values quote-clean, no embedded spaces.
 
 Full reference: [docs/mcp.md](docs/mcp.md).
+
+### MCP Apps: notes as an interactive view
+
+In hosts that support the [MCP Apps](https://modelcontextprotocol.io/extensions/apps)
+extension, `read_note` renders the note inside the chat instead of a
+block of JSON. Wikilinks open the target note in place, Back returns,
+backlinks are listed under the note, and the view follows the host's
+light or dark theme.
+
+![MCP Apps note view: open a wikilink, then Back](docs/img/mcp-apps-note.gif)
+
+![The note view in dark and light](docs/img/mcp-apps-note.png)
+
+- **Hosts:** tested with OpenClaw (Control UI) and the official
+  ext-apps `basic-host`. Other hosts that implement MCP Apps (Claude,
+  VS Code GitHub Copilot, Goose, MCPJam) use the same protocol.
+- **Nothing to configure in brain.md.** The view ships inside the binary
+  as `ui://brainmd/note.html` (one self-contained HTML file, no network
+  access). Clients without MCP Apps keep getting exactly the same text
+  result.
+- **One call per note.** `read_note` carries the backlinks and resolved
+  wikilinks in its result `_meta`, filtered by the caller's folder
+  permissions, so the view needs no extra tool calls. Hosts that ask you
+  to approve every call from a view prompt once per note.
+- **Read-only.** `write_note` and `append_note` are marked model-only
+  (`visibility: ["model"]`), so a spec-following host won't let the view
+  call them.
+- Images and other media show a placeholder in the view. Maths uses
+  system fonts.
+
+**OpenClaw:**
+
+```bash
+openclaw config set mcp.apps.enabled true --strict-json   # then restart the Gateway
+openclaw mcp add brainmd --url https://your-brain.example.com/mcp --transport streamable-http
+openclaw mcp configure brainmd --approval auto             # reads run without prompts, writes still ask
+openclaw mcp doctor brainmd --probe
+```
+
+Then ask the agent to read a note, e.g. "open my Welcome note from
+brainmd". If the host mounts the view but never forwards the tool result
+(seen with OpenClaw's Code Mode), the view loads the note itself after a
+few seconds.
 
 ### Per-folder permissions
 

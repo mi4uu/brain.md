@@ -69,6 +69,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
     const dirOf = notePath ? notePath.replace(/[^/]+$/, "") : "";
     return renderMarkdown(content, {
       resolveWikilink: (target) => resolveByBasename(target),
+      currentPath: notePath ?? undefined,
       isMediaTarget: (target) => isMediaName(target),
       buildMediaUrl: (target) =>
         api.mediaUrl(`${dirOf}.media/${target.split("/").pop()}`),

@@ -45,12 +45,14 @@ import { idpAuthRoutes } from "./api/idp-auth";
 import { securityHeadersMiddleware } from "./api/security-headers";
 import { identityContext } from "./auth/identity";
 import { createMcp, mcpRoutes } from "./mcp/server";
+import type { ViewLoader } from "./mcp/apps";
 
 export interface AppOptions {
   vaultDir?: string;
   gitAutocommit?: boolean;
   gitDebounceMs?: number;
   mcpDisabled?: boolean;
+  mcpViewLoader?: ViewLoader;
   allowedHosts?: string[];
   loginConfig?: LoginConfig;
 }
@@ -194,6 +196,7 @@ export function createApp(opts: AppOptions = {}) {
       index,
       pipeline: ragPipeline,
       ragEnabled: () => settings.get().rag.enabled,
+      loadView: opts.mcpViewLoader,
     });
     app.use(mcpRoutes(mcp));
   }

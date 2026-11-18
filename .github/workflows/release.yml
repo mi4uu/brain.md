@@ -37,6 +37,9 @@ jobs:
       - name: Web test suite
         run: bun run test:web
 
+      - name: Build web bundle and MCP Apps views
+        run: bun run build
+
       - name: Check version strings agree
         run: |
           VERSION_TS=$(sed -nE 's/.*VERSION = "([^"]+)".*/\1/p' server/src/version.ts)

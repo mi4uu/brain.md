@@ -26,6 +26,17 @@ import {
 } from "../api/principal";
 import { principalFor } from "../api/auth-middleware";
 import { loadMcpInstructions } from "./instructions";
+import {
+  MODEL_ONLY_META,
+  NOTE_VIEW_META_KEY,
+  NOTE_VIEW_URI,
+  appResourceContents,
+  loadViews,
+  noteToolMeta,
+  noteViewData,
+  type AppViews,
+  type ViewLoader,
+} from "./apps";
 import { VERSION } from "../version";
 import {
   related as qRelated,
@@ -40,6 +51,27 @@ import {
   RagDisabledError,
   type RagDeps,
 } from "../rag/queries";
+
+// MCP tool annotations. Hosts such as OpenClaw use them for approval modes:
+// read-only tools can run without a prompt while writes still ask. The RAG
+// tools leave openWorldHint unset because a configured remote embedder
+// receives the query text.
+const READ_ONLY_LOCAL = { readOnlyHint: true, openWorldHint: false } as const;
+const READ_ONLY_RAG = { readOnlyHint: true } as const;
+// Not idempotent: a repeat with the same content still bumps mtime and
+// notifies watchers, even when git sees no change.
+const WRITE_NOTE_ANNOTATIONS = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: false,
+  openWorldHint: false,
+} as const;
+const APPEND_NOTE_ANNOTATIONS = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: false,
+} as const;
 
 const TASK_RE = /^(\s*[-*+])\s+\[([ xX])\]\s+(.*)$/;
 
@@ -88,6 +120,7 @@ interface McpDeps {
   index: VaultIndex;
   pipeline: RagPipeline;
   ragEnabled: () => boolean;
+  loadView?: ViewLoader;
 }
 
 async function readPerms(vault: Vault): Promise<Record<string, McpFolderPerms>> {
@@ -171,7 +204,12 @@ function toolError(name: string, args: unknown, err: unknown) {
 // at will. The SDK's stateless mode requires a NEW Server + Transport
 // per request, so we extract handler registration here and rebuild
 // both objects on every /mcp request inside mcpRoutes() below.
-function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal): void {
+function registerHandlers(
+  server: McpServer,
+  deps: McpDeps,
+  principal: Principal,
+  views: AppViews,
+): void {
   const { vault, index, pipeline, ragEnabled } = deps;
 
   // Shared read-permission predicate for this request: true if `principal`
@@ -188,6 +226,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
   server.registerTool(
     "search_notes",
     {
+      annotations: READ_ONLY_LOCAL,
       description:
         "Full-text search across the vault. Returns top 50 hits. Optional `scope` confines the search to one or more folders.",
       inputSchema: { query: z.string().min(1), scope: scopeSchema },
@@ -203,6 +242,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
   server.registerTool(
     "similar_notes",
     {
+      annotations: READ_ONLY_RAG,
       description:
         "Semantic (vector) search via RAG. Returns top-k chunks with paths and snippets. Optional `scope` confines results to one or more folders.",
       inputSchema: {
@@ -261,17 +301,19 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
   server.registerTool(
     "read_note",
     {
+      annotations: READ_ONLY_LOCAL,
       description: "Read a single note. Returns content + mtime.",
       inputSchema: { path: z.string().min(1) },
+      ...noteToolMeta(views),
     },
     async ({ path }) => {
       try {
         await checkRead(vault, principal, path);
         const note = await vault.readNote(path);
         logCall("read_note", { path }, true);
-        return {
-          content: [{ type: "text", text: JSON.stringify(note) }],
-        };
+        const result = { content: [{ type: "text", text: JSON.stringify(note) }] };
+        if (!views.note) return result;
+        return { ...result, _meta: { [NOTE_VIEW_META_KEY]: noteViewData(index, note.path, await readFilter()) } };
       } catch (err) {
         return toolError("read_note", { path }, err);
       }
@@ -281,6 +323,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
   server.registerTool(
     "list_notes",
     {
+      annotations: READ_ONLY_LOCAL,
       description: "List all notes (and folders) in the vault.",
       inputSchema: { folder: z.string().optional() },
     },
@@ -309,6 +352,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
   server.registerTool(
     "get_backlinks",
     {
+      annotations: READ_ONLY_LOCAL,
       description: "Backlinks for a given note path.",
       inputSchema: { path: z.string().min(1) },
     },
@@ -328,6 +372,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
   server.registerTool(
     "list_tags",
     {
+      annotations: READ_ONLY_LOCAL,
       description: "All tags in the vault with usage counts.",
       inputSchema: {},
     },
@@ -342,6 +387,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
   server.registerTool(
     "current_datetime",
     {
+      annotations: READ_ONLY_LOCAL,
       description:
         "Server's current date, time, and timezone. Use this when you need absolute time orientation — many agents lose track of the date across long sessions or when invoked from a stale system prompt.",
       inputSchema: {},
@@ -377,6 +423,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
   server.registerTool(
     "get_tasks",
     {
+      annotations: READ_ONLY_LOCAL,
       description: "Aggregate tasks vault-wide.",
       inputSchema: { filter: z.enum(["open", "done", "all"]).optional() },
     },
@@ -398,7 +445,9 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
   server.registerTool(
     "write_note",
     {
+      annotations: WRITE_NOTE_ANNOTATIONS,
       description: "Create or overwrite a note. Content is full body.",
+      ...MODEL_ONLY_META,
       inputSchema: {
         path: z.string().min(1),
         content: z.string(),
@@ -423,10 +472,12 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
   server.registerTool(
     "append_note",
     {
+      annotations: APPEND_NOTE_ANNOTATIONS,
       description:
         "Append a paragraph to an existing note (ensures a blank-line separator). " +
         "Returns only path/mtime, never the resulting body, call read_note " +
         "separately if you also have read permission on this note.",
+      ...MODEL_ONLY_META,
       inputSchema: {
         path: z.string().min(1),
         content: z.string().min(1),
@@ -462,6 +513,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
   server.registerTool(
     "find_similar_tasks",
     {
+      annotations: READ_ONLY_RAG,
       description:
         "Semantic search across task lines (- [ ] / - [x]). Filter open/done/all.",
       inputSchema: {
@@ -485,6 +537,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
   server.registerTool(
     "find_related",
     {
+      annotations: READ_ONLY_RAG,
       description:
         "Notes semantically close to a given note path (excludes self). Optional `scope` confines results to one or more folders.",
       inputSchema: {
@@ -512,6 +565,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
   server.registerTool(
     "semantic_outline",
     {
+      annotations: READ_ONLY_RAG,
       description:
         "Cluster a note's chunks into topical groups (cosine ≥ threshold). Returns one entry per cluster.",
       inputSchema: {
@@ -533,6 +587,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
   server.registerTool(
     "context_for_query",
     {
+      annotations: READ_ONLY_RAG,
       description:
         "Pack top-relevant chunks into a markdown context block under a token budget. Returns text + sources + truncated flag.",
       inputSchema: {
@@ -555,6 +610,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
   server.registerTool(
     "find_orphans",
     {
+      annotations: READ_ONLY_LOCAL,
       description:
         "Notes with zero backlinks AND low semantic neighbours (isolation = 1 - max cosine).",
       inputSchema: {
@@ -577,6 +633,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
   server.registerTool(
     "weekly_digest",
     {
+      annotations: READ_ONLY_RAG,
       description:
         "Topic clusters across notes modified in a recent window (e.g. '7d', '24h').",
       inputSchema: {
@@ -599,6 +656,7 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
   server.registerTool(
     "compare_notes",
     {
+      annotations: READ_ONLY_RAG,
       description:
         "Compare two notes: cosine similarity of intros + naive unified diff + shared headings.",
       inputSchema: {
@@ -618,6 +676,20 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
   );
 
   // ---------------- resources ----------------
+
+  const noteView = appResourceContents(views);
+  if (noteView) {
+    server.registerResource(
+      "note-view",
+      NOTE_VIEW_URI,
+      {
+        description: "MCP Apps view for read_note: rendered note with wikilinks and backlinks",
+        mimeType: noteView.mimeType,
+        _meta: noteView._meta,
+      },
+      async () => ({ contents: [noteView] }),
+    );
+  }
 
   server.registerResource(
     "vault-tree",
@@ -677,6 +749,13 @@ function registerHandlers(server: McpServer, deps: McpDeps, principal: Principal
 // tools/list changed, log forwards) won't reach the client. brain.md's
 // tools don't emit those today, so this is invisible to users.
 export function createMcp(deps: McpDeps) {
+  const loader = deps.loadView ?? (async () => null);
+  let views: AppViews | undefined;
+  const getViews = async (): Promise<AppViews> => {
+    if (views?.note) return views;
+    views = await loadViews(loader);
+    return views;
+  };
   return {
     handleRequest: async (request: Request): Promise<Response> => {
       // V68: owner-editable, vault-scoped instructions surfaced to the model
@@ -687,7 +766,7 @@ export function createMcp(deps: McpDeps) {
         { name: "brain.md", version: VERSION },
         instructions ? { instructions } : undefined,
       );
-      registerHandlers(server, deps, principalFor(request));
+      registerHandlers(server, deps, principalFor(request), await getViews());
       const transport = new WebStandardStreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
         enableJsonResponse: true,

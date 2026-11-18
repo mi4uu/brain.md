@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.6.0 - 2026-11-18
+
+Notes as an interactive view in MCP Apps hosts, and safety annotations
+on every MCP tool. No config changes needed; clients without MCP Apps
+see no difference.
+
+### Added
+
+- MCP Apps support (`io.modelcontextprotocol/ui`). `read_note` links to a
+  `ui://brainmd/note.html` view: the rendered note with clickable
+  wikilinks, a back button and backlinks, light and dark from the host.
+  The view is one self-contained HTML file (no network), built with the
+  web bundle into `web/dist/mcp-apps/`. Hosts without MCP Apps get the
+  same text result as before.
+- With the view built, `read_note` adds `_meta["brainmd/note-view"]`
+  (backlinks and resolved wikilinks, filtered by read permissions), so
+  the view needs no extra tool calls. Hosts that ask the user to approve
+  each call from a view (OpenClaw) prompt once per note instead of four
+  times. `content` is unchanged.
+- MCP tool annotations on all 17 tools: `readOnlyHint` on every read and
+  search tool, honest `destructiveHint`/`idempotentHint` on `write_note`
+  (overwrites; not idempotent, a repeat still bumps mtime) and
+  `append_note` (adds, repeats add again). Hosts with an approval mode based on annotations,
+  such as OpenClaw's `auto`, can run reads without a prompt and still
+  ask before writes. They are hints; folder permissions still decide.
+- `write_note` and `append_note` are marked `visibility: ["model"]`, so a
+  host that follows the MCP Apps spec will not let a view call them. The
+  host enforces this, not brain.md.
+
+### Fixed
+
+- A wikilink to a note with a dot in its name, like `[[brain.md launch]]`
+  or `[[Release 0.6]]`, was treated as an attachment and could not be
+  opened. An extension now needs 1-10 letters or digits with at least one
+  letter.
+- `[[#Heading]]` links to a heading in the same note rendered as broken
+  in the web preview; they now jump to the heading.
+
+### Changed
+
+- CI runs the web build (including the MCP Apps view) on every PR, not
+  only at release.
+- `docs/mcp.md` covered 9 tools and an SSE endpoint that no longer exists;
+  it now documents all 17 tools, the annotations and MCP Apps.
+
 ## 0.5.1 - 2026-11-08
 
 Polish release. No config changes needed.

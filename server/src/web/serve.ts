@@ -327,6 +327,10 @@ function getResolver(): Promise<Resolver> {
   return resolverPromise;
 }
 
+export async function readWebAsset(path: string): Promise<Uint8Array | null> {
+  return (await getResolver()).read(path);
+}
+
 // Mount as a low-priority catch-all. Must be called AFTER all /api/* and
 // /mcp/* routes. Mutates `app` in place — `app` is typed as `unknown`
 // because Elysia's deeply-parametrised type leaks into every chained
