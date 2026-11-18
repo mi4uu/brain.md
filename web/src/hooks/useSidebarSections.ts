@@ -12,6 +12,7 @@ export type SidebarSectionId =
   | "tags"
   | "outline"
   | "backlinks"
+  | "graph"
   | "related";
 
 function readInitial(ids: SidebarSectionId[], defaults: Record<SidebarSectionId, boolean>): SidebarSectionId[] {

@@ -48,15 +48,21 @@ describe("GET /api/graph", () => {
     expect(edgeSet(g)).toEqual(["a.md <-> b.md"]);
   });
 
-  test("resolves path-qualified, basename and alias links; drops unresolved", async () => {
+  test("resolves path-qualified, basename and alias links, each on its own", async () => {
     await write("work/x/target.md", "---\naliases: [Goal]\n---\n# T\n");
-    await write("other/target.md", "# Other\n");
-    await write("src.md", "[[work/x/target]] [[Goal]] [[nowhere]]\n");
-    await write("src2.md", "[[other/target]]\n");
+    await write("other/thing.md", "# Other\n");
+    await write("by-path.md", "[[work/x/target]]\n");
+    await write("by-alias.md", "[[Goal]]\n");
+    await write("by-name.md", "[[thing]]\n");
+    await write("dangling.md", "[[nowhere]]\n");
     const g = await graph();
-    expect(edgeSet(g)).toEqual(["other/target.md <-> src2.md", "src.md <-> work/x/target.md"]);
+    expect(edgeSet(g)).toEqual([
+      "by-alias.md <-> work/x/target.md",
+      "by-name.md <-> other/thing.md",
+      "by-path.md <-> work/x/target.md",
+    ]);
     expect(g.nodes.find((n) => n.id === "work/x/target.md")?.folder).toBe("work");
-    expect(g.nodes.find((n) => n.id === "src.md")?.folder).toBe("");
+    expect(g.nodes.find((n) => n.id === "by-path.md")?.folder).toBe("");
   });
 
   test("an API key never sees notes or edges in a folder it cannot read", async () => {

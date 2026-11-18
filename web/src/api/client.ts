@@ -13,6 +13,12 @@ import type { GraphInput } from "../graph/engine";
 
 const BASE = "";
 
+// Set by graph/cache.ts; called after a write that can change links.
+let afterMutation: () => void = () => {};
+export function setAfterMutation(fn: () => void): void {
+  afterMutation = fn;
+}
+
 // Thrown by writeNote on a 409 from the server: someone else (another tab,
 // an MCP client) saved the note since we last read/wrote it. `revision` is
 // the server's current revision, for a follow-up reload or forced write.
@@ -57,12 +63,16 @@ export const api = {
       const body = await res.json().catch(() => ({}) as Record<string, unknown>);
       throw new ConflictError(typeof body.revision === "string" ? body.revision : "");
     }
-    return jsonOrThrow(res);
+    const out = await jsonOrThrow<WriteNoteResult>(res);
+    afterMutation();
+    return out;
   },
   async deleteNote(path: string): Promise<{ ok: true; trashed: string }> {
-    return jsonOrThrow(
+    const out = await jsonOrThrow<{ ok: true; trashed: string }>(
       await fetch(`${BASE}/api/note/${encodePath(path)}`, { method: "DELETE" }),
     );
+    afterMutation();
+    return out;
   },
   async mkdir(path: string): Promise<{ ok: true }> {
     return jsonOrThrow(
@@ -70,19 +80,24 @@ export const api = {
     );
   },
   async deleteFolder(path: string): Promise<{ ok: true; trashed: string }> {
-    return jsonOrThrow(
+    const out = await jsonOrThrow<{ ok: true; trashed: string }>(
       await fetch(`${BASE}/api/folder/${encodePath(path)}`, { method: "DELETE" }),
     );
+    afterMutation();
+    return out;
   },
   async rename(from: string, to: string): Promise<RenameResult> {
-    return jsonOrThrow(
+    const out = await jsonOrThrow<RenameResult>(
       await fetch(`${BASE}/api/rename`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ from, to }),
       }),
     );
+    afterMutation();
+    return out;
   },
+
   async search(q: string): Promise<SearchHit[]> {
     return jsonOrThrow(
       await fetch(`${BASE}/api/search?q=${encodeURIComponent(q)}`),

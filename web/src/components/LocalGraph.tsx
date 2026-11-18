@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { GraphInput } from "../graph/engine";
 import { localGraph } from "../graph/filter";
-import { loadGraph } from "../graph/cache";
+import { loadGraph, onGraphInvalidated } from "../graph/cache";
 import { GraphCanvas } from "./GraphCanvas";
 
 interface Props {
@@ -15,12 +15,18 @@ export function LocalGraph({ path, onOpen, onExpand }: Props) {
   const [depth, setDepth] = useState(1);
   const [error, setError] = useState<string | null>(null);
 
+  const [version, setVersion] = useState(0);
+  useEffect(() => onGraphInvalidated(() => setVersion((v) => v + 1)), []);
+
   useEffect(() => {
     let live = true;
+    void version;
     loadGraph()
       .then((g) => (g.nodes.some((n) => n.id === path) ? g : loadGraph(true)))
       .then((g) => {
-        if (live) setGraph(g);
+        if (!live) return;
+        setGraph(g);
+        setError(null);
       })
       .catch((e: unknown) => {
         if (live) setError(e instanceof Error ? e.message : String(e));
@@ -28,7 +34,7 @@ export function LocalGraph({ path, onOpen, onExpand }: Props) {
     return () => {
       live = false;
     };
-  }, [path]);
+  }, [path, version]);
 
   const local = useMemo(() => (graph ? localGraph(graph, path, depth) : null), [graph, path, depth]);
   const folders = useMemo(() => [...new Set(graph?.nodes.map((n) => n.folder) ?? [])], [graph]);

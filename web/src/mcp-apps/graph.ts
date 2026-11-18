@@ -65,6 +65,7 @@ let current: Args = {};
 let selected: string | null = null;
 let seq = 0;
 let gotResult = false;
+let navigated = false;
 let inputArgs: Args = {};
 
 const engine = new GraphEngine(host, {
@@ -72,13 +73,13 @@ const engine = new GraphEngine(host, {
     selected = id;
     ask.disabled = false;
     ask.textContent = `Open “${titleOf(id)}” in chat`;
-    history.push(current);
-    void load({ center: id, depth: 1 });
+    if (id !== current.center) void load({ center: id, depth: 1 }, true);
   },
 });
 
 function show(r: ToolResult): void {
   const text = textOf(r);
+  back.disabled = history.length === 0;
   if (r.isError) {
     status.textContent = text || "The graph could not be loaded.";
     status.classList.add("error");
@@ -94,16 +95,19 @@ function show(r: ToolResult): void {
   status.classList.remove("error");
   engine.setOptions({ focusId: data.center, alwaysLabels: data.nodes.length <= 60 });
   engine.setData(data);
-  back.disabled = history.length === 0;
 }
 
-async function load(args: Args): Promise<void> {
+// History moves only when a load succeeds, so a failed or superseded
+// click never leaves a dead Back entry.
+async function load(args: Args, pushCurrent = false): Promise<void> {
   const token = ++seq;
+  navigated = true;
   status.textContent = "Loading…";
   try {
     const r = (await app.callServerTool({ name: "graph_view", arguments: { ...args } })) as ToolResult;
     if (token !== seq) return;
-    current = args;
+    if (pushCurrent && !r.isError) history.push(current);
+    if (!r.isError) current = args;
     show(r);
   } catch (err) {
     if (token === seq) status.textContent = `Could not load the graph: ${(err as Error).message}`;
@@ -111,17 +115,25 @@ async function load(args: Args): Promise<void> {
 }
 
 back.onclick = () => {
-  const prev = history.pop();
-  if (prev) void load(prev);
+  const prev = history[history.length - 1];
+  if (!prev) return;
+  void load(prev).then(() => {
+    if (current === prev) history.pop();
+    back.disabled = history.length === 0;
+  });
 };
 
 ask.onclick = () => {
   if (!selected) return;
+  const refused = () => {
+    status.textContent = "This host does not let the view send messages.";
+  };
   void app
     .sendMessage({ role: "user", content: [{ type: "text", text: `Open the note ${selected} from brain.md.` }] })
-    .catch(() => {
-      status.textContent = "This host does not let the view send messages.";
-    });
+    .then((res) => {
+      if ((res as { isError?: boolean }).isError) refused();
+    })
+    .catch(refused);
 };
 
 function applyContext(ctx: McpUiHostContext | undefined): void {
@@ -137,6 +149,9 @@ app.ontoolinput = (params) => {
 };
 app.ontoolresult = (r) => {
   gotResult = true;
+  // A result that arrives after the user already moved around (the
+  // fallback ran first) must not pull the view back.
+  if (navigated) return;
   current = inputArgs;
   show(r as ToolResult);
 };

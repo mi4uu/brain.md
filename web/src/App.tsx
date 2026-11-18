@@ -169,13 +169,14 @@ export function App() {
   const [permsPath, setPermsPath] = useState<string | null>(null);
   const [showAbout, setShowAbout] = useState(false);
   const sidebar = useSidebarSections(
-    ["bookmarks", "vault", "tags", "outline", "backlinks", "related"],
+    ["bookmarks", "vault", "tags", "outline", "backlinks", "graph", "related"],
     {
       bookmarks: false,
       vault: true,
       tags: false,
       outline: false,
       backlinks: false,
+      graph: false,
       related: false,
     },
   );
@@ -476,10 +477,10 @@ export function App() {
   }, []);
 
   const openNote = useCallback(
-    async (p: string, opts?: { headingSlug?: string }) => {
+    async (p: string, opts?: { headingSlug?: string }): Promise<boolean> => {
       if (!(await leaveNote())) {
         revertHash();
-        return;
+        return false;
       }
       try {
         const data = await api.readNote(p);
@@ -505,8 +506,10 @@ export function App() {
           // jump to heading after content settles
           setTimeout(() => jumpToHeadingSlug(opts.headingSlug!, data.content), 60);
         }
+        return true;
       } catch (e) {
         setToast(`Open failed: ${e instanceof Error ? e.message : String(e)}`);
+        return false;
       }
     },
     [leaveNote, revertHash],
@@ -1299,7 +1302,7 @@ export function App() {
       ) : null}
 
       {showGraph ? (
-        <GraphView currentPath={path} onOpen={(p) => void openNote(p)} onClose={() => setShowGraph(false)} />
+        <GraphView currentPath={path} onOpen={openNote} onClose={() => setShowGraph(false)} />
       ) : null}
 
       {showTrash ? (

@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { GraphInput } from "../graph/engine";
 import { DEFAULT_FILTER, filterGraph, type GraphFilter } from "../graph/filter";
-import { loadGraph } from "../graph/cache";
+import { loadGraph, onGraphInvalidated } from "../graph/cache";
 import { GraphCanvas } from "./GraphCanvas";
 
 interface Props {
   currentPath: string | null;
-  onOpen: (path: string) => void;
+  // Resolves once the note is open; the graph closes only then, so a
+  // cancelled navigation (unsaved changes) leaves it on screen.
+  onOpen: (path: string) => Promise<boolean>;
   onClose: () => void;
 }
+
+// Select values cannot be empty for this option, and no folder is named "/".
+const ROOT = "/";
 
 export function GraphView({ currentPath, onOpen, onClose }: Props) {
   const [graph, setGraph] = useState<GraphInput | null>(null);
@@ -18,9 +23,15 @@ export function GraphView({ currentPath, onOpen, onClose }: Props) {
   const [fit, setFit] = useState(0);
 
   useEffect(() => {
-    loadGraph(true)
-      .then(setGraph)
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+    const load = () =>
+      loadGraph(true)
+        .then((g) => {
+          setGraph(g);
+          setError(null);
+        })
+        .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+    void load();
+    return onGraphInvalidated(() => void load());
   }, []);
 
   useEffect(() => {
@@ -56,12 +67,14 @@ export function GraphView({ currentPath, onOpen, onClose }: Props) {
         <select
           className="graph-input"
           aria-label="Folder"
-          value={filter.folder ?? ""}
-          onChange={(e) => setFilter({ ...filter, folder: e.target.value === "" ? null : e.target.value })}
+          value={filter.folder === null ? "" : filter.folder === "" ? ROOT : filter.folder}
+          onChange={(e) =>
+            setFilter({ ...filter, folder: e.target.value === "" ? null : e.target.value === ROOT ? "" : e.target.value })
+          }
         >
           <option value="">All folders</option>
           {folders.map((f) => (
-            <option key={f} value={f}>
+            <option key={f || ROOT} value={f === "" ? ROOT : f}>
               {f === "" ? "(vault root)" : f}
             </option>
           ))}
@@ -104,8 +117,9 @@ export function GraphView({ currentPath, onOpen, onClose }: Props) {
         focusId={currentPath}
         folders={folders}
         onOpen={(id) => {
-          onOpen(id);
-          onClose();
+          void onOpen(id).then((ok) => {
+            if (ok) onClose();
+          });
         }}
         onLegend={onLegend}
         fitSignal={fit}

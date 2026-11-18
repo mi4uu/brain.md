@@ -118,7 +118,7 @@ export class GraphEngine {
     this.canvas.addEventListener("pointerdown", this.onPointerDown);
     this.canvas.addEventListener("pointermove", this.onPointerMove);
     this.canvas.addEventListener("pointerup", this.onPointerUp);
-    this.canvas.addEventListener("pointercancel", this.onPointerUp);
+    this.canvas.addEventListener("pointercancel", this.onPointerCancel);
     this.canvas.addEventListener("pointerleave", this.onPointerLeave);
     this.canvas.addEventListener("wheel", this.onWheel, { passive: false });
     this.resize();
@@ -440,6 +440,13 @@ export class GraphEngine {
     this.releaseDrag();
     this.panStart = null;
     if (clicked) this.options.onOpen(clicked.id);
+  };
+
+  private readonly onPointerCancel = (e: PointerEvent): void => {
+    this.pointers.delete(e.pointerId);
+    if (this.pointers.size < 2) this.pinch = null;
+    this.releaseDrag();
+    this.panStart = null;
   };
 
   private readonly onPointerLeave = (): void => {

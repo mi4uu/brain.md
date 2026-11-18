@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { GraphEngine, type GraphInput } from "../graph/engine";
 
 interface Props {
@@ -17,10 +17,17 @@ export function GraphCanvas({ data, focusId, alwaysLabels, folders, onOpen, onLe
   const engineRef = useRef<GraphEngine | null>(null);
   const onOpenRef = useRef(onOpen);
   onOpenRef.current = onOpen;
+  const [failed, setFailed] = useState<string | null>(null);
 
   useEffect(() => {
     if (!hostRef.current) return;
-    const engine = new GraphEngine(hostRef.current, { onOpen: (id) => onOpenRef.current(id) });
+    let engine: GraphEngine;
+    try {
+      engine = new GraphEngine(hostRef.current, { onOpen: (id) => onOpenRef.current(id) });
+    } catch (e) {
+      setFailed(e instanceof Error ? e.message : String(e));
+      return;
+    }
     engineRef.current = engine;
     return () => {
       engine.destroy();
@@ -43,5 +50,9 @@ export function GraphCanvas({ data, focusId, alwaysLabels, folders, onOpen, onLe
     if (fitSignal) engineRef.current?.zoomToFit();
   }, [fitSignal]);
 
-  return <div ref={hostRef} className={className ?? "graph-host"} />;
+  return (
+    <div ref={hostRef} className={className ?? "graph-host"}>
+      {failed ? <p className="muted graph-message">This browser cannot draw the graph: {failed}</p> : null}
+    </div>
+  );
 }
