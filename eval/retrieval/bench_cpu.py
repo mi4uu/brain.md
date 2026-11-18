@@ -17,7 +17,8 @@ def rss(pid):
 
 cmd = [LLAMA, "-m", gguf, "--embedding", "--host", "127.0.0.1", "--port", str(PORT), "-c", "4096", "-b", "4096", "-ub", "4096",
        "--no-webui", "-t", THREADS, "-tb", THREADS]
-p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=open(f"bench-{name}.log", "w"))
+# argv list, no shell: the operator passes the binary and model path on the command line.
+p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=open(f"bench-{name}.log", "w"))  # nosemgrep
 try:
     for _ in range(240):
         try:
@@ -51,7 +52,7 @@ try:
            "largest_note_chunks": len(big), "largest_note_s": round(big_s, 1),
            "full_reindex_s": round(full_s, 1), "chunks_per_s": round(len(chunks) / full_s, 2),
            "load": open("/proc/loadavg").read().split()[:3]}
-    json.dump(out, open(f"results/bench-cpu-{name}.json", "w"))
+    e.write_json(f"results/bench-cpu-{name}.json", out)
     print(json.dumps(out))
 finally:
     p.kill(); p.wait()

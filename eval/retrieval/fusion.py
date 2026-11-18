@@ -15,8 +15,15 @@ def blend(a, b, alpha):
         vals = [x[1] for x in r]; lo, hi = min(vals), max(vals)
         return {p: (s - lo) / (hi - lo + 1e-9) for p, s, _ in r}
     na, nb = norm(a), norm(b)
+    # Ties (often notes missing from one list) keep the dense order, then
+    # the BM25 order, so the result never depends on set iteration order.
+    order = {p: i for i, (p, _s, _c) in enumerate(b)}
+    order_a = {p: i for i, (p, _s, _c) in enumerate(a)}
     keys = set(na) | set(nb)
-    return [p for p in sorted(keys, key=lambda p: -((1 - alpha) * nb.get(p, 0) + alpha * na.get(p, 0)))]
+    return sorted(
+        keys,
+        key=lambda p: (-((1 - alpha) * nb.get(p, 0) + alpha * na.get(p, 0)), order.get(p, 1 << 30), order_a.get(p, 1 << 30)),
+    )
 def score(rank_fn):
     return statistics.mean(e.metrics(rank_fn(q), q["rel"])["ndcg@10"] for q in golden)
 for f in sorted(glob.glob("results/dense-*.json")):

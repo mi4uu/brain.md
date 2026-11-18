@@ -1,5 +1,5 @@
 """Shared pieces of the brain.md retrieval eval: data, BM25, fusion, metrics."""
-import hashlib, json, math, re, sys
+import hashlib, json, math, os, re, sys
 from collections import Counter, defaultdict
 
 def load_chunks(path="chunks.jsonl"):
@@ -85,13 +85,31 @@ def doc_ranking(chunks, chunk_scores, k=50, positive_only=False):
         ranked = [kv for kv in ranked if kv[1][0] > 0]
     return [(p, s, i) for p, (s, i) in ranked[:k]]
 
+def write_json(path, obj):
+    """Write via a temp file and rename, so an interrupted run never leaves half a result."""
+    tmp = f"{path}.tmp"
+    with open(tmp, "w") as f:
+        json.dump(obj, f)
+    os.replace(tmp, path)
+
+def save_npy(path, arr):
+    import numpy as np
+    tmp = f"{path}.tmp.npy"
+    np.save(tmp, arr)
+    os.replace(tmp, path)
+
 def rrf(*rankings, k=60, top=50):
     score = defaultdict(float)
+    # The chunk a reranker later sees comes from whichever input ranked the
+    # note highest, not from whichever input happens to be listed first.
     best_chunk = {}
+    best_rank = {}
     for r in rankings:
         for rank, (p, _s, ci) in enumerate(r):
             score[p] += 1.0 / (k + rank + 1)
-            best_chunk.setdefault(p, ci)
+            if rank < best_rank.get(p, 1 << 30):
+                best_rank[p] = rank
+                best_chunk[p] = ci
     ranked = sorted(score.items(), key=lambda kv: -kv[1])[:top]
     return [(p, s, best_chunk[p]) for p, s in ranked]
 

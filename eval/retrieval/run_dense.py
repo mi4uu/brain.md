@@ -48,7 +48,7 @@ try:
     index_s = None
 except FileNotFoundError:
     D = enc([c["passage"] for c in chunks], dp)
-    np.save(cache, D)
+    e.save_npy(cache, D)
     index_s = time.time() - t0
 
 throughput = None
@@ -66,12 +66,12 @@ for q in golden:
     lat.append((time.perf_counter() - t) * 1000)
     scores = D @ qv
     rankings[q["id"]] = e.doc_ranking(chunks, scores.tolist())
-json.dump({
+e.write_json(f"results/dense-{name}{TAG}.json", {
     "name": name + TAG, "repo": repo, "revision": PIN.get(repo), "query_prefix": qp, "doc_prefix": dp,
     "load_s": round(load_s, 1), "index_s": None if index_s is None else round(index_s, 1),
     "query_ms_p50": round(statistics.median(lat), 1), "query_ms_p95": round(e.p95(lat), 1),
     "rss_peak_mb": e.peak_rss_mb(),
     "rankings": rankings,
     "device": DEVICE, "chunks_per_s": throughput, "threads": torch.get_num_threads(),
-}, open(f"results/dense-{name}{TAG}.json", "w"))
+})
 print(name, "done", round(load_s, 1), index_s and round(index_s, 1))

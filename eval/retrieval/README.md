@@ -4,6 +4,20 @@ Harness used to pick the embedding model, fusion and reranker for brain.md searc
 
 The numbers in the 2026-11 eval came from a private golden set (52 queries, real and written, over a real vault). That set is not in the repo. `fixtures/example-golden.jsonl` holds 16 queries over `example/vault` in the same format, so the harness runs end to end on a clean checkout.
 
+## 2026-11 result
+
+On the private set (52 queries, 822 chunks), nDCG@10:
+
+| System | nDCG@10 |
+|---|---|
+| brain.md 0.7 `similar_notes` (bge-small, WASM) | 0.606 |
+| brain.md 0.7 hybrid (RRF with keyword search) | 0.664 |
+| EmbeddingGemma-300M Q8, query and document prompts, title in chunk | 0.891 |
+| bge-m3 dense + 0.3 sparse | 0.890 |
+| brain.md 0.8 `similar_notes` with EmbeddingGemma through llama-server | 0.888 |
+
+RRF with BM25 and cross-encoder or LLM rerankers on top of a good dense model scored the same or lower, so brain.md 0.8 ships none of them by default.
+
 ## Data
 
 Run everything from a work directory that holds:

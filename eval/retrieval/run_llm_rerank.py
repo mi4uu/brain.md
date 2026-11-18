@@ -39,6 +39,9 @@ def main():
     chunks = e.load_chunks()
     golden = {q["id"]: q for q in e.load_golden()}
     base_rank = json.load(open(f"results/{base}.json"))["rankings"]
+    limit = int(os.environ.get("LIMIT", "0"))
+    if limit:
+        base_rank = dict(list(base_rank.items())[:limit])
     if use_rerank_api:
         rerank_endpoint(model, "warm up", ["warm up"])
     else:
@@ -54,9 +57,9 @@ def main():
         lat.append((time.perf_counter() - t) * 1000)
         order = sorted(zip(top, scores), key=lambda x: -x[1])
         rankings[qid] = [[p, s, ci] for (p, _o, ci), s in order] + ranked[TOP:]
-    json.dump({"name": f"{base}+llm-{model}", "model": model, "where": "llm",
+    e.write_json(f"results/rerank-{base}+llm-{model}.json", {"name": f"{base}+llm-{model}" + ("-lat" if limit else ""), "model": model, "where": "llm",
                "rerank20_ms_p50": round(statistics.median(lat)), "rerank20_ms_p95": round(e.p95(lat)),
-               "rankings": rankings}, open(f"results/rerank-{base}+llm-{model}.json", "w"))
+               "rankings": rankings})
     print(model, "done", round(statistics.median(lat)))
 
 if __name__ == "__main__":

@@ -13,7 +13,8 @@ def serve(port, extra, pin=None):
     if pin:
         cmd = ["taskset", "-c", pin] + cmd
     env = dict(os.environ, CUDA_VISIBLE_DEVICES="") if pin else None
-    p = subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=open(f"gguf-{name}-{port}.log", "w"))
+    # argv list, no shell: the operator passes the binary and model path on the command line.
+    p = subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=open(f"gguf-{name}-{port}.log", "w"))  # nosemgrep
     for _ in range(300):
         try:
             urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=2)
@@ -42,7 +43,7 @@ else:
         D = np.concatenate([embed(gpu_port, [dp + c["passage"] for c in chunks[i:i + 16]]) for i in range(0, len(chunks), 16)])
     finally:
         p.kill(); p.wait()
-    np.save(cache, D)
+    e.save_npy(cache, D)
 
 cpu_port = e.free_port()
 p = serve(cpu_port, ["-ngl", "0", "-t", "1", "-tb", "1"], pin=CORE)
@@ -62,7 +63,7 @@ try:
     rss = int(next(l for l in open(f"/proc/{p.pid}/status") if l.startswith("VmHWM")).split()[1]) // 1024
 finally:
     p.kill(); p.wait()
-json.dump({"name": f"gguf-{name}", "gguf": os.path.basename(gguf), "query_ms_p50": round(statistics.median(lat), 1),
+e.write_json(f"results/gguf-{name}.json", {"name": f"gguf-{name}", "gguf": os.path.basename(gguf), "query_ms_p50": round(statistics.median(lat), 1),
            "query_ms_p95": round(e.p95(lat), 1), "rss_peak_mb": rss, "chunks_per_s": cps,
-           "device": "cpu-1thread", "rankings": rankings}, open(f"results/gguf-{name}.json", "w"))
+           "device": "cpu-1thread", "rankings": rankings})
 print(name, "p50", round(statistics.median(lat), 1), "rss", rss, "cps", cps)

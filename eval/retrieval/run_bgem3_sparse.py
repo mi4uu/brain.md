@@ -21,5 +21,5 @@ for w_sparse in (0.0, 0.3, 1.0, None):
         score = sparse if w_sparse is None else dense + w_sparse * sparse
         rankings[q["id"]] = e.doc_ranking(chunks, score.tolist())
     name = "bge-m3-sparse-only" if w_sparse is None else f"bge-m3-dense+{w_sparse}sparse"
-    json.dump({"name": name, "index_s": round(index_s, 1), "rankings": rankings}, open(f"results/{name}.json", "w"))
+    e.write_json(f"results/{name}.json", {"name": name, "index_s": round(index_s, 1), "rankings": rankings})
     print(name)

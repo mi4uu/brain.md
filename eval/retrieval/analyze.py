@@ -12,7 +12,8 @@ only = sys.argv[2] if len(sys.argv) > 2 else ""
 
 
 def per_query(res):
-    return {qid: e.metrics([r[0] for r in res["rankings"][qid]], golden[qid]["rel"]) for qid in golden}
+    # A run limited to some queries (LIMIT) scores the rest as empty rankings.
+    return {qid: e.metrics([r[0] for r in res["rankings"].get(qid, [])], golden[qid]["rel"]) for qid in golden}
 
 
 rows = {}

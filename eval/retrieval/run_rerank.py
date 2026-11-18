@@ -36,10 +36,10 @@ for qid, ranked in base_rank.items():
     lat.append((time.perf_counter() - t) * 1000)
     order = sorted(zip(top, scores.tolist()), key=lambda x: -x[1])
     rankings[qid] = [[p, s, ci] for (p, _old, ci), s in order] + ranked[TOP:]
-json.dump({
+e.write_json(f"results/rerank-{base}+{name}{'' if DEVICE == 'cpu' else '-' + DEVICE}{'-lat' if LIMIT else ''}.json", {
     "name": f"{base}+{name}" + ("" if DEVICE == "cpu" else "-" + DEVICE) + ("-lat" if LIMIT else ""), "repo": repo, "revision": PIN.get(repo), "load_s": round(load_s, 1),
     "rerank20_ms_p50": round(statistics.median(lat)), "rerank20_ms_p95": round(e.p95(lat)),
     "rss_peak_mb": e.peak_rss_mb(),
     "rankings": rankings, "device": DEVICE, "queries": len(rankings),
-}, open(f"results/rerank-{base}+{name}{'' if DEVICE == 'cpu' else '-' + DEVICE}{'-lat' if LIMIT else ''}.json", "w"))
+})
 print(name, "done")

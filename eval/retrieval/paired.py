@@ -5,7 +5,7 @@ golden = {q["id"]: q for q in e.load_golden()}
 res = {}
 for f in glob.glob("results/*.json"):
     d = json.load(open(f))
-    res[d["name"]] = {q: e.metrics([r[0] for r in d["rankings"][q]], golden[q]["rel"])["ndcg@10"] for q in golden}
+    res[d["name"]] = {q: e.metrics([r[0] for r in d["rankings"].get(q, [])], golden[q]["rel"])["ndcg@10"] for q in golden}
 pairs = [
     ("embeddinggemma-300m", "bge-m3-dense+0.3sparse"),
     ("embeddinggemma-300m", "f2llm-v2-0.6b"),

@@ -24,5 +24,5 @@ for name, url in [("brainmd-search", "/api/search?q={q}"), ("brainmd-similar", "
             ci = next((i for i, c in enumerate(chunks) if c["path"] == p and c["idx"] == h.get("chunkIndex", 0)), first_chunk[p])
             ranked.append([p, h.get("score", 0), ci])
         rankings[q["id"]] = ranked[:50]
-    json.dump({"name": name, "query_ms_p50": round(statistics.median(lat), 1), "rankings": rankings}, open(f"results/{name}.json", "w"))
+    e.write_json(f"results/{name}.json", {"name": name, "query_ms_p50": round(statistics.median(lat), 1), "rankings": rankings})
     print(name, "p50 ms", round(statistics.median(lat), 1))
