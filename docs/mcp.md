@@ -45,7 +45,8 @@ prompt:
   `openWorldHint: false`; the RAG ones leave it unset because a
   configured remote embedder receives the query text.
 - `write_note`: `readOnlyHint: false`, `destructiveHint: true`,
-  `idempotentHint: true`.
+  `idempotentHint: false` (a repeat with the same content still bumps
+  mtime and notifies watchers).
 - `append_note`: `readOnlyHint: false`, `destructiveHint: false`,
   `idempotentHint: false`.
 
@@ -80,7 +81,8 @@ and dark from the host.
   present, the result also carries `_meta["brainmd/note-view"]`:
   `{ backlinks, links }`, where `links` maps each wikilink target in the
   note to a readable path or `null`. Both are filtered by the caller's
-  read permissions. Per spec, hosts keep `_meta` out of the model's
+  read permissions. Backlinks are capped at 100 (contexts at 200
+  characters) with `truncated: true` when cut. Per spec, hosts keep `_meta` out of the model's
   context.
 - `write_note` and `append_note` carry `_meta.ui.visibility: ["model"]`,
   so a spec-following host does not let a view call them.

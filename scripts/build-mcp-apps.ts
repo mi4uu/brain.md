@@ -7,8 +7,9 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const REPO_ROOT = new URL("..", import.meta.url).pathname;
+const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const WEB = join(REPO_ROOT, "web");
 const OUT_DIR = join(WEB, "dist", "mcp-apps");
 const MAX_BYTES = 2 * 1024 * 1024;
@@ -24,9 +25,12 @@ function katexCss(): string {
 }
 
 // `<!--` matters too: inside a script it can switch the HTML parser into
-// the "double escaped" state and swallow the closing tag.
+// the "double escaped" state and swallow the closing tag. It is rewritten
+// as `\x3C!--`, not `<\!--`: highlight.js rebuilds regexes from `.source`
+// with the `u` flag, where `\!` is a syntax error and `\x3C` is not.
 function inlineSafe(code: string, tag: "script" | "style"): string {
-  return code.replace(new RegExp(`</${tag}`, "gi"), `<\\/${tag}`).replace(/<!--/g, "<\\!--");
+  const closed = code.replace(new RegExp(`</${tag}`, "gi"), `<\\/${tag}`);
+  return tag === "script" ? closed.replace(/<!--/g, "\\x3C!--") : closed;
 }
 
 mkdirSync(OUT_DIR, { recursive: true });

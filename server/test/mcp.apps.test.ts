@@ -101,7 +101,7 @@ describe("MCP tool annotations", () => {
       expect(t.annotations?.readOnlyHint).toBe(!writes);
     }
     const byName = Object.fromEntries(tools.map((t) => [t.name, t.annotations]));
-    expect(byName.write_note).toMatchObject({ destructiveHint: true, idempotentHint: true });
+    expect(byName.write_note).toMatchObject({ destructiveHint: true, idempotentHint: false });
     expect(byName.append_note).toMatchObject({ destructiveHint: false, idempotentHint: false });
   });
 });

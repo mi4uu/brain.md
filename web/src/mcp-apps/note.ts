@@ -28,6 +28,7 @@ interface Backlink {
 interface ViewData {
   backlinks: Backlink[];
   links: Record<string, string | null>;
+  truncated?: boolean;
 }
 
 const VIEW_META_KEY = "brainmd/note-view";
@@ -122,7 +123,16 @@ function renderDoc(note: Note, data: ViewData | null): HTMLElement {
   for (const media of doc.querySelectorAll("img, video, audio")) {
     media.replaceWith(el("span", { className: "media-placeholder", textContent: "media not shown here" }));
   }
+  // Embeds would cost one approved tool call each in some hosts, so the
+  // view links to them instead of loading their bodies.
+  for (const body of doc.querySelectorAll(".embed-body")) {
+    body.replaceChildren(el("span", { className: "muted", textContent: "Embedded note: open it from the title above." }));
+  }
   return doc;
+}
+
+function scrollToFragment(fragment: string | undefined): void {
+  if (fragment) document.getElementById(decodeURIComponent(fragment))?.scrollIntoView({ block: "start" });
 }
 
 // Hosts may ask the user to approve every app-initiated call, so the first
@@ -131,6 +141,7 @@ function renderDoc(note: Note, data: ViewData | null): HTMLElement {
 // drops _meta) links are re-resolved once list_notes arrives.
 async function render(note: Note, token: number, data: ViewData | null): Promise<void> {
   if (data) for (const p of Object.values(data.links)) if (p) known.add(p);
+  shown = { note, data };
 
   const header = el("header", { className: "bar" }, [
     el("button", {
@@ -153,6 +164,7 @@ async function render(note: Note, token: number, data: ViewData | null): Promise
   if (data) {
     for (const b of data.backlinks) known.add(b.from);
     showBacklinks(data.backlinks, backlinks);
+    if (data.truncated) backlinks.append(el("p", { className: "muted", textContent: "Showing the first 100 backlinks." }));
     return;
   }
   void fillBacklinks(note.path, backlinks);
@@ -163,11 +175,13 @@ async function render(note: Note, token: number, data: ViewData | null): Promise
   doc.replaceWith(renderDoc(note, null));
 }
 
-async function openTarget(target: string): Promise<void> {
+async function openTarget(target: string, fragment: string | undefined): Promise<void> {
+  const token = ++seq;
   const name = target.split("#")[0] ?? target;
   const list = await loadNoteList();
+  if (token !== seq) return;
   const hit = resolveWikilinkIn(list, name);
-  await open(hit ?? `${name.replace(/\.md$/i, "")}.md`, true);
+  await open(hit ?? `${name.replace(/\.md$/i, "")}.md`, true, fragment);
 }
 
 async function fillBacklinks(path: string, section: HTMLElement): Promise<void> {
@@ -208,33 +222,44 @@ function showBacklinks(items: Backlink[], section: HTMLElement): void {
 }
 
 let current: string | null = null;
+let shown: { note: Note; data: ViewData | null } | null = null;
 
-async function open(path: string, pushHistory: boolean): Promise<void> {
+async function open(path: string, pushHistory: boolean, fragment?: string): Promise<void> {
   const token = ++seq;
-  if (pushHistory && current) history.push(current);
+  const previous = shown;
   showStatus("Loading…");
   try {
     const { value: note, data } = await callWithMeta<Note>("read_note", { path });
     if (token !== seq) return;
+    if (pushHistory && current && current !== note.path) history.push(current);
     current = note.path;
     await render(note, token, data);
+    scrollToFragment(fragment);
   } catch (err) {
-    if (token === seq) showStatus(`Could not open ${path}: ${(err as Error).message}`, true);
+    if (token !== seq) return;
+    const message = `Could not open ${path}: ${(err as Error).message}`;
+    if (!previous) {
+      showStatus(message, true);
+      return;
+    }
+    await render(previous.note, token, previous.data);
+    root.prepend(el("p", { className: "status error", textContent: message }));
   }
 }
 
 root.addEventListener("click", (e) => {
   const a = (e.target as Element | null)?.closest("a");
   if (!a) return;
-  if (a.classList.contains("wikilink")) {
+  if (a.classList.contains("wikilink") || a.hasAttribute("data-resolved")) {
     e.preventDefault();
     const resolved = a.getAttribute("data-resolved");
     const target = a.getAttribute("data-wikilink");
     const fragment = (a.getAttribute("href") ?? "").split("#")[2];
-    if (resolved && resolved === current) {
-      if (fragment) document.getElementById(decodeURIComponent(fragment))?.scrollIntoView({ block: "start" });
-    } else if (resolved && known.has(resolved)) void open(resolved, true);
-    else if (target) void openTarget(target);
+    const serverSaysUnresolved =
+      !!target && !!shown?.data && Object.hasOwn(shown.data.links, linkKey(target)) && !shown.data.links[linkKey(target)];
+    if (resolved && resolved === current) scrollToFragment(fragment);
+    else if (resolved && known.has(resolved)) void open(resolved, true, fragment);
+    else if (target && !serverSaysUnresolved) void openTarget(target, fragment);
     return;
   }
   const href = a.getAttribute("href") ?? "";
@@ -336,15 +361,19 @@ app.ontoolresult = (result) => {
 };
 
 showStatus("Waiting for the note…");
-setTimeout(() => {
+function fallback(): void {
   if (gotResult) return;
-  if (!connected) {
-    showStatus("The host did not connect to this view.", true);
-    return;
-  }
   if (inputPath) void open(inputPath, false);
   else void showPicker();
+}
+
+let timedOut = false;
+setTimeout(() => {
+  timedOut = true;
+  if (!connected) showStatus("Still waiting for the host to connect…");
+  else fallback();
 }, FALLBACK_MS);
 await app.connect();
 connected = true;
 applyContext(app.getHostContext());
+if (timedOut) fallback();

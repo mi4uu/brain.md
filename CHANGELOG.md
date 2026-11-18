@@ -21,8 +21,8 @@ see no difference.
   times. `content` is unchanged.
 - MCP tool annotations on all 17 tools: `readOnlyHint` on every read and
   search tool, honest `destructiveHint`/`idempotentHint` on `write_note`
-  (overwrites, same input gives the same note) and `append_note` (adds,
-  repeats add again). Hosts with an approval mode based on annotations,
+  (overwrites; not idempotent, a repeat still bumps mtime) and
+  `append_note` (adds, repeats add again). Hosts with an approval mode based on annotations,
   such as OpenClaw's `auto`, can run reads without a prompt and still
   ask before writes. They are hints; folder permissions still decide.
 - `write_note` and `append_note` are marked `visibility: ["model"]`, so a

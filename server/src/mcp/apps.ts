@@ -49,7 +49,13 @@ export const NOTE_VIEW_META_KEY = "brainmd/note-view";
 export interface NoteViewData {
   backlinks: Array<{ from: string; lineNo: number; context: string; embed: boolean }>;
   links: Record<string, string | null>;
+  truncated?: true;
 }
+
+// Keeps a heavily linked note's read_note result small; the view says when
+// the list was cut.
+const MAX_BACKLINKS = 100;
+const MAX_CONTEXT = 200;
 
 export function noteViewData(index: VaultIndex, path: string, allowed: (path: string) => boolean): NoteViewData {
   const links: Record<string, string | null> = Object.create(null);
@@ -57,5 +63,9 @@ export function noteViewData(index: VaultIndex, path: string, allowed: (path: st
     if (Object.hasOwn(links, l.targetLower)) continue;
     links[l.targetLower] = index.resolveAny(l.targetLower).matches.find(allowed) ?? null;
   }
-  return { backlinks: index.backlinks(path, allowed), links };
+  const all = index.backlinks(path, allowed);
+  const backlinks = all
+    .slice(0, MAX_BACKLINKS)
+    .map((b) => (b.context.length > MAX_CONTEXT ? { ...b, context: `${b.context.slice(0, MAX_CONTEXT)}…` } : b));
+  return all.length > MAX_BACKLINKS ? { backlinks, links, truncated: true } : { backlinks, links };
 }

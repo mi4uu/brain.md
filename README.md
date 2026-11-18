@@ -504,11 +504,11 @@ Tools (17):
 | `current_datetime`    | none        | Server date, time and timezone, so agents never guess "now"        |
 
 Every tool carries MCP annotations. All of them are `readOnlyHint: true`
-except `write_note` (overwrites: `destructiveHint`, `idempotentHint`) and
-`append_note` (adds: neither destructive nor idempotent). Hosts with an
-approval mode based on annotations can run reads without a prompt and still
-ask before writes. Annotations are hints for the host; folder permissions
-are what brain.md enforces.
+except `write_note` (overwrites: `destructiveHint`; not idempotent, a
+repeat still bumps mtime) and `append_note` (adds: neither destructive
+nor idempotent). Hosts with an approval mode based on annotations can run
+reads without a prompt and still ask before writes. Annotations are hints
+for the host; folder permissions are what brain.md enforces.
 
 Resources (2):
 

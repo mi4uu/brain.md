@@ -58,10 +58,12 @@ import {
 // receives the query text.
 const READ_ONLY_LOCAL = { readOnlyHint: true, openWorldHint: false } as const;
 const READ_ONLY_RAG = { readOnlyHint: true } as const;
+// Not idempotent: a repeat with the same content still bumps mtime and
+// notifies watchers, even when git sees no change.
 const WRITE_NOTE_ANNOTATIONS = {
   readOnlyHint: false,
   destructiveHint: true,
-  idempotentHint: true,
+  idempotentHint: false,
   openWorldHint: false,
 } as const;
 const APPEND_NOTE_ANNOTATIONS = {
