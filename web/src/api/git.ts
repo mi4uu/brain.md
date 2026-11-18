@@ -3,6 +3,9 @@ export interface GitCommit {
   subject: string;
   ts: number;
   author: string;
+  authorEmail?: string;
+  // Set when an agent (API key or MCP client) made the change.
+  agent?: string;
 }
 
 export interface GitStatus {
