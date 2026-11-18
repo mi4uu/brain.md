@@ -74,12 +74,15 @@ function makeDeps(opts: {
       })),
   } as unknown as RagDeps["index"];
 
+  const search = opts.search ?? (async () => []);
+  const searchTasks = opts.searchTasks ?? (async () => []);
+  // Queries go through pipeline.search (which drops notes missing on disk,
+  // covered in rag.disk-sync.test.ts); here every note exists.
   const pipeline = {
     embed: opts.embed ?? (async (texts: string[]) => texts.map(() => makeVec([1, 0, 0]))),
-    store: {
-      search: opts.search ?? (async () => []),
-      searchTasks: opts.searchTasks ?? (async () => []),
-    },
+    search,
+    searchTasks,
+    store: { search, searchTasks },
   } as unknown as RagDeps["pipeline"];
 
   return {

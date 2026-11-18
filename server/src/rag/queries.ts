@@ -128,7 +128,7 @@ export async function related(
   const [vec] = await deps.pipeline.embed([chunks[0]!.text]);
   // Over-fetch so the scope/perm filter still leaves ~k hits.
   const fetchK = prefixes.length > 0 ? k + 50 : k + 5;
-  const hits = await deps.pipeline.store.search(vec!, fetchK);
+  const hits = await deps.pipeline.search(vec!, fetchK);
   const filtered = await filterReadable(deps, hits, prefixes);
   return filtered.filter((h) => h.path !== path).slice(0, k);
 }
@@ -158,7 +158,7 @@ export async function contextForQuery(
   const prefixes = normalizeScope(scope);
   const [vec] = await deps.pipeline.embed([q]);
   // Over-fetch under a scope so enough in-scope candidates survive the filter.
-  const candidates = await deps.pipeline.store.search(
+  const candidates = await deps.pipeline.search(
     vec!,
     prefixes.length > 0 ? 80 : 20,
   );
@@ -361,7 +361,7 @@ export async function orphans(
   const out: OrphanNote[] = [];
   for (let n = 0; n < validIdx.length; n++) {
     const p = noBacklinks[validIdx[n]!]!;
-    const hits = await deps.pipeline.store.search(vecs[n]!, 5);
+    const hits = await deps.pipeline.search(vecs[n]!, 5);
     // Exclude self; the top remaining score is the closest neighbour.
     const others = hits.filter((h) => h.path !== p);
     const topSim = others[0]?.score ?? 0;
@@ -557,7 +557,7 @@ export async function similarTasks(
   const prefixes = normalizeScope(scope);
   const [vec] = await deps.pipeline.embed([query]);
   const fetchK = prefixes.length > 0 ? k + 50 : k + 5;
-  const hits = await deps.pipeline.store.searchTasks(vec!, fetchK, filter);
+  const hits = await deps.pipeline.searchTasks(vec!, fetchK, filter);
   const filtered = await filterReadable(deps, hits, prefixes);
   return filtered.slice(0, k);
 }

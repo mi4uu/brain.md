@@ -272,11 +272,16 @@ export class VaultIndex {
   // for notes that no longer exist are dropped, entries for notes whose
   // mtime moved (edited while the server was down, or never indexed) are
   // rebuilt.
-  async reconcile(): Promise<void> {
+  async reconcile(): Promise<{ removed: number; updated: number }> {
     const notes = await this.vault.listAllNotes();
     const onDisk = new Set(notes);
+    let removed = 0;
+    let updated = 0;
     for (const path of Object.keys(this.data.entries)) {
-      if (!onDisk.has(path)) delete this.data.entries[path];
+      if (!onDisk.has(path)) {
+        delete this.data.entries[path];
+        removed++;
+      }
     }
     this.invalidateLinks();
     await Promise.all(
@@ -287,10 +292,15 @@ export class VaultIndex {
           if (s.exists && s.mtime === existing.mtime) return;
         }
         const e = await this.buildEntry(path);
-        if (e) this.data.entries[path] = e;
+        if (e) {
+          this.data.entries[path] = e;
+          updated++;
+        }
       }),
     );
     this.invalidateLinks();
+    if (removed + updated > 0) this.schedulePersist();
+    return { removed, updated };
   }
 
   private async buildEntry(path: string): Promise<IndexEntry | null> {

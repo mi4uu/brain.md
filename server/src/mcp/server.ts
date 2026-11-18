@@ -288,7 +288,7 @@ function registerHandlers(
       const allowed = await readFilter();
       // Over-fetch so enough in-scope, permitted hits survive both filters.
       const needsOverfetch = prefixes.length > 0 || !bypassesFolderPermsForMcp(principal);
-      const raw = await pipeline.store.search(
+      const raw = await pipeline.search(
         vec!,
         needsOverfetch ? limit + 50 : limit,
       );

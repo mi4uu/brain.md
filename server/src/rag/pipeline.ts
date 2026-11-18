@@ -5,7 +5,7 @@ import { OpenAICompatEmbedder } from "./embedder-openai";
 import type { Embedder } from "./provider";
 import { describeProvider } from "./provider";
 import type { RagStore } from "./store";
-import type { EmbeddedChunk, EmbeddedTaskChunk, RagConfig } from "./types";
+import type { EmbeddedChunk, EmbeddedTaskChunk, RagConfig, SearchHit, TaskHit } from "./types";
 
 // V47 + V49: high-level RAG pipeline. Owns:
 //   - one RagStore opened against <VAULT>/.brain/lance/
@@ -211,6 +211,62 @@ export class RagPipeline {
 
   async deleteNote(rel: string): Promise<void> {
     return this.run(rel, "delete");
+  }
+
+  // Brings the store in line with the vault on disk: drops rows for notes
+  // that are gone (deleted or moved outside brain.md: mv, git pull, another
+  // tool, or while RAG was off) and re-embeds notes that are new or changed
+  // since they were indexed. Mutation events only cover changes made
+  // through brain.md, so this runs at startup and on a timer.
+  async syncWithDisk(): Promise<{ removed: string[]; updated: string[] }> {
+    if (!this.cfg.enabled) return { removed: [], updated: [] };
+    await this.store.ensureOpen();
+    const startSeq = this.seq;
+    const notes = await this.vault.listAllNotes();
+    const onDisk = new Set(notes);
+    const stored = await this.store.pathMtimes();
+    // A path queued since this sync started is newer than what we saw.
+    const untouched = (p: string) => (this.touchedAt.get(p) ?? 0) <= startSeq;
+    const removed = [...stored.keys()].filter((p) => !onDisk.has(p) && untouched(p));
+    const updated: string[] = [];
+    for (const p of notes) {
+      const s = await this.vault.stat(p);
+      if (!s.exists) continue;
+      const indexed = stored.get(p);
+      if ((indexed === undefined || s.mtime > indexed) && untouched(p)) updated.push(p);
+    }
+    await Promise.all(removed.map((p) => this.run(p, "delete")));
+    for (const p of updated) {
+      try {
+        await this.run(p, "write");
+      } catch (e) {
+        console.warn(`[rag] sync ${p} failed:`, e instanceof Error ? e.message : String(e));
+      }
+    }
+    return { removed, updated };
+  }
+
+  // Search results whose note no longer exists on disk are dropped, and the
+  // stale rows are queued for deletion, so a deleted note (secrets included)
+  // can never come back through semantic search even before the next sync.
+  async dropMissing<T extends { path: string }>(rows: T[]): Promise<T[]> {
+    const paths = [...new Set(rows.map((r) => r.path))];
+    const exists = new Map<string, boolean>();
+    await Promise.all(
+      paths.map(async (p) => {
+        exists.set(p, (await this.vault.stat(p)).exists);
+      }),
+    );
+    for (const p of paths) if (!exists.get(p)) this.run(p, "delete").catch(() => {});
+    return rows.filter((r) => exists.get(r.path));
+  }
+
+  async search(vector: Float32Array, k: number): Promise<SearchHit[]> {
+    return this.dropMissing(await this.store.search(vector, k));
+  }
+
+  async searchTasks(...args: Parameters<RagStore["searchTasks"]>): Promise<TaskHit[]> {
+    return this.dropMissing(await this.store.searchTasks(...args));
   }
 
   // Public encode hook for ad-hoc queries (used by /api/similar).

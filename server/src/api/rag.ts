@@ -108,7 +108,10 @@ export function ragRoutes(
           // hits if that many exist.
           const total = await pipeline.store.countAll();
           const raw = await pipeline.store.search(vec, total);
-          const hits = raw.filter((h) => allowed(h.path)).slice(0, k);
+          const permitted = raw.filter((h) => allowed(h.path));
+          // Existence is checked on a short head only: stat-ing every note
+          // per query would be wasteful, and the disk sync keeps stale rows rare.
+          const hits = (await pipeline.dropMissing(permitted.slice(0, k + 20))).slice(0, k);
           return hits;
         } catch (e) {
           set.status = 500;
