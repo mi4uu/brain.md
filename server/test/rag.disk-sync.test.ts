@@ -151,7 +151,7 @@ describe("vector store follows the disk", () => {
         calls++;
         throw new Error("embedder down");
       },
-    } as Embedder;
+    } as unknown as Embedder;
     const r = await pipeline.syncWithDisk();
     expect(r.updated).toEqual([]);
     expect(calls).toBe(1);
