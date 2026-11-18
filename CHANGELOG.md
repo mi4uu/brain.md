@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 - 2026-11-18
+
+Graph view in the web app and in MCP Apps hosts. No config changes
+needed.
 
 ### Added
 
