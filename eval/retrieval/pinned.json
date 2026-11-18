@@ -1,0 +1,18 @@
+{
+ "Qwen/Qwen3-Embedding-0.6B": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+ "BAAI/bge-m3": "5617a9f61b028005a4858fdac845db406aefb181",
+ "intfloat/multilingual-e5-small": "614241f622f53c4eeff9890bdc4f31cfecc418b3",
+ "intfloat/multilingual-e5-base": "d128750597153bb5987e10b1c3493a34e5a4502a",
+ "sdadas/mmlw-retrieval-roberta-base": "89ee2a6f4fc45ed2f16d8bd5d72397a8161d31e9",
+ "sdadas/mmlw-retrieval-roberta-large": "782c6d05aa3b87be810e06d1c798e2fa666b026a",
+ "BAAI/bge-small-en-v1.5": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+ "Qwen/Qwen3-Reranker-0.6B": "e61197ed45024b0ed8a2d74b80b4d909f1255473",
+ "BAAI/bge-reranker-v2-m3": "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
+ "sdadas/polish-reranker-roberta-v2": "7bb5286065af0d091e4177786e7d0f54757431d8",
+ "Alibaba-NLP/gte-multilingual-reranker-base": "8215cf04918ba6f7b6a62bb44238ce2953d8831c",
+ "mixedbread-ai/mxbai-rerank-base-v2": "3ea9d4dffa7d12a4f366be8e275c349de9fc9865",
+ "codefuse-ai/F2LLM-v2-0.6B": "8786315a8711c242ee03ec67c74dd9ad0a61e2cf",
+ "codefuse-ai/F2LLM-v2-160M": "4ffe22c31406fc321b65a05b15563d38275ee51f",
+ "zeroentropy/zerank-1-small": "a65fd51c450e9b47fdddab98e31166ecad21af8d",
+ "google/embeddinggemma-300m": "57c266a740f537b4dc058e1b0cda161fd15afa75"
+}
