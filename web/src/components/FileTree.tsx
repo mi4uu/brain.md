@@ -73,7 +73,9 @@ function groupJournal(journal: Node): void {
     const [, y, mo] = m;
     let year = years.get(y!);
     if (!year) {
-      year = { name: y!, path: `${journal.path}/${y}`, type: "folder", children: [], virtual: true };
+      // "virtual:" keeps these apart from a real folder that happens to be
+      // named like a year.
+      year = { name: y!, path: `virtual:${journal.path}/${y}`, type: "folder", children: [], virtual: true };
       years.set(y!, year);
     }
     const monthPath = `${year.path}/${mo}`;

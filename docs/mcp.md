@@ -105,7 +105,8 @@ note's frontmatter) are left out of `list_notes`, `search_notes`,
 `graph_view` and semantic search; `search: false` keeps a note listed but
 out of search. `include_hidden: true` on `list_notes` and `search_notes`
 brings them back. `read_note`, `write_note` and `append_note` work on any
-note by path.
+note by path. Hiding is about clutter, not access: to keep agents out of a
+folder, use per-folder permissions.
 
 ## Per-folder permissions
 

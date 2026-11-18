@@ -39,6 +39,38 @@ const hits = (opts?: { includeHidden?: boolean }) =>
     .sort();
 
 describe("hidden and excluded notes", () => {
+  test("globs work like gitignore: Journal/* hides children, not Journal; *.md only notes", async () => {
+    const v = handle.index.visibility!;
+    await handle.settings.patch({ hidden: ["Journal/*", "Archive/**"] });
+    expect(v.isFolderHidden("Journal")).toBe(false);
+    expect(v.isHidden("Journal/telefon.md")).toBe(true);
+    expect(v.isFolderHidden("Archive")).toBe(true);
+    expect(v.isFolderHidden("Archive/2020")).toBe(true);
+    await handle.settings.patch({ hidden: ["Journal/*.md"] });
+    expect(v.isHidden("Journal/telefon.md")).toBe(true);
+    expect(v.isFolderHidden("Journal/2026")).toBe(false);
+    expect(v.isHidden("Journal/2026/deep.md")).toBe(false);
+  });
+
+  test("REST createOnly refuses to overwrite a note created meanwhile", async () => {
+    const put = (body: unknown) =>
+      handle.app.handle(
+        new Request("http://localhost/api/note/Start.md", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+      );
+    expect((await put({ content: "# mine\n", createOnly: true })).status).toBe(409);
+    expect((await handle.vault.readNote("Start.md")).content).toContain("kiwi");
+  });
+
+  test("the homepage follows a rename", async () => {
+    await handle.settings.patch({ homepage: "Start.md" });
+    await handle.vault.renameNote("Start.md", "Home.md");
+    expect(handle.settings.get().homepage).toBe("Home.md");
+  });
+
   test("search skips hidden globs, hidden: true and search: false; include_hidden brings them back", () => {
     expect(hits()).toEqual(["Journal/2026-11-18.md", "Start.md"]);
     expect(hits({ includeHidden: true })).toHaveLength(7);

@@ -13,6 +13,9 @@ import { globToRegExp } from "./glob";
 export class Visibility {
   private cacheKey = "";
   private res: RegExp[] = [];
+  // Globs that name a whole subtree (`Archive/**`); only these hide a
+  // folder by matching `folder/`. `Journal/*` covers direct children only.
+  private subtree: RegExp[] = [];
 
   constructor(
     private readonly settings: SettingsStore,
@@ -25,6 +28,7 @@ export class Visibility {
     if (key !== this.cacheKey) {
       this.cacheKey = key;
       this.res = globs.map(globToRegExp);
+      this.subtree = globs.filter((g) => g.trim().endsWith("/**")).map(globToRegExp);
     }
     return this.res;
   }
@@ -37,7 +41,7 @@ export class Visibility {
     const parts = folder.split("/");
     for (let i = 1; i <= parts.length; i++) {
       const f = parts.slice(0, i).join("/");
-      if (res.some((r) => r.test(f) || r.test(`${f}/`))) return true;
+      if (res.some((r) => r.test(f)) || this.subtree.some((r) => r.test(`${f}/`))) return true;
     }
     return false;
   }

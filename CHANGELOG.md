@@ -31,12 +31,15 @@ format); nothing to configure.
 - **Daily notes grouped by year and month** in the tree, newest first;
   the files don't move.
 - **Homepage**: a note that opens when the app starts without one in the
-  URL (folder menu **Set as homepage**, or Settings, Vault).
+  URL (note menu **Set as homepage**, or Settings, Vault). It follows the
+  note when renamed.
 - **Bookmarks** get an × to remove them; one pointing to a note that no
   longer exists is struck through. Renaming a note moves its bookmark,
   deleting it drops the bookmark.
 - Clicking a `[[link]]` to a note that doesn't exist asks before creating
-  it (next to the linking note for a bare name).
+  it (next to the linking note for a bare name); if someone created it in
+  the meantime, theirs opens instead of being overwritten. `PUT
+  /api/note/*` takes `createOnly`.
 
 ### Changed
 

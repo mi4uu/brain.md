@@ -56,6 +56,11 @@ export function settingsRoutes(
           // - enabled flipped on → ensureRunning() opens store + subscribes
           // - any rag change → applyConfig() updates embedder if model/provider changed
           ragPipeline.applyConfig(next.rag);
+          // Hiding drops a note's vectors, unhiding embeds it: do it now,
+          // not at the next disk sync.
+          if (JSON.stringify(prev.hidden) !== JSON.stringify(next.hidden)) {
+            void ragPipeline.syncWithDisk().catch(() => {});
+          }
           if (!prev.rag.enabled && next.rag.enabled) {
             // V59: open the store + probe the embedder up-front so the UI
             // can show a real error banner the moment the user flips Enable

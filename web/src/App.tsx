@@ -749,15 +749,19 @@ export function App() {
       setToast(`Invalid name: ${err}`);
       return;
     }
+    const p = missingNote;
     try {
-      await api.writeNote(missingNote, `# ${title}\n\n`);
-      await refreshTree();
-      const p = missingNote;
-      setMissingNote(null);
-      await openNote(p);
+      await api.writeNote(p, `# ${title}\n\n`, undefined, { createOnly: true });
     } catch (e) {
-      setToast(`Create failed: ${e instanceof Error ? e.message : String(e)}`);
+      // Created by someone else since the tree was loaded: open theirs.
+      if (!(e instanceof ConflictError)) {
+        setToast(`Create failed: ${e instanceof Error ? e.message : String(e)}`);
+        return;
+      }
     }
+    await refreshTree();
+    setMissingNote(null);
+    await openNote(p);
   }, [missingNote, openNote, refreshTree]);
 
   const createFolder = useCallback(

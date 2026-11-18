@@ -24,7 +24,9 @@ export function noteRoutes(vault: Vault, index: VaultIndex) {
         const rel = decodeWildcard((params as { "*": string })["*"]);
         try {
           await requireWrite(vault, request, rel);
-          const r = await vault.writeNoteChecked(rel, body.content, body.baseRevision);
+          // createOnly: refuse if the note exists (someone created it since
+          // the caller last looked).
+          const r = await vault.writeNoteChecked(rel, body.content, body.createOnly ? null : body.baseRevision);
           if (!r.ok) {
             set.status = 409;
             return { code: "CONFLICT", revision: r.revision };
@@ -36,7 +38,13 @@ export function noteRoutes(vault: Vault, index: VaultIndex) {
           return err;
         }
       },
-      { body: t.Object({ content: t.String(), baseRevision: t.Optional(t.String()) }) },
+      {
+        body: t.Object({
+          content: t.String(),
+          baseRevision: t.Optional(t.String()),
+          createOnly: t.Optional(t.Boolean()),
+        }),
+      },
     )
     .delete("/*", async ({ params, set, request }) => {
       const rel = decodeWildcard((params as { "*": string })["*"]);

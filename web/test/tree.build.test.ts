@@ -39,6 +39,15 @@ describe("tree view", () => {
     expect(child(child(shown, "Journal"), "telefon.md")?.hidden).toBe(true);
   });
 
+  test("a real folder named like a year is not merged with the virtual one", () => {
+    const withYear = { ...data, folders: [...data.folders, "Journal/2026"], notes: [...data.notes, "Journal/2026/plan.md"] };
+    const journal = child(buildTree(withYear, { showHidden: false, sort: {}, dailyDir: "Journal" }), "Journal");
+    const paths = journal!.children.map((c) => c.path);
+    expect(new Set(paths).size).toBe(paths.length);
+    expect(paths).toContain("Journal/2026");
+    expect(paths).toContain("virtual:Journal/2026");
+  });
+
   test("a folder's own sort order wins", () => {
     const byName = buildTree(data, { showHidden: false, sort: { Projects: "name-desc" }, dailyDir: "" });
     expect(names(child(byName, "Projects"))).toEqual(["b.md", "a.md"]);

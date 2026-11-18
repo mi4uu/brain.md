@@ -69,6 +69,7 @@ export class SettingsStore {
   // (to trash) drops it, so the sidebar never holds a link that 404s.
   async followNoteMove(from: string, to: string | null): Promise<void> {
     if (!this.loaded) await this.load();
+    if (this.data.homepage === from) await this.patch({ homepage: to ?? "" });
     const cur = this.data.bookmarks;
     if (!cur.includes(from)) return;
     const next = to === null ? cur.filter((b) => b !== from) : cur.map((b) => (b === from ? to : b));
