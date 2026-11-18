@@ -11,7 +11,7 @@ The endpoint shares auth with the rest of the HTTP API: when a password
 or a login provider is configured, every request needs a bearer token
 (session, API key or OAuth access token).
 
-## Tools (17)
+## Tools (18)
 
 | Tool                  | Read-only | Folder perm | What it does                                                       |
 |-----------------------|-----------|-------------|--------------------------------------------------------------------|
@@ -20,6 +20,7 @@ or a login provider is configured, every request needs a bearer token
 | `read_note`           | yes       | read        | Note body + mtime; links the MCP Apps note view                    |
 | `list_notes`          | yes       | read        | Vault tree, filtered                                               |
 | `get_backlinks`       | yes       | read        | Inbound wikilinks with line and context                            |
+| `graph_view`          | yes       | read        | Notes and wikilinks: vault, `folder`, or `center` + `depth` hops   |
 | `list_tags`           | yes       | read        | Tag to count map                                                   |
 | `get_tasks`           | yes       | read        | Tasks across the vault (open / done / all)                         |
 | `current_datetime`    | yes       | none        | Server date, time and timezone                                     |
@@ -89,6 +90,17 @@ and dark from the host.
 - If the host mounts the view but never forwards the tool result, the
   view calls `read_note` itself after 6 s (path from the tool input), or
   shows a note picker.
+
+### Graph view
+
+`graph_view` declares `ui://brainmd/graph.html` (about 480 KB). Its
+`content` is a short summary for the model (note and link counts, notes
+without links, the most linked notes). With the view built, the result
+also carries `_meta["brainmd/graph-view"]`: `{ nodes, links, center,
+truncated }`, filtered by read permissions and capped at 3,000 nodes. In
+the view a click re-centres the graph on that note (one `graph_view`
+call), Back steps out, and "Open in chat" sends the host a `ui/message`
+asking to open the note.
 
 ## CLI
 

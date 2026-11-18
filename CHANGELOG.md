@@ -15,6 +15,12 @@
   permissions; links to unreadable notes are dropped like unresolved
   ones.
 - `scripts/gen-demo-vault.ts`: a seeded generator for load-test vaults.
+- MCP tool `graph_view` (read-only): the graph of the whole vault, one
+  folder, or the notes within `depth` hops of `center`. The model gets a
+  short summary (counts, most linked notes); MCP Apps hosts show the
+  interactive graph (`ui://brainmd/graph.html`), where a click re-centres
+  on a note and "Open in chat" asks the agent to open it. 18 MCP tools
+  now.
 
 ## 0.6.0 - 2026-11-18
 

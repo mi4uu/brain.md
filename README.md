@@ -29,7 +29,7 @@
 | **Live editor + preview** | CodeMirror 6 with cursor-anchored scroll sync, autosave, instant tooltips, command palette, quick switcher. |
 | **Semantic search built in** | Per-vault embedded vector store (pure JS, no external DB). Notes are chunked, embedded and indexed on every save. |
 | **Pluggable embedders** | Default: `bge-small-en-v1.5` running locally via **bundled WASM ONNX**, works in the prebuilt single binary, zero native deps. Or point at **Ollama**, **LM Studio**, or **OpenAI**: anything with `/v1/embeddings`. |
-| **MCP server (streamable HTTP)** | 17 tools and 2 resources mounted on the same port. Claude Desktop, Claude Code, Cursor and any MCP-compliant agent can read, search, query and write your notes. |
+| **MCP server (streamable HTTP)** | 18 tools and 2 resources mounted on the same port. Claude Desktop, Claude Code, Cursor and any MCP-compliant agent can read, search, query and write your notes. |
 | **MCP Apps note view** | In hosts that support MCP Apps (tested with OpenClaw), `read_note` opens an interactive view of the note: clickable wikilinks, Back, backlinks, light and dark. Other clients get the same text as before. |
 | **Per-folder agent permissions** | Right-click a folder → set `{read, write}` for the MCP surface. Keep `Journal/Private/` out of agent reach without locking down the vault. |
 | **Optional password auth** | argon2id, bearer tokens, 24-hour TTL, gates both HTTP API and MCP. Off by default, on with one click. |
@@ -74,7 +74,7 @@ files you can open in any editor at any time.
 | License                                 | Proprietary             | AGPL-3.0        | Proprietary        | **AGPL-3.0**           |
 | Local-first vault on disk               | ✓                       | ✓               | ✗ (cloud)          | **✓**                  |
 | Plain `.md` files (no proprietary db)   | ✓                       | ✓ (block model) | ✗                  | **✓**                  |
-| Built-in MCP server                     | ✗ (3rd-party plugin)    | ✗               | ✗                  | **✓ (17 tools)**       |
+| Built-in MCP server                     | ✗ (3rd-party plugin)    | ✗               | ✗                  | **✓ (18 tools)**       |
 | Vector RAG built-in                     | ✗ (paid plugin)         | ✗               | ✓ (cloud only)     | **✓ (embedded, local)** |
 | Per-folder agent permissions            | n/a                     | n/a             | n/a                | **✓**                  |
 | Single binary, no Electron              | ✗ (Electron)            | ✗ (Electron)    | n/a                | **✓ (`bun --compile`)** |
@@ -506,7 +506,7 @@ per tool call. Claude Desktop and LM Studio both do this.
 
 ![MCP Server page in brain.md](docs/img/mcp-server-page.png)
 
-Tools (17):
+Tools (18):
 
 | Tool                  | Folder perm | What it does                                                       |
 |-----------------------|-------------|--------------------------------------------------------------------|
@@ -515,6 +515,7 @@ Tools (17):
 | `read_note`           | `read`      | Note body + mtime                                                  |
 | `list_notes`          | `read`      | Filtered vault tree                                                |
 | `get_backlinks`       | `read`      | Inbound wikilinks                                                  |
+| `graph_view`          | `read`      | Graph of notes and links (whole vault, a folder, or around a note) |
 | `list_tags`           | `read`      | Tag → count map                                                    |
 | `get_tasks`           | `read`      | Aggregate tasks (filter: open/done/all)                            |
 | `write_note`          | `write`     | Create or overwrite a note                                         |
@@ -616,6 +617,14 @@ light or dark theme.
   call them.
 - Images and other media show a placeholder in the view. Maths uses
   system fonts.
+
+**Graph view in chat.** `graph_view` (whole vault, one folder, or the
+notes around one note) shows the same interactive graph as the web app.
+Click a note to centre the graph on it, Back to step out, and "Open in
+chat" asks the agent to open that note. The model itself gets a short
+summary: counts and the most linked notes.
+
+![The graph_view tool in an MCP Apps host](docs/img/mcp-apps-graph.png)
 
 **OpenClaw:**
 
