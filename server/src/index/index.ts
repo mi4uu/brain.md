@@ -278,6 +278,7 @@ export class VaultIndex {
     for (const path of Object.keys(this.data.entries)) {
       if (!onDisk.has(path)) delete this.data.entries[path];
     }
+    this.invalidateLinks();
     await Promise.all(
       notes.map(async (path) => {
         const existing = this.data.entries[path];

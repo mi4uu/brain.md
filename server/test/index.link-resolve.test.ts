@@ -63,6 +63,15 @@ describe("LinkResolver", () => {
     expect(r.resolve("Start.md", "Index")).toBe("ludzie/Index.md");
   });
 
+  test("relative links that leave the vault stay unresolved; /path starts at the root", () => {
+    const rr = new LinkResolver([entry("Index.md"), entry("ludzie/Index.md"), entry("v1.2 plan.md")]);
+    expect(rr.resolve("ludzie/a.md", "../../Index")).toBeUndefined();
+    expect(rr.resolve("ludzie/a.md", "/Index")).toBe("Index.md");
+    expect(rr.resolve("ludzie/a.md", "Index")).toBe("ludzie/Index.md");
+    expect(rr.resolve("ludzie/a.md", "v1.2 plan")).toBe("v1.2 plan.md");
+    expect(rr.resolve("ludzie/a.md", "^block")).toBeUndefined();
+  });
+
   test("alias, and a link to the note itself", () => {
     expect(r.resolve("Start.md", "kamilek")).toBe("ludzie/kamil.md");
     expect(r.resolve("Start.md", "#Heading")).toBeUndefined();
@@ -112,6 +121,14 @@ describe("backlinks and graph use the resolver", () => {
     expect(from("a.md")).toEqual(["b.md"]);
     await write("b.md", "no links now\n");
     expect(from("a.md")).toEqual([]);
+  });
+
+  test("backlinks follow a rename", async () => {
+    await write("ludzie/kamil.md", "# Kamil\n");
+    await write("Start.md", "[[kamil]]\n");
+    expect(from("ludzie/kamil.md")).toEqual(["Start.md"]);
+    await handle.vault.renameNote("Start.md", "Home.md");
+    expect(from("ludzie/kamil.md")).toEqual(["Home.md"]);
   });
 
   test("graph edges agree with backlinks", async () => {

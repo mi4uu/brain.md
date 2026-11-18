@@ -321,7 +321,8 @@ export function App() {
   }, [tree.notes, aliasMap]);
 
   const resolveWikilink = useCallback(
-    (target: string): string | null => (target ? (linkResolver.resolve(path ?? "", target) ?? null) : null),
+    (target: string, fromPath?: string): string | null =>
+      target ? (linkResolver.resolve(fromPath ?? path ?? "", target) ?? null) : null,
     [linkResolver, path],
   );
 

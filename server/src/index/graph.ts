@@ -20,8 +20,9 @@ export interface VaultGraph {
 // Notes as nodes, resolved wikilinks as undirected edges. Links resolve
 // against the whole vault (VaultIndex.resolveLink, the same resolver as
 // backlinks), then a target the caller cannot read is dropped exactly like
-// an unresolved one, so the graph never reveals that a hidden note exists
-// and a link never jumps to a different note depending on who is looking.
+// an unresolved one. A link never jumps to a different note depending on
+// who is looking, at the cost that a hidden note can still win a name tie
+// and so remove an edge; its path and content are never shown.
 export function buildGraph(index: VaultIndex, allowed: (path: string) => boolean): VaultGraph {
   const entries = index.entries().filter((e) => allowed(e.path));
 

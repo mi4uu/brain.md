@@ -48,7 +48,7 @@ function pick(candidates: string[] | undefined, fromPath: string): string | unde
 // One resolver for backlinks, the graph and MCP Apps, so they always agree
 // on where a [[link]] points.
 //   1. full vault path:              [[ludzie/kamil]], [[ludzie/kamil.md]]
-//   2. path relative to the linker:  [[./kamil]], [[../ludzie/kamil]]
+//   2. path relative to the linker:  [[./kamil]], [[../ludzie/kamil]] (nothing else for these)
 //   3. path suffix:                  [[rodzina/marysia]] for private/rodzina/marysia.md
 //   4. note name:                    [[kamil]]
 //   5. frontmatter alias
@@ -57,13 +57,21 @@ export class LinkResolver {
   private readonly byPath = new Map<string, string>();
   private readonly byBase = new Map<string, string[]>();
   private readonly byAlias = new Map<string, string[]>();
-  private readonly paths: string[] = [];
+  // Every trailing run of two or more path segments ("rodzina/marysia" for
+  // private/rodzina/marysia.md), so a suffix link is a map lookup.
+  private readonly bySuffix = new Map<string, string[]>();
 
   constructor(entries: Iterable<ResolvableEntry>) {
     for (const e of entries) {
       const key = e.path.replace(/\.md$/i, "").toLowerCase();
       this.byPath.set(key, e.path);
-      this.paths.push(e.path);
+      const segs = key.split("/");
+      for (let i = 1; i < segs.length - 1; i++) {
+        const suffix = segs.slice(i).join("/");
+        const list = this.bySuffix.get(suffix) ?? [];
+        list.push(e.path);
+        this.bySuffix.set(suffix, list);
+      }
       const b = this.byBase.get(e.basenameLower) ?? [];
       b.push(e.path);
       this.byBase.set(e.basenameLower, b);
@@ -80,15 +88,24 @@ export class LinkResolver {
   resolve(fromPath: string, target: string): string | undefined {
     const key = normalizeTarget(target);
     if (!key) return undefined;
+    // [[/Index]]: a path from the vault root.
+    if (/^\s*\//.test(target)) {
+      const rooted = this.byPath.get(key);
+      if (rooted) return rooted;
+    }
+    // [[./x]] and [[../x]] are relative only; one that leaves the vault or
+    // finds nothing stays unresolved.
+    if (/^\.\.?\//.test(key)) {
+      const rel = joinPath(folderOf(fromPath).toLowerCase(), key);
+      return rel === undefined ? undefined : this.byPath.get(rel);
+    }
     if (key.includes("/")) {
       const exact = this.byPath.get(key);
       if (exact) return exact;
       const rel = joinPath(folderOf(fromPath).toLowerCase(), key);
       const relHit = rel === undefined ? undefined : this.byPath.get(rel);
       if (relHit) return relHit;
-      const suffix = `/${key.replace(/^(\.\.?\/)+/, "")}.md`;
-      const bySuffix = this.paths.filter((p) => p.toLowerCase().endsWith(suffix));
-      const hit = pick(bySuffix, fromPath);
+      const hit = pick(this.bySuffix.get(key), fromPath);
       if (hit) return hit;
     }
     return pick(this.byBase.get(key), fromPath) ?? pick(this.byAlias.get(key), fromPath);
