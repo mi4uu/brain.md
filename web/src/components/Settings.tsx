@@ -11,6 +11,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Switch } from "./ui/switch";
 import { useAuth } from "../hooks/useAuth";
+import { signedInAs } from "../auth/api";
 
 interface RagConfigUI {
   enabled: boolean;
@@ -512,6 +513,20 @@ function SecurityPanel() {
           {auth.loading ? "…" : auth.configured ? "password set" : "no auth"}
         </strong>
       </p>
+      {auth.configured && auth.authenticated && !auth.loading ? (
+        <div className="flex items-center gap-3">
+          <p className="text-sm text-fg-2">
+            Signed in as <strong>{signedInAs(auth.user)}</strong>
+          </p>
+          <button
+            type="button"
+            onClick={() => void auth.logout()}
+            className="rounded-1 border border-border bg-surface-alt px-3 py-1 text-sm font-medium text-fg-1 transition-colors duration-fast hover:bg-hover"
+          >
+            Log out
+          </button>
+        </div>
+      ) : null}
       <form onSubmit={set} className="space-y-3">
         {auth.configured ? (
           <Field label="Current password">

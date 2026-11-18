@@ -42,7 +42,7 @@ async function protectMedia(
 interface PreviewProps {
   content: string;
   notePath: string | null;
-  resolveByBasename: (name: string) => string | null;
+  resolveByBasename: (name: string, fromPath?: string) => string | null;
   onOpenNote: (path: string) => void;
   onOpenTag: (tag: string) => void;
   onScrollLine?: (line: number) => void;
@@ -309,7 +309,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
           if (cancelled) break;
           const dirOf = target.replace(/[^/]+$/, "");
           const inner = renderMarkdown(data.content, {
-            resolveWikilink: (t) => resolveByBasename(t),
+            resolveWikilink: (t) => resolveByBasename(t, target),
             isMediaTarget: (t) => isMediaName(t),
             buildMediaUrl: (t) =>
               api.mediaUrl(`${dirOf}.media/${t.split("/").pop()}`),

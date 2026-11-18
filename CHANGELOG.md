@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.7.1 - 2026-11-18
+
+Log out from the web app, and backlinks that find path links. No config
+changes needed.
+
+### Added
+
+- Log out button in the toolbar, shown only when signed in. Its tooltip
+  says who is signed in: the email for a Google, GitHub or OIDC login,
+  "password" otherwise.
+- Settings, Security: "Signed in as" plus a Log out button, for phones
+  where tooltips don't show.
+- `GET /api/auth/status` returns `user` (`method`, plus `email` and
+  `name` for an external login) for a valid session token.
+
+### Fixed
+
+- Logging out reloads the page, so the vault is dropped from memory and
+  the login screen shows. Before, nothing in the UI called logout.
+- No "Load failed: 401" toast behind the login screen; a session that
+  expires mid-use opens the login dialog.
+- Backlinks counted only bare `[[name]]` links: `[[folder/note]]`,
+  `[[folder/note.md]]` and relative paths were never found, so the
+  backlinks panel and MCP `get_backlinks` came back empty for them.
+- An ambiguous `[[Index]]` matched every note called Index. Links now
+  resolve like Obsidian: full path, path relative to the linking note,
+  path suffix, then the name, preferring the linking note's folder and
+  then the shortest path, then aliases. Backlinks, the graph, MCP Apps
+  and clicking a link in the preview all use this one resolver.
+
 ## 0.7.0 - 2026-11-18
 
 Graph view in the web app and in MCP Apps hosts. No config changes

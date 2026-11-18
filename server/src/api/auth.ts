@@ -53,12 +53,21 @@ export function authRoutes(
         headers[k.toLowerCase()] = v;
       });
       const tok = bearer(headers);
+      // "configured" means "auth is required", which an external login
+      // provider forces even when no password hash has ever been set
+      // (BRAINMD_PASSWORD_LOGIN=off, OIDC/GitHub only).
+      const configured = auth.isConfigured() || hasExternalProvider(loginConfig);
+      const identity = configured ? tokens.identityFor(tok) : undefined;
       return {
-        // "configured" means "auth is required", which an external login
-        // provider forces even when no password hash has ever been set
-        // (BRAINMD_PASSWORD_LOGIN=off, OIDC/GitHub only).
-        configured: auth.isConfigured() || hasExternalProvider(loginConfig),
-        authenticated: auth.isConfigured() || hasExternalProvider(loginConfig) ? tokens.validate(tok) : true,
+        configured,
+        authenticated: configured ? identity !== undefined : true,
+        ...(identity
+          ? {
+              user: identity.email
+                ? { method: "idp" as const, email: identity.email, name: identity.name }
+                : { method: "password" as const },
+            }
+          : {}),
       };
     })
     .post(

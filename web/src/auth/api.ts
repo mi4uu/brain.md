@@ -1,9 +1,22 @@
 // Thin client for /api/auth/*. Used by the login Dialog and the
 // Security tab in Settings.
 
+export interface AuthUser {
+  method: "password" | "idp";
+  email?: string;
+  name?: string;
+}
+
 export interface AuthStatus {
   configured: boolean;
   authenticated: boolean;
+  // Present only for a valid session token.
+  user?: AuthUser;
+}
+
+export function signedInAs(user: AuthUser | undefined): string {
+  if (user?.method === "idp") return user.email || user.name || "external login";
+  return "password";
 }
 
 // board-plan Part B: which login methods are enabled, fetched before

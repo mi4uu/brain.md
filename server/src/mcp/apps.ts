@@ -95,7 +95,8 @@ export function noteViewData(index: VaultIndex, path: string, allowed: (path: st
   const links: Record<string, string | null> = Object.create(null);
   for (const l of index.get(path)?.outLinks ?? []) {
     if (Object.hasOwn(links, l.targetLower)) continue;
-    links[l.targetLower] = index.resolveAny(l.targetLower).matches.find(allowed) ?? null;
+    const to = index.resolveLink(path, l.target);
+    links[l.targetLower] = to && allowed(to) ? to : null;
   }
   const all = index.backlinks(path, allowed);
   const backlinks = all
