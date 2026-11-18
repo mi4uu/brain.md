@@ -25,6 +25,9 @@ export function HistoryPanel({ path, onClose, onRestored }: Props) {
   const [selected, setSelected] = useState<GitCommit | null>(null);
   const [patch, setPatch] = useState<string>("");
   const [loadingPatch, setLoadingPatch] = useState(false);
+  const [authorFilter, setAuthorFilter] = useState<string>("");
+  const authors = [...new Set(log.map((c) => c.author))].sort((a, b) => a.localeCompare(b));
+  const shown = authorFilter ? log.filter((c) => c.author === authorFilter) : log;
 
   const filterPath = scope === "note" && path ? path : undefined;
 
@@ -107,6 +110,22 @@ export function HistoryPanel({ path, onClose, onRestored }: Props) {
             <span className="truncate text-sm text-fg-3">— {path}</span>
           ) : null}
           <span className="flex-1" />
+          {authors.length > 1 ? (
+            <select
+              className="input h-8 py-0 text-sm"
+              style={{ width: "auto", maxWidth: 220, flex: "none" }}
+              aria-label="Filter by author"
+              value={authorFilter}
+              onChange={(e) => setAuthorFilter(e.target.value)}
+            >
+              <option value="">Everyone</option>
+              {authors.map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
+            </select>
+          ) : null}
           <button
             type="button"
             className="rounded-1 px-2 py-1 text-sm text-fg-2 hover:bg-hover"
@@ -126,14 +145,14 @@ export function HistoryPanel({ path, onClose, onRestored }: Props) {
         <div className="grid min-h-0 grid-cols-[280px_1fr]">
           <ScrollArea className="border-r border-border">
             <div className="p-2">
-              {log.length === 0 ? (
+              {shown.length === 0 ? (
                 <p className="p-3 text-center text-sm text-fg-3">
                   {scope === "note"
                     ? "No commits touching this note yet. Try All vault."
                     : "No commits yet."}
                 </p>
               ) : (
-                log.map((c) => (
+                shown.map((c) => (
                   <button
                     key={c.sha}
                     type="button"
@@ -146,6 +165,18 @@ export function HistoryPanel({ path, onClose, onRestored }: Props) {
                   >
                     <span className="truncate font-medium">
                       {c.subject || "(no message)"}
+                    </span>
+                    <span className="flex min-w-0 items-center gap-1 text-xs text-fg-2">
+                      <span
+                        className={`shrink-0 rounded-1 px-1 text-[10px] uppercase tracking-wide ${
+                          c.agent ? "bg-surface-alt text-accent" : "bg-surface-alt text-fg-3"
+                        }`}
+                      >
+                        {c.agent ? "agent" : "person"}
+                      </span>
+                      <span className="truncate" title={c.authorEmail ? `${c.author} <${c.authorEmail}>` : c.author}>
+                        {c.author}
+                      </span>
                     </span>
                     <span className="flex gap-1 text-xs text-fg-3">
                       <span>{c.sha.slice(0, 7)}</span>
@@ -164,7 +195,7 @@ export function HistoryPanel({ path, onClose, onRestored }: Props) {
                   <div className="min-w-0 truncate">
                     <strong className="text-sm">{selected.subject}</strong>{" "}
                     <span className="text-xs text-fg-3">
-                      {selected.sha.slice(0, 7)}
+                      {selected.sha.slice(0, 7)} · {selected.author}
                     </span>
                   </div>
                   {path ? (

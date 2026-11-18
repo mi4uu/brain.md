@@ -1,6 +1,11 @@
 export interface TreeData {
   folders: string[];
   notes: string[];
+  // Hidden by a vault rule or `hidden: true`; listed so the tree can show
+  // them on demand.
+  hiddenNotes?: string[];
+  hiddenFolders?: string[];
+  mtimes?: Record<string, number>;
 }
 
 export interface NoteData {

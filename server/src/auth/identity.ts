@@ -80,3 +80,23 @@ export function oauthClientIdentity(sub: string, clientName: string, clientId?: 
     credentialId: clientId ? `oauth-client:${clientId}` : sub,
   };
 }
+
+// One credential shared by several agents (an OpenClaw install with a
+// "sekretarz" and a "lowca") can name the agent per request in the
+// X-Brainmd-Agent header. The header is only trusted on top of a valid
+// agent credential: it narrows "which agent", never "who is allowed".
+export const AGENT_HEADER = "x-brainmd-agent";
+
+export function withSubAgent(identity: Identity, rawAgent: string | null | undefined): Identity {
+  if (identity.kind === "human" || !rawAgent) return identity;
+  const agent = rawAgent.trim().replace(/[^A-Za-z0-9._ -]/g, "").slice(0, 48).trim();
+  if (!agent) return identity;
+  const base = identity.clientName ?? identity.name;
+  const name = `${base}/${agent}`;
+  return {
+    ...identity,
+    name,
+    clientName: name,
+    credentialId: `${identity.credentialId ?? identity.sub}/${agent}`,
+  };
+}

@@ -9,7 +9,7 @@ import {
 } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
-import type { Vault } from "../vault/vault";
+import { NoteConflictError, type Vault } from "../vault/vault";
 import type { VaultIndex } from "../index/index";
 import type { RagPipeline } from "../rag/pipeline";
 import { search as fullTextSearch } from "../index/search";
@@ -200,9 +200,16 @@ function toolError(name: string, args: unknown, err: unknown) {
       ? (err as { code: string }).code
       : "MCP_ERROR";
   const message = isDisabled ? "RAG disabled" : err instanceof Error ? err.message : String(err);
+  const extra =
+    err instanceof NoteConflictError
+      ? {
+          current_revision: err.currentRevision,
+          hint: "read_note again, merge your change into the current content, and retry with the new base_revision",
+        }
+      : {};
   return {
     isError: true,
-    content: [{ type: "text", text: JSON.stringify({ error: message, code }) }],
+    content: [{ type: "text", text: JSON.stringify({ error: message, code, ...extra }) }],
   } as const;
 }
 
@@ -234,12 +241,13 @@ function registerHandlers(
     {
       annotations: READ_ONLY_LOCAL,
       description:
-        "Full-text search across the vault. Returns top 50 hits. Optional `scope` confines the search to one or more folders.",
-      inputSchema: { query: z.string().min(1), scope: scopeSchema },
+        "Full-text search across the vault. Returns top 50 hits. Optional `scope` confines the search to one or more folders. " +
+        "Notes the owner hid (hidden globs, `hidden: true`, `search: false`) are skipped unless include_hidden is true.",
+      inputSchema: { query: z.string().min(1), scope: scopeSchema, include_hidden: z.boolean().optional() },
     },
-    async ({ query, scope }) => {
+    async ({ query, scope, include_hidden }) => {
       const allowed = await readFilter();
-      const hits = fullTextSearch(index, query, scope, allowed);
+      const hits = fullTextSearch(index, query, scope, allowed, { includeHidden: include_hidden === true });
       logCall("search_notes", { query, scope }, true);
       return { content: [{ type: "text", text: JSON.stringify(hits) }] };
     },
@@ -323,15 +331,19 @@ function registerHandlers(
     "list_notes",
     {
       annotations: READ_ONLY_LOCAL,
-      description: "List all notes (and folders) in the vault.",
-      inputSchema: { folder: z.string().optional() },
+      description:
+        "List all notes (and folders) in the vault. Hidden notes and folders (the owner's hidden globs, " +
+        "`hidden: true`) are left out unless include_hidden is true; read_note and write_note work on them by path either way.",
+      inputSchema: { folder: z.string().optional(), include_hidden: z.boolean().optional() },
     },
-    async ({ folder }) => {
+    async ({ folder, include_hidden }) => {
       const allowedPath = await readFilter();
       const tree = await vault.listTree();
+      const v = include_hidden === true ? undefined : index.visibility;
       // Filter notes by per-folder read perm (V52).
-      const allowedNotes = tree.notes.filter(allowedPath);
+      const allowedNotes = tree.notes.filter((n) => allowedPath(n) && !v?.isHidden(n));
       const allowedFolders = tree.folders.filter((f) => {
+        if (v?.isFolderHidden(f)) return false;
         // a folder is visible if its own (or any descendant note's) perm
         // is read=true; cheapest approximation = check resolveFolderPerms
         // on the folder path itself
@@ -484,17 +496,32 @@ function registerHandlers(
     "write_note",
     {
       annotations: WRITE_NOTE_ANNOTATIONS,
-      description: "Create or overwrite a note. Content is full body.",
+      description:
+        "Create or overwrite a note. Content is full body. To avoid overwriting someone else's edit, " +
+        "pass base_revision: the `revision` read_note returned. If the note changed since, nothing is " +
+        "written and you get code CONFLICT with the current revision: read_note again, merge, retry. " +
+        "create_only: true refuses to overwrite an existing note.",
       ...MODEL_ONLY_META,
       inputSchema: {
         path: z.string().min(1),
         content: z.string(),
+        base_revision: z.string().min(1).optional(),
+        create_only: z.boolean().optional(),
       },
     },
-    async ({ path, content }) => {
+    async ({ path, content, base_revision, create_only }) => {
       try {
         await checkWrite(vault, principal, path);
-        const r = await vault.writeNote(path, content);
+        // Conflict replies carry the current revision; only readers get one.
+        if (base_revision !== undefined || create_only) await checkRead(vault, principal, path);
+        const base = create_only ? null : base_revision;
+        const checked = await vault.writeNoteChecked(path, content, base);
+        if (!checked.ok) {
+          throw create_only && checked.revision !== null
+            ? Object.assign(new Error(`${path} already exists (revision ${checked.revision})`), { code: "CONFLICT" })
+            : new NoteConflictError(path, checked.revision);
+        }
+        const r = checked.data;
         logCall("write_note", { path, bytes: content.length }, true);
         // write_note replaces the whole body with content the caller just
         // sent us, so echoing it back discloses nothing new, unlike
@@ -514,20 +541,27 @@ function registerHandlers(
       description:
         "Append a paragraph to an existing note (ensures a blank-line separator). " +
         "Returns only path/mtime, never the resulting body, call read_note " +
-        "separately if you also have read permission on this note.",
+        "separately if you also have read permission on this note. Concurrent appends never " +
+        "lose each other's text; pass base_revision (from read_note) if your text only makes " +
+        "sense after the content you read, and you get code CONFLICT if it changed.",
       ...MODEL_ONLY_META,
       inputSchema: {
         path: z.string().min(1),
         content: z.string().min(1),
+        base_revision: z.string().min(1).optional(),
       },
     },
-    async ({ path, content }) => {
+    async ({ path, content, base_revision }) => {
       try {
         await checkWrite(vault, principal, path);
         // V-concurrency #10: appendNote reads+writes under a per-path lock,
         // so two concurrent appends can't both read the same body and have
         // the second write clobber the first's addition.
-        const r = await vault.appendNote(path, content);
+        // A revision is only meaningful to someone who can read the note,
+        // and the conflict reply carries the current one: write-only callers
+        // must not get a hash they can test guesses against.
+        if (base_revision !== undefined) await checkRead(vault, principal, path);
+        const r = await vault.appendNote(path, content, base_revision);
         logCall("append_note", { path, bytes: content.length }, true);
         // Metadata only, a write-only folder (read:false, write:true) must
         // not leak the pre-existing content this call just appended to.

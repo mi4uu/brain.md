@@ -102,11 +102,13 @@ export class RagPipeline {
     // openai-compat provider+model kept the old localhost:11434 URL and
     // every embed() failed with "Unable to connect". Embedder constructor
     // is cheap; the real warm-up cost is lazy in .ready() / first .embed().
+    const before = JSON.stringify(describeProvider(this.cfg));
     this.cfg = cfg;
     this.embedder = makeEmbedder(cfg);
     this.store.setExpectedConfig(describeProvider(cfg));
     // Embedded under the old config; a resumed reindex must redo them.
-    this.syncedMtime.clear();
+    // Unrelated settings saves (a bookmark) must not throw that away.
+    if (JSON.stringify(describeProvider(cfg)) !== before) this.syncedMtime.clear();
     // Reset the cached probe error — old failures don't reflect new config.
     this.lastProbeError = null;
   }
@@ -367,8 +369,13 @@ export class RagPipeline {
     }
   }
 
+  private extraExclusion?: (path: string) => boolean;
+  setExtraExclusion(fn: (path: string) => boolean): void {
+    this.extraExclusion = fn;
+  }
+
   isExcluded(path: string): boolean {
-    return globMatcher(this.cfg.exclude ?? [])(path);
+    return globMatcher(this.cfg.exclude ?? [])(path) || !!this.extraExclusion?.(path);
   }
 
   // V59: preflight probe. Used by Settings PATCH on Enable RAG, by

@@ -7,6 +7,10 @@ export interface GitCommit {
   subject: string;
   ts: number;
   author: string;
+  authorEmail: string;
+  // From the commit's Agent trailer: set for changes made by an API key or
+  // MCP client (autocommit.ts), empty for people.
+  agent: string;
 }
 
 export interface GitStatus {
@@ -320,7 +324,7 @@ export class GitRepo {
     const args = [
       "log",
       `-${opts.limit ?? 50}`,
-      "--pretty=format:%H%x1f%s%x1f%ct%x1f%an",
+      "--pretty=format:%H%x1f%s%x1f%ct%x1f%an%x1f%ae%x1f%(trailers:key=Agent,valueonly,separator=%x2C)",
     ];
     if (opts.path) {
       args.push("--follow", "--", opts.path);
@@ -377,6 +381,8 @@ function parseCommit(line: string): GitCommit {
     subject: parts[1] ?? "",
     ts: Number(parts[2] ?? "0") * 1000,
     author: parts[3] ?? "",
+    authorEmail: parts[4] ?? "",
+    agent: (parts[5] ?? "").trim(),
   };
 }
 

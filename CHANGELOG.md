@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.9.0 - 2026-11-18
+
+A tidier vault, agents that don't overwrite each other, and history that
+says who changed what. The note index is rebuilt once at startup (new
+format); nothing to configure.
+
+### Added
+
+- **Write conflict protection for agents.** `write_note` takes
+  `base_revision` (the `revision` from `read_note`) and `create_only`;
+  `append_note` takes `base_revision`. A stale revision writes nothing and
+  returns `code: CONFLICT` with the current revision and a hint to re-read
+  and merge. Without them both tools behave as before.
+- **Per-agent attribution.** `X-Brainmd-Agent: <name>` on a request with
+  an API key or MCP OAuth token makes that agent's commits
+  `<key>/<name>` (e.g. `openclaw/sekretarz`), kept apart from other agents
+  on the same key.
+- **History shows who.** Each version is labelled person or agent with the
+  author's name, and the panel filters by author.
+- **Hidden notes.** Vault setting `hidden` (globs, one per line in
+  Settings, Vault, or **Hide** in a note's or folder's menu) and
+  frontmatter `hidden: true` take notes out of the tree, search, graph,
+  `list_notes` and semantic search; `search: false` keeps a note in the
+  tree but out of search. The eye in the sidebar shows hidden notes,
+  dimmed. `list_notes` and `search_notes` take `include_hidden`. Agents
+  still read and write hidden notes by path.
+- **Sort per folder** from the folder menu: name A to Z or Z to A,
+  recently changed first, oldest change first. Stored in the vault.
+- **Daily notes grouped by year and month** in the tree, newest first;
+  the files don't move.
+- **Homepage**: a note that opens when the app starts without one in the
+  URL (note menu **Set as homepage**, or Settings, Vault). It follows the
+  note when renamed.
+- **Bookmarks** get an × to remove them; one pointing to a note that no
+  longer exists is struck through. Renaming a note moves its bookmark,
+  deleting it drops the bookmark.
+- Clicking a `[[link]]` to a note that doesn't exist asks before creating
+  it (next to the linking note for a bare name); if someone created it in
+  the meantime, theirs opens instead of being overwritten. `PUT
+  /api/note/*` takes `createOnly`.
+
+### Changed
+
+- The folder menu's MCP permissions entry has its own lock icon.
+- Files and folders whose name starts with a dot (`.obsidian`, ...) are
+  never listed as notes.
+- Saving unrelated settings no longer resets a resumed semantic reindex.
+
 ## 0.8.0 - 2026-11-18
 
 Much better semantic search with a remote embedder, and it degrades to

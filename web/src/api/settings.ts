@@ -8,12 +8,16 @@ export interface AppSettings {
   bookmarks: string[];
   dailyDir: string;
   git: GitSettings;
+  hidden?: string[];
+  homepage?: string;
 }
 
 export interface SettingsPatch {
   bookmarks?: string[];
   dailyDir?: string;
   git?: Partial<GitSettings>;
+  hidden?: string[];
+  homepage?: string;
 }
 
 async function jsonOrThrow<T>(res: Response): Promise<T> {

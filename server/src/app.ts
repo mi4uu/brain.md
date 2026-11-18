@@ -7,6 +7,7 @@ import { VaultIndex } from "./index/index";
 import { GitRepo } from "./git/git";
 import { Autocommit } from "./git/autocommit";
 import { SettingsStore } from "./settings/settings";
+import { Visibility } from "./vault/visibility";
 import { RagStore } from "./rag/store";
 import { RagPipeline } from "./rag/pipeline";
 import { DEFAULT_RAG_CONFIG } from "./rag/types";
@@ -70,6 +71,8 @@ export function createApp(opts: AppOptions = {}) {
   const index = new VaultIndex(vault);
   const repo = new GitRepo(vault.root);
   const settings = new SettingsStore(vault);
+  const visibility = new Visibility(settings, index);
+  index.visibility = visibility;
   const autocommit = new Autocommit(repo, {
     enabled: opts.gitAutocommit ?? config.gitAutocommit,
     debounceMs: opts.gitDebounceMs ?? config.gitDebounceMs,
@@ -103,6 +106,11 @@ export function createApp(opts: AppOptions = {}) {
     // actor's own commit.
     if (e.kind === "rename" && e.extra) autocommit.notify(e.extra, identity);
   });
+  vault.onMutation(async (e) => {
+    if (e.kind === "rename" && e.extra) await settings.followNoteMove(e.extra, e.path);
+    else if (e.kind === "delete") await settings.followNoteMove(e.path, null);
+    else if (e.kind === "folder-delete") for (const p of e.paths ?? []) await settings.followNoteMove(p, null);
+  });
   // Centralised index maintenance (V-concurrency #18): every vault mutation
   // REST writes, MCP write_note/append_note, trash restore, git restore
   // via vault.notifyWrite, flows through this one subscription instead of
@@ -120,6 +128,8 @@ export function createApp(opts: AppOptions = {}) {
       : initialRagCfg.openaiCompat.dim;
   const ragStore = new RagStore(join(vault.root, ".brain", "lance"), ragDim);
   const ragPipeline = new RagPipeline(vault, ragStore, initialRagCfg);
+  // Hidden and `search: false` notes are never embedded either.
+  ragPipeline.setExtraExclusion((p) => visibility.isSearchExcluded(p));
 
   const authStore = new AuthStore(vault);
   const tokenStore = new TokenStore();
@@ -172,7 +182,7 @@ export function createApp(opts: AppOptions = {}) {
     .use(authRoutes(authStore, tokenStore, loginLimiter, loginConfig))
     .use(idpAuthRoutes(loginConfig, tokenStore, handoffCodes))
     .use(apiKeyRoutes(apiKeys))
-    .use(treeRoutes(vault))
+    .use(treeRoutes(vault, index))
     .use(noteRoutes(vault, index))
     .use(folderRoutes(vault))
     .use(mediaRoutes(vault))

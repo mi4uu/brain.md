@@ -48,6 +48,23 @@ export function sha256Hex(content: string): string {
   return createHash("sha256").update(content, "utf8").digest("hex");
 }
 
+// A write based on a revision that is no longer current: someone else
+// changed (or created, or deleted) the note in between.
+export class NoteConflictError extends Error {
+  readonly code = "CONFLICT";
+  constructor(
+    public readonly path: string,
+    public readonly currentRevision: string | null,
+  ) {
+    super(
+      currentRevision === null
+        ? `${path} does not exist any more`
+        : `${path} changed since you read it (current revision ${currentRevision})`,
+    );
+    this.name = "NoteConflictError";
+  }
+}
+
 export class Vault {
   private listeners = new Set<MutationListener>();
   // Per-path mutation queue (V-concurrency): every write/delete/rename/
@@ -204,10 +221,12 @@ export class Vault {
   // instead. Absent on-disk content (creating a new note) never conflicts
   // by itself; it only conflicts if the file has concurrently come into
   // existence with different content than the caller's baseRevision reflects.
+  // `baseRevision: null` means "create only": the write is refused if the
+  // note already exists.
   async writeNoteChecked(
     rel: string,
     content: string,
-    baseRevision?: string,
+    baseRevision?: string | null,
   ): Promise<{ ok: true; data: NoteData } | { ok: false; revision: string | null }> {
     assertMarkdown(rel);
     assertSafePath(rel);
@@ -235,7 +254,10 @@ export class Vault {
   // Read-modify-write under the same per-path lock as writeNote, so two
   // concurrent appends to the same note can't both read the old body and
   // overwrite each other's addition.
-  async appendNote(rel: string, text: string): Promise<NoteData> {
+  // `baseRevision`, when given, must match the note's current revision
+  // (the caller appends in the context of what it read), else
+  // NoteConflictError.
+  async appendNote(rel: string, text: string, baseRevision?: string): Promise<NoteData> {
     assertMarkdown(rel);
     assertSafePath(rel);
     const abs = this.abs(rel);
@@ -243,6 +265,10 @@ export class Vault {
     const path = normalizeRel(rel);
     return this.withPathLock([path], async () => {
       const existing = await safeReadFile(abs);
+      if (baseRevision !== undefined) {
+        const current = existing === null ? null : sha256Hex(existing);
+        if (current !== baseRevision) throw new NoteConflictError(path, current);
+      }
       const body = existing ?? "";
       const joiner = body === "" ? "" : body.endsWith("\n\n") ? "" : body.endsWith("\n") ? "\n" : "\n\n";
       const next = body + joiner + text + (text.endsWith("\n") ? "" : "\n");
@@ -527,6 +553,9 @@ async function walk(
   const entries = await readdir(abs, { withFileTypes: true });
   for (const ent of entries) {
     const name = ent.name;
+    // Dot names are reserved for control dirs (.brain, .git) and tools
+    // (.obsidian, .trash); like Obsidian, they are never notes.
+    if (name.startsWith(".")) continue;
     if (ent.isDirectory()) {
       if (SKIP_DIRS.has(name)) continue;
       if (name === MEDIA_DIR) continue;

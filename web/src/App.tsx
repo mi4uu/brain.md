@@ -73,6 +73,7 @@ import { useAuth } from "./hooks/useAuth";
 import { signedInAs } from "./auth/api";
 import { LinkResolver } from "./lib/link-resolve";
 import { LoginDialog } from "./components/LoginDialog";
+import { CreateNoteDialog } from "./components/CreateNoteDialog";
 import { FolderPermsDialog } from "./components/FolderPermsDialog";
 import { AboutDialog } from "./components/AboutDialog";
 import {
@@ -162,6 +163,23 @@ export function App() {
   });
   const bookmarks = settings.bookmarks;
   const dailyDir = settings.dailyDir;
+  const [showHidden, setShowHidden] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("brain.showHidden") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggleShowHidden = useCallback(() => {
+    setShowHidden((v) => {
+      try {
+        localStorage.setItem("brain.showHidden", v ? "0" : "1");
+      } catch {
+        // per-browser preference only
+      }
+      return !v;
+    });
+  }, []);
   const [showSettings, setShowSettings] = useState(false);
   const [showTasks, setShowTasks] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
@@ -451,6 +469,15 @@ export function App() {
     }
     window.addEventListener("hashchange", onHash);
     onHash();
+    // No note in the URL: open the homepage, once settings are in.
+    if (!window.location.hash.startsWith("#/note/") && !window.location.hash.startsWith("#/tag/")) {
+      void settingsApi
+        .get()
+        .then((s) => {
+          if (s.homepage && !window.location.hash) openNote(s.homepage);
+        })
+        .catch(() => {});
+    }
     return () => window.removeEventListener("hashchange", onHash);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -701,6 +728,42 @@ export function App() {
     [openNote, refreshTree],
   );
 
+  // [[link]] to a note that doesn't exist: ask, then create it. A bare name
+  // goes next to the linking note (Obsidian's "same folder" default), a
+  // path is taken as a vault path.
+  const [missingNote, setMissingNote] = useState<string | null>(null);
+  const askCreateMissing = useCallback(
+    (target: string) => {
+      const name = target.split("#")[0]!.split("^")[0]!.trim().replace(/\.md$/i, "").replace(/^\/+/, "");
+      if (!name) return;
+      const dir = !name.includes("/") && path?.includes("/") ? path.slice(0, path.lastIndexOf("/") + 1) : "";
+      setMissingNote(`${dir}${name}.md`);
+    },
+    [path],
+  );
+  const createMissing = useCallback(async () => {
+    if (!missingNote) return;
+    const title = (missingNote.split("/").pop() ?? missingNote).replace(/\.md$/, "");
+    const err = missingNote.split("/").map(validateBasename).find(Boolean);
+    if (err) {
+      setToast(`Invalid name: ${err}`);
+      return;
+    }
+    const p = missingNote;
+    try {
+      await api.writeNote(p, `# ${title}\n\n`, undefined, { createOnly: true });
+    } catch (e) {
+      // Created by someone else since the tree was loaded: open theirs.
+      if (!(e instanceof ConflictError)) {
+        setToast(`Create failed: ${e instanceof Error ? e.message : String(e)}`);
+        return;
+      }
+    }
+    await refreshTree();
+    setMissingNote(null);
+    await openNote(p);
+  }, [missingNote, openNote, refreshTree]);
+
   const createFolder = useCallback(
     async (parentDir: string) => {
       const name = prompt("New folder name");
@@ -826,6 +889,27 @@ export function App() {
     },
     [],
   );
+
+  // Hide adds an exact rule (the note, or folder/**) to the vault's hidden
+  // list; "Show again" removes that rule. A note hidden by a broader rule
+  // or by `hidden: true` in its frontmatter says so instead.
+  const setHidden = useCallback(
+    async (p: string, isFolder: boolean, hide: boolean) => {
+      const rule = isFolder ? `${p}/**` : p;
+      const cur = settings.hidden ?? [];
+      if (hide) {
+        if (!cur.includes(rule)) await updateSettings({ hidden: [...cur, rule] });
+      } else if (cur.includes(rule)) {
+        await updateSettings({ hidden: cur.filter((g) => g !== rule) });
+      } else {
+        setToast(`${p} is hidden by a rule in Settings, Vault, or by "hidden: true" in the note`);
+        return;
+      }
+      await refreshTree();
+    },
+    [settings.hidden, updateSettings, refreshTree],
+  );
+
 
   const toggleBookmark = useCallback(() => {
     if (!path) return;
@@ -1051,6 +1135,9 @@ export function App() {
           <IconBtn label="New folder" onClick={() => createFolder("")}>
             <FolderPlusIcon />
           </IconBtn>
+          <IconBtn label={showHidden ? "Hide hidden notes" : "Show hidden notes"} onClick={toggleShowHidden}>
+            <EyeIcon style={showHidden ? undefined : { opacity: 0.45 }} />
+          </IconBtn>
         </header>
         <div className="sidebar-scroll">
           <Accordion
@@ -1067,19 +1154,35 @@ export function App() {
                 {bookmarks.length === 0 ? (
                   <p className="sidebar-empty">No bookmarks yet.</p>
                 ) : (
-                  bookmarks.map((b) => (
-                    <div
-                      key={b}
-                      className={clsx("tree-row", b === path && "active")}
-                      onClick={() => openNote(b)}
-                    >
-                      <span className="chev" />
-                      <StarIcon filled />
-                      <span className="label">
-                        {(b.split("/").pop() ?? b).replace(/\.md$/, "")}
-                      </span>
-                    </div>
-                  ))
+                  bookmarks.map((b) => {
+                    const missing = tree.notes.length > 0 && !tree.notes.includes(b);
+                    return (
+                      <div
+                        key={b}
+                        className={clsx("tree-row bookmark-row", b === path && "active", missing && "missing")}
+                        title={missing ? `${b} no longer exists` : b}
+                        onClick={() => {
+                          if (!missing) openNote(b);
+                        }}
+                      >
+                        <span className="chev" />
+                        <StarIcon filled />
+                        <span className="label">{(b.split("/").pop() ?? b).replace(/\.md$/, "")}</span>
+                        <button
+                          type="button"
+                          className="bookmark-remove"
+                          aria-label={`Remove bookmark ${b}`}
+                          title="Remove bookmark"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void updateSettings({ bookmarks: bookmarks.filter((x) => x !== b) });
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  })
                 )}
               </AccordionContent>
             </AccordionItem>
@@ -1102,6 +1205,18 @@ export function App() {
                   onDelete={deleteItem}
                   onSetIcon={(p) => setIconPickerPath(p)}
                   onSetMcpPerms={(p) => setPermsPath(p)}
+                  showHidden={showHidden}
+                  folderSort={folderMeta.sort}
+                  dailyDir={dailyDir}
+                  homepage={settings.homepage}
+                  onSetHomepage={(p) => void updateSettings({ homepage: p })}
+                  onSetHidden={setHidden}
+                  onSetSort={(folder, sort) =>
+                    void metaApi
+                      .setSort(folder, sort)
+                      .then((r) => setFolderMeta((m) => ({ ...m, sort: r.sort })))
+                      .catch((e: unknown) => setToast(`Sort failed: ${e instanceof Error ? e.message : String(e)}`))
+                  }
                 />
               </AccordionContent>
             </AccordionItem>
@@ -1244,6 +1359,7 @@ export function App() {
             notePath={path}
             resolveByBasename={resolveWikilink}
             onOpenNote={openNote}
+            onMissingNote={askCreateMissing}
             onOpenTag={(tag) => {
               void (async () => {
                 if (!(await leaveNote())) return;
@@ -1288,9 +1404,17 @@ export function App() {
 
       <CommandBar mode={cmd} onClose={() => setCmd(null)} onOpenNote={openNote} tree={tree} />
 
+      {missingNote ? (
+        <CreateNoteDialog path={missingNote} onCreate={createMissing} onClose={() => setMissingNote(null)} />
+      ) : null}
+
       {showSettings ? (
         <Settings
-          onClose={() => setShowSettings(false)}
+          onClose={() => {
+            setShowSettings(false);
+            void refreshSettings();
+            void refreshTree();
+          }}
           theme={theme}
           setTheme={setTheme}
           dailyDir={dailyDir}

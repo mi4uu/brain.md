@@ -15,6 +15,11 @@ export interface AppSettings {
   dailyDir: string;
   git: GitSettings;
   rag: RagConfig;
+  // Vault path globs hidden from the tree, search, graph and semantic
+  // search. Agents still read and write them by path.
+  hidden: string[];
+  // Note opened when the app starts with no note in the URL; "" = none.
+  homepage: string;
 }
 
 export interface SettingsPatch {
@@ -22,6 +27,8 @@ export interface SettingsPatch {
   dailyDir?: string;
   git?: Partial<GitSettings>;
   rag?: Partial<RagConfig>;
+  hidden?: string[];
+  homepage?: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -30,6 +37,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   dailyDir: "Journal",
   git: { autocommit: true, debounceMs: 15000 },
   rag: DEFAULT_RAG_CONFIG,
+  hidden: [],
+  homepage: "",
 };
 
 const REL = ".brain/settings.json";
@@ -56,6 +65,17 @@ export class SettingsStore {
     return this.data;
   }
 
+  // Bookmarks follow their notes: a rename moves the bookmark, a delete
+  // (to trash) drops it, so the sidebar never holds a link that 404s.
+  async followNoteMove(from: string, to: string | null): Promise<void> {
+    if (!this.loaded) await this.load();
+    if (this.data.homepage === from) await this.patch({ homepage: to ?? "" });
+    const cur = this.data.bookmarks;
+    if (!cur.includes(from)) return;
+    const next = to === null ? cur.filter((b) => b !== from) : cur.map((b) => (b === from ? to : b));
+    await this.patch({ bookmarks: [...new Set(next)] });
+  }
+
   async patch(partial: SettingsPatch): Promise<AppSettings> {
     if (!this.loaded) await this.load();
     const next: AppSettings = {
@@ -67,6 +87,8 @@ export class SettingsStore {
         debounceMs: partial.git?.debounceMs ?? this.data.git.debounceMs,
       },
       rag: mergeRag(this.data.rag, partial.rag),
+      hidden: Array.isArray(partial.hidden) ? cleanGlobs(partial.hidden) : this.data.hidden,
+      homepage: typeof partial.homepage === "string" ? partial.homepage.trim() : this.data.homepage,
     };
     this.data = next;
     await this.persist();
@@ -139,5 +161,11 @@ function mergeWithDefaults(p: Partial<AppSettings>): AppSettings {
           : DEFAULT_SETTINGS.git.debounceMs,
     },
     rag: mergeRag(DEFAULT_RAG_CONFIG, p.rag),
+    hidden: Array.isArray(p.hidden) ? cleanGlobs(p.hidden) : [],
+    homepage: typeof p.homepage === "string" ? p.homepage : "",
   };
+}
+
+function cleanGlobs(globs: unknown[]): string[] {
+  return globs.filter((g): g is string => typeof g === "string").map((g) => g.trim()).filter(Boolean);
 }

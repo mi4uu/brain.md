@@ -44,6 +44,8 @@ interface PreviewProps {
   notePath: string | null;
   resolveByBasename: (name: string, fromPath?: string) => string | null;
   onOpenNote: (path: string) => void;
+  // A [[link]] whose target doesn't exist yet.
+  onMissingNote?: (target: string) => void;
   onOpenTag: (tag: string) => void;
   onScrollLine?: (line: number) => void;
   onSelectLine?: (line: number) => void;
@@ -55,7 +57,7 @@ export interface PreviewHandle {
 }
 
 export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
-  { content, notePath, resolveByBasename, onOpenNote, onOpenTag, onScrollLine, onSelectLine },
+  { content, notePath, resolveByBasename, onOpenNote, onMissingNote, onOpenTag, onScrollLine, onSelectLine },
   forwardedRef,
 ) {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -211,6 +213,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
             } else {
               const resolved = a.getAttribute("data-resolved");
               if (resolved) onOpenNote(resolved);
+              else if (wl && onMissingNote) onMissingNote(wl);
             }
             return;
           }
@@ -281,7 +284,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
     };
     root.addEventListener("click", handler);
     return () => root.removeEventListener("click", handler);
-  }, [onOpenNote, onOpenTag, onSelectLine, html]);
+  }, [onOpenNote, onMissingNote, onOpenTag, onSelectLine, html]);
 
   // note transclusion: fill .embed-note bodies w/ rendered content of target note
   useEffect(() => {

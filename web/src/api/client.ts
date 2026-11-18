@@ -53,11 +53,20 @@ export const api = {
   async readNote(path: string): Promise<NoteData> {
     return jsonOrThrow(await fetch(`${BASE}/api/note/${encodePath(path)}`));
   },
-  async writeNote(path: string, content: string, baseRevision?: string): Promise<WriteNoteResult> {
+  async writeNote(
+    path: string,
+    content: string,
+    baseRevision?: string,
+    opts: { createOnly?: boolean } = {},
+  ): Promise<WriteNoteResult> {
     const res = await fetch(`${BASE}/api/note/${encodePath(path)}`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(baseRevision === undefined ? { content } : { content, baseRevision }),
+      body: JSON.stringify({
+        content,
+        ...(baseRevision === undefined ? {} : { baseRevision }),
+        ...(opts.createOnly ? { createOnly: true } : {}),
+      }),
     });
     if (res.status === 409) {
       const body = await res.json().catch(() => ({}) as Record<string, unknown>);

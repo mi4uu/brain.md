@@ -11,6 +11,8 @@ import {
   apiKeyIdentity,
   oauthClientIdentity,
   externalIdentity,
+  withSubAgent,
+  AGENT_HEADER,
 } from "../auth/identity";
 import { originOf } from "./origin";
 
@@ -158,7 +160,9 @@ export function authMiddleware(
       const rec = keys.validate(tok);
       if (rec) {
         principals.set(request, { kind: "apikey" });
-        identityContext.enterWith(apiKeyIdentity(rec.sub, rec.name, rec.id));
+        identityContext.enterWith(
+          withSubAgent(apiKeyIdentity(rec.sub, rec.name, rec.id), request.headers.get(AGENT_HEADER)),
+        );
         return;
       }
     }
@@ -176,7 +180,9 @@ export function authMiddleware(
         if (read || write) {
           principals.set(request, { kind: "oauth", read, write });
           const clientName = oauthClients?.get(v.clientId)?.client_name ?? v.clientId;
-          identityContext.enterWith(oauthClientIdentity(v.sub, clientName, v.clientId));
+          identityContext.enterWith(
+            withSubAgent(oauthClientIdentity(v.sub, clientName, v.clientId), request.headers.get(AGENT_HEADER)),
+          );
           return;
         }
       }
