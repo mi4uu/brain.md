@@ -418,6 +418,12 @@ and upserts the vectors into a per-vault embedded store at
 `<VAULT>/.brain/vectors.json` (pure JS, brute-force cosine, well
 under 10ms for typical vaults).
 
+The store follows the disk. Notes deleted, moved or edited outside
+brain.md (`mv`, `git pull`, a sync tool, another agent) are picked up at
+startup and by a sync every 60 seconds. A search hit whose note no
+longer exists is dropped and its vectors deleted on the spot, so a
+deleted note never comes back through semantic search.
+
 | Provider                | Model                                       | dim   | Local? | API key |
 |-------------------------|---------------------------------------------|------:|:------:|:-------:|
 | Local *(default)*       | `bge-small-en-v1.5` (WASM)                  |   384 |   ✓    |   no    |
