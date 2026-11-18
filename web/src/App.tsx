@@ -71,6 +71,7 @@ import { validateBasename } from "./lib/validate";
 import { extractTagsFromMd, insertFrontmatterTag } from "./lib/tags";
 import { useAuth } from "./hooks/useAuth";
 import { signedInAs } from "./auth/api";
+import { LinkResolver } from "./lib/link-resolve";
 import { LoginDialog } from "./components/LoginDialog";
 import { FolderPermsDialog } from "./components/FolderPermsDialog";
 import { AboutDialog } from "./components/AboutDialog";
@@ -303,32 +304,25 @@ export function App() {
     return m;
   }, [tree.notes]);
 
+  // Same resolver as the server's backlinks and graph, so a click lands
+  // where the backlinks panel says the link points.
+  const linkResolver = useMemo(() => {
+    const aliasesOf = new Map<string, string[]>();
+    for (const [alias, paths] of Object.entries(aliasMap)) {
+      for (const p of paths) aliasesOf.set(p, [...(aliasesOf.get(p) ?? []), alias]);
+    }
+    return new LinkResolver(
+      tree.notes.map((p) => ({
+        path: p,
+        basenameLower: (p.split("/").pop() ?? p).replace(/\.md$/i, "").toLowerCase(),
+        aliases: aliasesOf.get(p) ?? [],
+      })),
+    );
+  }, [tree.notes, aliasMap]);
+
   const resolveWikilink = useCallback(
-    (target: string): string | null => {
-      if (!target) return null;
-      const trimmed = target.trim();
-      const stripped = trimmed.replace(/\.md$/i, "");
-      // 1. exact path match (full path)
-      if (stripped.includes("/")) {
-        const candidate = `${stripped}.md`;
-        const lower = candidate.toLowerCase();
-        for (const p of tree.notes) {
-          if (p === candidate) return p;
-          if (p.toLowerCase() === lower) return p;
-        }
-      }
-      // 2. basename match (first wins for ambiguous)
-      const lower = stripped.toLowerCase();
-      for (const p of tree.notes) {
-        const base = (p.split("/").pop() ?? p).replace(/\.md$/, "").toLowerCase();
-        if (base === lower) return p;
-      }
-      // 3. alias from frontmatter
-      const aliasHits = aliasMap[lower];
-      if (aliasHits && aliasHits.length > 0) return aliasHits[0] ?? null;
-      return null;
-    },
-    [tree.notes, aliasMap],
+    (target: string): string | null => (target ? (linkResolver.resolve(path ?? "", target) ?? null) : null),
+    [linkResolver, path],
   );
 
   const refreshTree = useCallback(async () => {

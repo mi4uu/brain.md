@@ -17,32 +17,13 @@ export interface VaultGraph {
   links: GraphLink[];
 }
 
-function stripMd(s: string): string {
-  return s.replace(/\.md$/i, "");
-}
-
-// Notes as nodes, resolved wikilinks as undirected edges. A link whose
-// target the caller cannot read is dropped exactly like an unresolved one,
-// so the graph never reveals that a hidden note exists. Lookup maps are
-// built once: resolving per link with VaultIndex.resolveAny would scan the
-// whole index for every edge.
+// Notes as nodes, resolved wikilinks as undirected edges. Links resolve
+// against the whole vault (VaultIndex.resolveLink, the same resolver as
+// backlinks), then a target the caller cannot read is dropped exactly like
+// an unresolved one, so the graph never reveals that a hidden note exists
+// and a link never jumps to a different note depending on who is looking.
 export function buildGraph(index: VaultIndex, allowed: (path: string) => boolean): VaultGraph {
   const entries = index.entries().filter((e) => allowed(e.path));
-  const byPath = new Map<string, string>();
-  const byBase = new Map<string, string>();
-  const byAlias = new Map<string, string>();
-  for (const e of entries) {
-    byPath.set(stripMd(e.path).toLowerCase(), e.path);
-    if (!byBase.has(e.basenameLower)) byBase.set(e.basenameLower, e.path);
-    for (const a of e.aliases) {
-      const key = stripMd(a).toLowerCase();
-      if (!byAlias.has(key)) byAlias.set(key, e.path);
-    }
-  }
-  const resolve = (targetLower: string): string | undefined => {
-    const key = stripMd(targetLower).replace(/^\/+/, "");
-    return byPath.get(key) ?? byBase.get(key) ?? byAlias.get(key);
-  };
 
   const nodes: GraphNode[] = entries.map((e) => ({
     id: e.path,
@@ -54,8 +35,8 @@ export function buildGraph(index: VaultIndex, allowed: (path: string) => boolean
   const links: GraphLink[] = [];
   for (const e of entries) {
     for (const l of e.outLinks) {
-      const target = resolve(l.targetLower);
-      if (!target || target === e.path) continue;
+      const target = index.resolveLink(e.path, l.target);
+      if (!target || target === e.path || !allowed(target)) continue;
       const key = e.path < target ? `${e.path}\u0000${target}` : `${target}\u0000${e.path}`;
       if (seen.has(key)) continue;
       seen.add(key);
