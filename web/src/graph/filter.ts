@@ -33,9 +33,14 @@ export function filterGraph(g: GraphInput, f: GraphFilter): GraphInput {
 // The neighbourhood of `center` up to `depth` hops.
 export function localGraph(g: GraphInput, center: string, depth: number): GraphInput {
   const adj = new Map<string, string[]>();
+  const add = (from: string, to: string) => {
+    const list = adj.get(from);
+    if (list) list.push(to);
+    else adj.set(from, [to]);
+  };
   for (const l of g.links) {
-    adj.set(l.source, [...(adj.get(l.source) ?? []), l.target]);
-    adj.set(l.target, [...(adj.get(l.target) ?? []), l.source]);
+    add(l.source, l.target);
+    add(l.target, l.source);
   }
   const keep = new Set<string>([center]);
   let frontier = [center];

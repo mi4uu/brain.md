@@ -18,6 +18,7 @@ export function LocalGraph({ path, onOpen, onExpand }: Props) {
   useEffect(() => {
     let live = true;
     loadGraph()
+      .then((g) => (g.nodes.some((n) => n.id === path) ? g : loadGraph(true)))
       .then((g) => {
         if (live) setGraph(g);
       })

@@ -367,6 +367,7 @@ export class GraphEngine {
   }
 
   private readonly onPointerDown = (e: PointerEvent): void => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     const p = this.local(e);
     this.pointers.set(e.pointerId, p);
     try {
@@ -402,14 +403,18 @@ export class GraphEngine {
     if (this.pinch && this.pointers.size === 2) {
       const [a, b] = [...this.pointers.values()] as [{ x: number; y: number }, { x: number; y: number }];
       const dist = Math.hypot(a.x - b.x, a.y - b.y);
-      this.zoomAt(this.pinch.cx, this.pinch.cy, (this.pinch.k * dist) / this.pinch.dist / this.t.k);
+      if (this.pinch.dist < 1) this.pinch.dist = Math.max(dist, 1);
+      else this.zoomAt(this.pinch.cx, this.pinch.cy, (this.pinch.k * dist) / this.pinch.dist / this.t.k);
       return;
     }
     if (this.dragNode && prev) {
       const g = this.toGraph(p.x, p.y);
       this.dragNode.fx = g.x;
       this.dragNode.fy = g.y;
-      if (this.moved > 3) this.sim?.alphaTarget(0.2).restart();
+      if (this.moved > 3) {
+        this.userMoved = true;
+        this.sim?.alphaTarget(0.2).restart();
+      }
       this.requestDraw();
       return;
     }
@@ -461,6 +466,7 @@ export class GraphEngine {
   };
 
   private zoomAt(px: number, py: number, factor: number): void {
+    if (!Number.isFinite(factor) || factor <= 0) return;
     const k = Math.min(8, Math.max(0.05, this.t.k * factor));
     const g = this.toGraph(px, py);
     this.userMoved = true;
