@@ -54,11 +54,13 @@ export function formatId(f: EmbedFormat): string {
   return JSON.stringify([f.query, f.document]);
 }
 
+// Function replacers: a string replacement would expand `$&`, `$$` and
+// friends inside note text.
 export function formatQuery(f: EmbedFormat, text: string): string {
-  return f.query.replaceAll("{text}", text);
+  return f.query.replaceAll("{text}", () => text);
 }
 
 export function formatDocument(f: EmbedFormat, path: string, text: string): string {
   const title = (path.split("/").pop() ?? path).replace(/\.md$/i, "");
-  return f.document.replaceAll("{title}", title).replaceAll("{text}", text);
+  return f.document.replaceAll("{title}", () => title).replaceAll("{text}", () => text);
 }

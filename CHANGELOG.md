@@ -16,8 +16,10 @@ answers until it is done.
   52-query Polish/English test set, EmbeddingGemma-300M through
   llama-server scores nDCG@10 0.89 against 0.61 for 0.7's bge-small.
 - Settings, AI / RAG: **Never send to the embedder**, a list of path
-  globs (default `**/secrets/**`). Matching notes are never embedded and
-  their old vectors are purged; keyword search still finds them.
+  globs (default `**/secrets/**`). Matching notes are never sent to the
+  embedder by any path (indexing, Related, outline, compare, digest,
+  orphans) and their old vectors are purged; keyword search still finds
+  them. Outline and compare on such a note say it is excluded.
 - `BRAINMD_EMBED_API_KEY`: the embedder key from the environment, so it
   can live in a systemd `EnvironmentFile` instead of settings.json. It
   wins over a saved key and the UI shows it as set by the server.
@@ -30,7 +32,10 @@ answers until it is done.
   is being rebuilt, `similar_notes`, `context_for_query` and
   `/api/similar` answer with keyword search, each hit marked
   `"source": "keyword"`; Related and similar tasks return nothing
-  instead of an error.
+  instead of an error, and outline, compare, digest and orphans say
+  semantic search is unavailable instead of a 500 with the embedder URL.
+  The reason shows in the Settings banner and the log (once a minute), so
+  a wrong key does not go unnoticed.
 - Remote embedder requests go in batches of 8 with a timeout. A note is
   embedded before its old vectors are removed, so an outage never drops
   it from search. A full reindex stops when the embedder goes away and

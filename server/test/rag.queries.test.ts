@@ -81,6 +81,7 @@ function makeDeps(opts: {
   const embed = opts.embed ?? (async (texts: string[]) => texts.map(() => makeVec([1, 0, 0])));
   const pipeline = {
     embedQuery: embed,
+    isExcluded: () => false,
     embedDocuments: (items: Array<{ text: string }>) => embed(items.map((i) => i.text)),
     search,
     searchTasks,

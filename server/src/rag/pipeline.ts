@@ -27,6 +27,16 @@ function makeEmbedder(cfg: RagConfig): Embedder {
 type PendingAction = "write" | "delete";
 
 const QUERY_TIMEOUT_MS = 4000;
+// Per batch of 8 chunks for note-to-note tools (outline, digest, compare):
+// a CPU-only embedder needs seconds per batch.
+const DOCUMENT_QUERY_TIMEOUT_MS = 60_000;
+
+export class EmbedExcludedError extends Error {
+  constructor(public readonly path: string) {
+    super(`${path} is excluded from embedding (Settings, AI / RAG, "Never send to the embedder")`);
+    this.name = "EmbedExcludedError";
+  }
+}
 
 export class RagPipeline {
   private embedder: Embedder;
@@ -314,20 +324,47 @@ export class RagPipeline {
   // embedder falls back to keyword search fast.
   async embedQuery(texts: string[]): Promise<Float32Array[]> {
     const f = resolveFormat(this.cfg);
-    return this.embedder.embed(
-      texts.map((t) => formatQuery(f, t)),
-      { timeoutMs: QUERY_TIMEOUT_MS },
-    );
+    try {
+      return await this.embedder.embed(
+        texts.map((t) => formatQuery(f, t)),
+        { timeoutMs: QUERY_TIMEOUT_MS },
+      );
+    } catch (e) {
+      this.noteUnavailable(e);
+      throw e;
+    }
+  }
+
+  // Searches fall back to keywords quietly; still record why (Settings
+  // banner) and log it now and then, so a wrong key or a dead box is seen.
+  private lastUnavailableLog = 0;
+  private noteUnavailable(e: unknown): void {
+    if (!isEmbedderUnavailable(e)) return;
+    const msg = e instanceof Error ? e.message : String(e);
+    this.lastProbeError = msg;
+    if (Date.now() - this.lastUnavailableLog > 60_000) {
+      this.lastUnavailableLog = Date.now();
+      console.warn(`[rag] embedder unavailable, answering with keyword search: ${msg}`);
+    }
   }
 
   // Note text compared with stored chunks (Related, outline, compare,
   // digest, orphans): same document template the chunks were stored with.
   async embedDocuments(items: Array<{ path: string; text: string }>): Promise<Float32Array[]> {
+    // Last line of defence for rag.exclude: callers filter first, but no
+    // excluded note's text may reach the embedder through any path.
+    const excluded = items.find((i) => this.isExcluded(i.path));
+    if (excluded) throw new EmbedExcludedError(excluded.path);
     const f = resolveFormat(this.cfg);
-    return this.embedder.embed(
-      items.map((i) => formatDocument(f, i.path, i.text)),
-      { timeoutMs: QUERY_TIMEOUT_MS * 3 },
-    );
+    try {
+      return await this.embedder.embed(
+        items.map((i) => formatDocument(f, i.path, i.text)),
+        { timeoutMs: DOCUMENT_QUERY_TIMEOUT_MS },
+      );
+    } catch (e) {
+      this.noteUnavailable(e);
+      throw e;
+    }
   }
 
   isExcluded(path: string): boolean {

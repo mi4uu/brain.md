@@ -134,6 +134,24 @@ async function filterReadable<T extends { path: string }>(
   return rows.filter((r) => mayReadPath(deps, r.path, map) && inScope(r.path, prefixes));
 }
 
+// Tools that only work semantically (outline, compare) can't fall back to
+// keywords; they say why instead of leaking the embedder URL in a 500.
+export class SemanticUnavailableError extends Error {
+  constructor() {
+    super("semantic search is unavailable right now: the embedder is unreachable or the index is being rebuilt");
+    this.name = "SemanticUnavailableError";
+  }
+}
+
+async function semanticOrExplain<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (semanticUnavailable(e)) throw new SemanticUnavailableError();
+    throw e;
+  }
+}
+
 // ---------------- related ----------------
 
 export interface RelatedHit extends SearchHit {}
@@ -145,6 +163,8 @@ export async function related(
   scope?: Scope,
 ): Promise<RelatedHit[]> {
   assertEnabled(deps);
+  // An excluded note is never sent to the embedder, so it has no neighbours.
+  if (deps.pipeline.isExcluded(path)) return [];
   let body = "";
   try {
     body = (await deps.vault.readNote(path)).content;
@@ -284,7 +304,9 @@ export async function semanticOutline(
     ];
   }
 
-  const vecs = await deps.pipeline.embedDocuments(chunks.map((c) => ({ path, text: c.text })));
+  const vecs = await semanticOrExplain(() =>
+    deps.pipeline.embedDocuments(chunks.map((c) => ({ path, text: c.text }))),
+  );
 
   // Online clustering: each cluster keeps a centroid; new chunk joins the
   // nearest centroid above threshold or starts a fresh cluster. Simple,
@@ -386,6 +408,7 @@ export async function orphans(
   const noBacklinks = allPaths.filter(
     (p) =>
       (inbound.get(p) ?? 0) === 0 &&
+      !deps.pipeline.isExcluded(p) &&
       mayReadPath(deps, p, map) &&
       inScope(p, prefixes),
   );
@@ -404,13 +427,13 @@ export async function orphans(
   const validIdx = seeds.map((s, i) => (s ? i : -1)).filter((i) => i >= 0);
   if (validIdx.length === 0) return [];
 
-  const vecs = await deps.pipeline.embedDocuments(
-    validIdx.map((i) => ({ path: noBacklinks[i]!, text: seeds[i]! })),
+  const vecs = await semanticOrExplain(() =>
+    deps.pipeline.embedDocuments(validIdx.map((i) => ({ path: noBacklinks[i]!, text: seeds[i]! }))),
   );
   const out: OrphanNote[] = [];
   for (let n = 0; n < validIdx.length; n++) {
     const p = noBacklinks[validIdx[n]!]!;
-    const hits = await deps.pipeline.search(vecs[n]!, 5);
+    const hits = await semanticOrExplain(() => deps.pipeline.search(vecs[n]!, 5));
     // Exclude self; the top remaining score is the closest neighbour.
     const others = hits.filter((h) => h.path !== p);
     const topSim = others[0]?.score ?? 0;
@@ -461,6 +484,7 @@ export async function weeklyDigest(
   const map = await permsMap(deps.vault);
   const prefixes = normalizeScope(scope);
   const entries = deps.index.entries().filter((e) => {
+    if (deps.pipeline.isExcluded(e.path)) return false;
     if (!mayReadPath(deps, e.path, map)) return false;
     if (!inScope(e.path, prefixes)) return false;
     return (e.mtime ?? 0) >= cutoff;
@@ -474,7 +498,7 @@ export async function weeklyDigest(
   }
   if (allChunks.length === 0) return [];
 
-  const vecs = await deps.pipeline.embedDocuments(allChunks);
+  const vecs = await semanticOrExplain(() => deps.pipeline.embedDocuments(allChunks));
 
   // Same online-clustering pass as outline; aggregate paths instead of lines.
   const clusters: Array<{
@@ -581,10 +605,10 @@ export async function compareNotes(
 
   let cos = 0;
   if (ca.length > 0 && cb.length > 0) {
-    const [va, vb] = await deps.pipeline.embedDocuments([
+    const [va, vb] = await semanticOrExplain(() => deps.pipeline.embedDocuments([
       { path: a, text: ca[0]!.text },
       { path: b, text: cb[0]!.text },
-    ]);
+    ]));
     cos = cosine(va!, vb!);
   }
 

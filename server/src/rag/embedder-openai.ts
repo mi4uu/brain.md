@@ -93,7 +93,17 @@ export class OpenAICompatEmbedder implements Embedder {
         body,
       );
     }
-    const json = (await res.json()) as OpenAIEmbeddingsResponse;
+    let json: OpenAIEmbeddingsResponse;
+    try {
+      json = (await res.json()) as OpenAIEmbeddingsResponse;
+    } catch (e) {
+      // Timed out mid-body, or something that isn't the embedder answered
+      // (a proxy's HTML page): treat as unreachable, not as a bad note.
+      throw new EmbedderHttpError(
+        `unreadable embeddings response from ${url}: ${e instanceof Error ? e.message : String(e)}`,
+        0,
+      );
+    }
     if (!json.data || !Array.isArray(json.data)) {
       throw new EmbedderHttpError(
         `malformed embeddings response from ${url} (no data array)`,

@@ -5,9 +5,9 @@ import { join } from "node:path";
 import { VaultIndex } from "../src/index/index";
 import { EmbedderHttpError, OpenAICompatEmbedder } from "../src/rag/embedder-openai";
 import { defaultFormat, formatDocument, formatQuery, resolveFormat } from "../src/rag/format";
-import { RagPipeline } from "../src/rag/pipeline";
+import { EmbedExcludedError, RagPipeline } from "../src/rag/pipeline";
 import type { Embedder } from "../src/rag/provider";
-import { contextForQuery, keywordHits, type RagDeps } from "../src/rag/queries";
+import { contextForQuery, keywordHits, related, semanticOutline, weeklyDigest, type RagDeps } from "../src/rag/queries";
 import { RagStore } from "../src/rag/store";
 import { DEFAULT_RAG_CONFIG, type ProviderId, type RagConfig } from "../src/rag/types";
 import { globMatcher } from "../src/vault/glob";
@@ -34,6 +34,12 @@ describe("prompt formats", () => {
     const f = defaultFormat("ggml-org/embeddinggemma-300M-GGUF");
     expect(formatQuery(f, "kto to Kamil")).toBe("task: search result | query: kto to Kamil");
     expect(formatDocument(f, "ludzie/kamil.md", "brat")).toBe("title: none | text: kamil\nbrat");
+  });
+
+  test("note text with $ patterns is embedded verbatim", () => {
+    const f = defaultFormat("embeddinggemma");
+    expect(formatQuery(f, "cost $& and $$5 $'")).toBe("task: search result | query: cost $& and $$5 $'");
+    expect(formatDocument(f, "a/$1.md", "x $` y")).toBe("title: none | text: $1\nx $` y");
   });
 
   test("unknown models get the title only; settings override the defaults", () => {
@@ -69,6 +75,7 @@ describe("OpenAI-compatible embedder against a fake server", () => {
   let server: ReturnType<typeof Bun.serve>;
   const requests: Array<{ auth: string | null; inputs: string[] }> = [];
   let hang = false;
+  let html = false;
 
   beforeAll(() => {
     server = Bun.serve({
@@ -77,6 +84,7 @@ describe("OpenAI-compatible embedder against a fake server", () => {
         const body = (await req.json()) as { input: string[] };
         requests.push({ auth: req.headers.get("authorization"), inputs: body.input });
         if (hang) await new Promise((r) => setTimeout(r, 2000));
+        if (html) return new Response("<html>proxy error</html>", { headers: { "content-type": "text/html" } });
         // Reversed on purpose: the client must order by `index`.
         const data = body.input.map((_, i) => ({ index: i, embedding: [i, 0, 0, 1] })).reverse();
         return Response.json({ data });
@@ -87,6 +95,7 @@ describe("OpenAI-compatible embedder against a fake server", () => {
   beforeEach(() => {
     requests.length = 0;
     hang = false;
+    html = false;
   });
   afterEach(() => {
     delete process.env.BRAINMD_EMBED_API_KEY;
@@ -105,6 +114,15 @@ describe("OpenAI-compatible embedder against a fake server", () => {
     process.env.BRAINMD_EMBED_API_KEY = "from-env";
     await make("from-settings").embed(["x"]);
     expect(requests[0]!.auth).toBe("Bearer from-env");
+  });
+
+  test("a 200 that isn't JSON counts as an unreachable embedder", async () => {
+    html = true;
+    const err = await make()
+      .embed(["x"])
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(EmbedderHttpError);
+    expect((err as EmbedderHttpError).status).toBe(0);
   });
 
   test("a hung server times out as an unreachable embedder", async () => {
@@ -183,6 +201,21 @@ describe("pipeline with a remote embedder", () => {
     await pipeline.syncWithDisk();
     expect(store.isIncompatible()).toBe(false);
     expect(emb.seen).toHaveLength(2);
+  });
+
+  test("excluded notes never reach the embedder through Related, outline or digest", async () => {
+    const long = Array.from({ length: 60 }, (_, i) => `Paragraph ${i} sk-999 ${"word ".repeat(40)}`).join("\n\n");
+    await vault.writeNote("secrets/token.md", `# Token\n${long}\n`);
+    await vault.writeNote("open.md", "# Open\nhello\n");
+    const index = new VaultIndex(vault);
+    await index.buildAll();
+    await pipeline.reindexAll();
+    emb.seen = [];
+    const deps: RagDeps = { vault, index, pipeline, ragEnabled: () => true };
+    expect(await related(deps, "secrets/token.md")).toEqual([]);
+    await expect(semanticOutline(deps, "secrets/token.md")).rejects.toBeInstanceOf(EmbedExcludedError);
+    await weeklyDigest(deps, "30d");
+    expect(emb.seen.some((t) => t.includes("sk-999"))).toBe(false);
   });
 
   test("context_for_query answers with keywords when the embedder is down", async () => {
