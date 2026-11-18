@@ -25,6 +25,7 @@
 | | |
 |---|---|
 | **Obsidian-compatible markdown** | Wikilinks, embeds, callouts, math, mermaid, tasks, frontmatter, aliases. Open your existing Obsidian vault and it just works. |
+| **Graph view** | Interactive map of your notes and wikilinks: hover to light up neighbours, click to open, drag, zoom, filter by folder or tag, plus a local graph of the current note. Smooth on thousands of notes. |
 | **Live editor + preview** | CodeMirror 6 with cursor-anchored scroll sync, autosave, instant tooltips, command palette, quick switcher. |
 | **Semantic search built in** | Per-vault embedded vector store (pure JS, no external DB). Notes are chunked, embedded and indexed on every save. |
 | **Pluggable embedders** | Default: `bge-small-en-v1.5` running locally via **bundled WASM ONNX**, works in the prebuilt single binary, zero native deps. Or point at **Ollama**, **LM Studio**, or **OpenAI**: anything with `/v1/embeddings`. |
@@ -95,6 +96,7 @@ Model Context Protocol.
   - [Markdown that actually does things](#markdown-that-actually-does-things)
   - [Command palette + quick switcher](#command-palette--quick-switcher)
   - [Tasks across the vault](#tasks-across-the-vault)
+  - [Graph view](#graph-view)
 - [AI for agents](#ai-for-agents)
   - [Semantic search (RAG)](#semantic-search-rag)
   - [MCP server](#mcp-server)
@@ -317,6 +319,29 @@ view, with filters for open / done / all and a click-through to the
 source line.
 
 ![Tasks view](docs/img/tasks-view.png)
+
+### Graph view
+
+Your notes as a map: every note is a dot, every wikilink a line, coloured
+by top-level folder. Open it from the graph button in the toolbar.
+
+![Graph view: hover a note to light up its links](docs/img/graph-hover.gif)
+
+- **Hover** a note to light up its links and neighbours; **click** to open it.
+- **Drag** notes around, **pan** by dragging the background, **zoom** with
+  the wheel or a pinch. Works with touch on a phone.
+- **Filter** by folder, tag or name, and hide notes without links.
+- **Local graph** in the sidebar: the current note and its neighbours,
+  one or two hops out, with a jump to the full graph.
+- Light and dark follow the app theme.
+- Folder permissions apply: a note in a folder you can't read is not in
+  the graph, and neither are links to it.
+
+It stays smooth on big vaults. On a generated 3,000-note vault
+(`bun scripts/gen-demo-vault.ts <dir> 3000`) the layout settles in under
+2 seconds and dragging runs at about 90 fps on a laptop.
+
+![A generated 3,000-note vault in the graph view](docs/img/graph-3000.png)
 
 ### Auto versioning & history
 

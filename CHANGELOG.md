@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Graph view: notes as nodes, wikilinks as edges, coloured by top-level
+  folder. Hover lights up a note's neighbours, click opens it, drag, pan,
+  wheel and pinch zoom, filters by folder, tag and name, and a toggle
+  for notes without links. Opens from the toolbar.
+- Local graph in the sidebar: the current note and its neighbours, one
+  or two hops out.
+- `GET /api/graph`: nodes and resolved wikilink edges (path, basename
+  and alias resolution, deduplicated), filtered by the caller's folder
+  permissions; links to unreadable notes are dropped like unresolved
+  ones.
+- `scripts/gen-demo-vault.ts`: a seeded generator for load-test vaults.
+
 ## 0.6.0 - 2026-11-18
 
 Notes as an interactive view in MCP Apps hosts, and safety annotations
