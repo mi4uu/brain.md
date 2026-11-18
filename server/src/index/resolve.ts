@@ -33,16 +33,27 @@ export function normalizeTarget(target: string): string {
   return t.trim().replace(/\\/g, "/").replace(/\.md$/i, "").replace(/^\/+/, "").toLowerCase();
 }
 
-// Obsidian picks, among several notes that share a name, the one in the
-// linking note's folder, then the shortest path. Ties go to the path that
-// sorts first so the answer never depends on index order.
+// Among several notes that share a name, pick the one closest to the
+// linking note in the folder tree (steps up plus steps down, so the linking
+// note's own folder wins, then a parent's or child's), then the shortest
+// path. Ties go to the path that sorts first so the answer never depends on
+// index order.
+function folderDistance(a: string, b: string): number {
+  const x = a ? a.split("/") : [];
+  const y = b ? b.split("/") : [];
+  let shared = 0;
+  while (shared < x.length && shared < y.length && x[shared] === y[shared]) shared++;
+  return x.length - shared + (y.length - shared);
+}
+
 function pick(candidates: string[] | undefined, fromPath: string): string | undefined {
   if (!candidates || candidates.length === 0) return undefined;
   if (candidates.length === 1) return candidates[0];
   const here = folderOf(fromPath).toLowerCase();
-  const same = candidates.filter((c) => folderOf(c).toLowerCase() === here);
-  const pool = same.length > 0 ? same : candidates;
-  return [...pool].sort((a, b) => a.length - b.length || a.localeCompare(b))[0];
+  const dist = new Map(candidates.map((c) => [c, folderDistance(here, folderOf(c).toLowerCase())]));
+  return [...candidates].sort(
+    (a, b) => (dist.get(a) ?? 0) - (dist.get(b) ?? 0) || a.length - b.length || a.localeCompare(b),
+  )[0];
 }
 
 // One resolver for backlinks, the graph and MCP Apps, so they always agree
@@ -52,7 +63,7 @@ function pick(candidates: string[] | undefined, fromPath: string): string | unde
 //   3. path suffix:                  [[rodzina/marysia]] for private/rodzina/marysia.md
 //   4. note name:                    [[kamil]]
 //   5. frontmatter alias
-// Steps 3 to 5 break ties with pick().
+// Steps 3 to 5 break ties with pick(): nearest folder, then shortest path.
 export class LinkResolver {
   private readonly byPath = new Map<string, string>();
   private readonly byBase = new Map<string, string[]>();

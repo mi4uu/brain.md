@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.7.2 - 2026-11-18
+
+Semantic search forgets deleted notes, and `[[Index]]` from a subfolder
+goes to the nearest Index. No config changes needed.
+
+### Fixed
+
+- The vector index kept notes that were deleted or moved outside
+  brain.md (mv, git pull, another tool, or while RAG was off). Related,
+  `similar_notes`, `context_for_query` and similar tasks kept returning
+  them, deleted secret notes included, and Related showed links that
+  404. Now:
+  - search results drop any note that no longer exists on disk and
+    delete its rows on the spot;
+  - at startup the store is compared with the disk: rows for missing
+    notes are dropped, new or edited notes are re-embedded;
+  - every 60 seconds the note index and the vector store are synced with
+    the disk, so backlinks and search follow changes made behind
+    brain.md's back.
+
+- An ambiguous `[[Index]]` in a subfolder with no Index of its own went
+  to the shortest path anywhere in the vault (for example `ludzie/Index`
+  from `work/job-search/direct/`). It now goes to the note nearest in the
+  folder tree, here `work/job-search/Index`, and only then to the shortest
+  path.
+
 ## 0.7.1 - 2026-11-18
 
 Log out from the web app, and backlinks that find path links. No config

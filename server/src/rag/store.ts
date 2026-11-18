@@ -320,6 +320,17 @@ export class RagStore {
     return [...seen];
   }
 
+  // Newest indexed mtime per path (note chunks and tasks), so a sync can
+  // tell which notes changed on disk since they were embedded.
+  async pathMtimes(): Promise<Map<string, number>> {
+    this.requireOpen();
+    const out = new Map<string, number>();
+    for (const r of [...this.notes.values(), ...this.tasks.values()]) {
+      out.set(r.path, Math.max(out.get(r.path) ?? 0, r.mtime));
+    }
+    return out;
+  }
+
   async distinctProviderModel(): Promise<
     Array<{ providerId: ProviderId; modelId: string }>
   > {
