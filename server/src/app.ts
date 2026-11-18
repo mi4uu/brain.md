@@ -17,6 +17,7 @@ import { mediaRoutes } from "./api/media";
 import { searchRoutes } from "./api/search";
 import { resolveRoutes } from "./api/resolve";
 import { backlinkRoutes } from "./api/backlinks";
+import { graphRoutes } from "./api/graph";
 import { renameRoutes } from "./api/rename";
 import { trashRoutes } from "./api/trash";
 import { tasksRoutes } from "./api/tasks";
@@ -178,6 +179,7 @@ export function createApp(opts: AppOptions = {}) {
     .use(searchRoutes(vault, index))
     .use(resolveRoutes(vault, index))
     .use(backlinkRoutes(vault, index))
+    .use(graphRoutes(vault, index))
     .use(renameRoutes(vault, index))
     .use(trashRoutes(vault, index))
     .use(tasksRoutes(vault, index))

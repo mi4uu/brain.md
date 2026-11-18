@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.7.0 - 2026-11-18
+
+Graph view in the web app and in MCP Apps hosts. No config changes
+needed.
+
+### Added
+
+- Graph view: notes as nodes, wikilinks as edges, coloured by top-level
+  folder. Hover lights up a note's neighbours, click opens it, drag, pan,
+  wheel and pinch zoom, filters by folder, tag and name, and a toggle
+  for notes without links. Opens from the toolbar.
+- Local graph in the sidebar: the current note and its neighbours, one
+  or two hops out.
+- `GET /api/graph`: nodes and resolved wikilink edges (path, basename
+  and alias resolution, deduplicated), filtered by the caller's folder
+  permissions; links to unreadable notes are dropped like unresolved
+  ones.
+- `scripts/gen-demo-vault.ts`: a seeded generator for load-test vaults.
+- MCP tool `graph_view` (read-only): the graph of the whole vault, one
+  folder, or the notes within `depth` hops of `center`. The model gets a
+  short summary (counts, most linked notes); MCP Apps hosts show the
+  interactive graph (`ui://brainmd/graph.html`), where a click re-centres
+  on a note and "Open in chat" asks the agent to open it. 18 MCP tools
+  now.
+
 ## 0.6.0 - 2026-11-18
 
 Notes as an interactive view in MCP Apps hosts, and safety annotations
