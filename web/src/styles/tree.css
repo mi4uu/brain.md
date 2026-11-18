@@ -205,3 +205,38 @@
   background: var(--bg-hover);
   box-shadow: 0 0 0 2px var(--accent-soft);
 }
+
+.bookmark-row .bookmark-remove {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--text-3);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+.bookmark-row:hover .bookmark-remove,
+.bookmark-row .bookmark-remove:focus-visible,
+.bookmark-row.missing .bookmark-remove {
+  opacity: 1;
+}
+.bookmark-row .bookmark-remove:hover {
+  background: var(--bg-selected);
+  color: var(--text-1);
+}
+.bookmark-row.missing {
+  cursor: default;
+}
+.bookmark-row.missing .label {
+  text-decoration: line-through;
+  color: var(--text-3);
+}
+@media (hover: none) {
+  .bookmark-row .bookmark-remove {
+    opacity: 1;
+  }
+}

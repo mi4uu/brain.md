@@ -103,6 +103,11 @@ export function createApp(opts: AppOptions = {}) {
     // actor's own commit.
     if (e.kind === "rename" && e.extra) autocommit.notify(e.extra, identity);
   });
+  vault.onMutation(async (e) => {
+    if (e.kind === "rename" && e.extra) await settings.followNoteMove(e.extra, e.path);
+    else if (e.kind === "delete") await settings.followNoteMove(e.path, null);
+    else if (e.kind === "folder-delete") for (const p of e.paths ?? []) await settings.followNoteMove(p, null);
+  });
   // Centralised index maintenance (V-concurrency #18): every vault mutation
   // REST writes, MCP write_note/append_note, trash restore, git restore
   // via vault.notifyWrite, flows through this one subscription instead of

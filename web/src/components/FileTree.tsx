@@ -138,7 +138,7 @@ export function FileTree(props: TreeProps) {
             ? [
                 {
                   label: "MCP permissions…",
-                  icon: <IconBare iconKey="star" />,
+                  icon: <IconBare iconKey="lock" />,
                   onClick: () => props.onSetMcpPerms!(node.path),
                 } as MenuItem,
               ]

@@ -56,6 +56,16 @@ export class SettingsStore {
     return this.data;
   }
 
+  // Bookmarks follow their notes: a rename moves the bookmark, a delete
+  // (to trash) drops it, so the sidebar never holds a link that 404s.
+  async followNoteMove(from: string, to: string | null): Promise<void> {
+    if (!this.loaded) await this.load();
+    const cur = this.data.bookmarks;
+    if (!cur.includes(from)) return;
+    const next = to === null ? cur.filter((b) => b !== from) : cur.map((b) => (b === from ? to : b));
+    await this.patch({ bookmarks: [...new Set(next)] });
+  }
+
   async patch(partial: SettingsPatch): Promise<AppSettings> {
     if (!this.loaded) await this.load();
     const next: AppSettings = {

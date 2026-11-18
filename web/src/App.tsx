@@ -73,6 +73,7 @@ import { useAuth } from "./hooks/useAuth";
 import { signedInAs } from "./auth/api";
 import { LinkResolver } from "./lib/link-resolve";
 import { LoginDialog } from "./components/LoginDialog";
+import { CreateNoteDialog } from "./components/CreateNoteDialog";
 import { FolderPermsDialog } from "./components/FolderPermsDialog";
 import { AboutDialog } from "./components/AboutDialog";
 import {
@@ -701,6 +702,38 @@ export function App() {
     [openNote, refreshTree],
   );
 
+  // [[link]] to a note that doesn't exist: ask, then create it. A bare name
+  // goes next to the linking note (Obsidian's "same folder" default), a
+  // path is taken as a vault path.
+  const [missingNote, setMissingNote] = useState<string | null>(null);
+  const askCreateMissing = useCallback(
+    (target: string) => {
+      const name = target.split("#")[0]!.split("^")[0]!.trim().replace(/\.md$/i, "").replace(/^\/+/, "");
+      if (!name) return;
+      const dir = !name.includes("/") && path?.includes("/") ? path.slice(0, path.lastIndexOf("/") + 1) : "";
+      setMissingNote(`${dir}${name}.md`);
+    },
+    [path],
+  );
+  const createMissing = useCallback(async () => {
+    if (!missingNote) return;
+    const title = (missingNote.split("/").pop() ?? missingNote).replace(/\.md$/, "");
+    const err = missingNote.split("/").map(validateBasename).find(Boolean);
+    if (err) {
+      setToast(`Invalid name: ${err}`);
+      return;
+    }
+    try {
+      await api.writeNote(missingNote, `# ${title}\n\n`);
+      await refreshTree();
+      const p = missingNote;
+      setMissingNote(null);
+      await openNote(p);
+    } catch (e) {
+      setToast(`Create failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, [missingNote, openNote, refreshTree]);
+
   const createFolder = useCallback(
     async (parentDir: string) => {
       const name = prompt("New folder name");
@@ -1067,19 +1100,35 @@ export function App() {
                 {bookmarks.length === 0 ? (
                   <p className="sidebar-empty">No bookmarks yet.</p>
                 ) : (
-                  bookmarks.map((b) => (
-                    <div
-                      key={b}
-                      className={clsx("tree-row", b === path && "active")}
-                      onClick={() => openNote(b)}
-                    >
-                      <span className="chev" />
-                      <StarIcon filled />
-                      <span className="label">
-                        {(b.split("/").pop() ?? b).replace(/\.md$/, "")}
-                      </span>
-                    </div>
-                  ))
+                  bookmarks.map((b) => {
+                    const missing = tree.notes.length > 0 && !tree.notes.includes(b);
+                    return (
+                      <div
+                        key={b}
+                        className={clsx("tree-row bookmark-row", b === path && "active", missing && "missing")}
+                        title={missing ? `${b} no longer exists` : b}
+                        onClick={() => {
+                          if (!missing) openNote(b);
+                        }}
+                      >
+                        <span className="chev" />
+                        <StarIcon filled />
+                        <span className="label">{(b.split("/").pop() ?? b).replace(/\.md$/, "")}</span>
+                        <button
+                          type="button"
+                          className="bookmark-remove"
+                          aria-label={`Remove bookmark ${b}`}
+                          title="Remove bookmark"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void updateSettings({ bookmarks: bookmarks.filter((x) => x !== b) });
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  })
                 )}
               </AccordionContent>
             </AccordionItem>
@@ -1244,6 +1293,7 @@ export function App() {
             notePath={path}
             resolveByBasename={resolveWikilink}
             onOpenNote={openNote}
+            onMissingNote={askCreateMissing}
             onOpenTag={(tag) => {
               void (async () => {
                 if (!(await leaveNote())) return;
@@ -1287,6 +1337,10 @@ export function App() {
       ) : null}
 
       <CommandBar mode={cmd} onClose={() => setCmd(null)} onOpenNote={openNote} tree={tree} />
+
+      {missingNote ? (
+        <CreateNoteDialog path={missingNote} onCreate={createMissing} onClose={() => setMissingNote(null)} />
+      ) : null}
 
       {showSettings ? (
         <Settings
