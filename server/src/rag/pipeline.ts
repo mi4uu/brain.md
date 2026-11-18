@@ -367,8 +367,13 @@ export class RagPipeline {
     }
   }
 
+  private extraExclusion?: (path: string) => boolean;
+  setExtraExclusion(fn: (path: string) => boolean): void {
+    this.extraExclusion = fn;
+  }
+
   isExcluded(path: string): boolean {
-    return globMatcher(this.cfg.exclude ?? [])(path);
+    return globMatcher(this.cfg.exclude ?? [])(path) || !!this.extraExclusion?.(path);
   }
 
   // V59: preflight probe. Used by Settings PATCH on Enable RAG, by

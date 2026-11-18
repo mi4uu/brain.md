@@ -24,7 +24,9 @@ export interface VaultGraph {
 // who is looking, at the cost that a hidden note can still win a name tie
 // and so remove an edge; its path and content are never shown.
 export function buildGraph(index: VaultIndex, allowed: (path: string) => boolean): VaultGraph {
-  const entries = index.entries().filter((e) => allowed(e.path));
+  // Hidden and `search: false` notes stay out of the map, like out of search.
+  const shown = (p: string) => allowed(p) && !index.visibility?.isSearchExcluded(p);
+  const entries = index.entries().filter((e) => shown(e.path));
 
   const nodes: GraphNode[] = entries.map((e) => ({
     id: e.path,
@@ -37,7 +39,7 @@ export function buildGraph(index: VaultIndex, allowed: (path: string) => boolean
   for (const e of entries) {
     for (const l of e.outLinks) {
       const target = index.resolveLink(e.path, l.target);
-      if (!target || target === e.path || !allowed(target)) continue;
+      if (!target || target === e.path || !shown(target)) continue;
       const key = e.path < target ? `${e.path}\u0000${target}` : `${target}\u0000${e.path}`;
       if (seen.has(key)) continue;
       seen.add(key);

@@ -25,17 +25,31 @@ export interface IndexEntry {
   }>;
   headings: Array<{ level: number; text: string; line: number }>;
   body: string;
+  // Frontmatter `hidden: true` (out of the tree, search, graph and RAG)
+  // and `search: false` (visible in the tree, out of search, graph, RAG).
+  hidden?: boolean;
+  noSearch?: boolean;
 }
 
 export interface IndexData {
-  version: 1;
+  // 2 added the hidden/noSearch flags; an older snapshot is rebuilt.
+  version: 2;
   entries: Record<string, IndexEntry>;
 }
 
 const INDEX_REL = ".brain/index.json";
 
+export interface VisibilityRules {
+  isHidden(path: string): boolean;
+  isSearchExcluded(path: string): boolean;
+  isFolderHidden(folder: string): boolean;
+}
+
 export class VaultIndex {
-  private data: IndexData = { version: 1, entries: {} };
+  // Set by app.ts (vault/visibility.ts). Search, graph and list_notes
+  // consult it; absent in unit tests, where nothing is hidden.
+  visibility?: VisibilityRules;
+  private data: IndexData = { version: 2, entries: {} };
   private unsubscribe?: () => void;
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
   // Resolved link targets and the inbound links they give each note, rebuilt
@@ -241,7 +255,7 @@ export class VaultIndex {
         if (e) next[p] = e;
       }),
     );
-    this.data = { version: 1, entries: next };
+    this.data = { version: 2, entries: next };
     this.invalidateLinks();
   }
 
@@ -327,6 +341,8 @@ export class VaultIndex {
         })),
         headings: parsed.headings,
         body: parsed.body,
+        hidden: parsed.frontmatter?.hidden === true || undefined,
+        noSearch: parsed.frontmatter?.search === false || undefined,
       };
     } catch {
       return null;
@@ -344,7 +360,7 @@ export class VaultIndex {
     try {
       const raw = await readFile(abs, "utf8");
       const parsed = JSON.parse(raw) as IndexData;
-      if (parsed.version === 1) {
+      if (parsed.version === 2) {
         this.data = parsed;
         this.invalidateLinks();
         return true;

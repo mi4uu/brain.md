@@ -34,6 +34,7 @@ export function search(
   // denied note never contributes a score, let alone its text, to the
   // results, not just filtered out of the final top-N.
   allowed?: (path: string) => boolean,
+  opts: { includeHidden?: boolean } = {},
 ): SearchHit[] {
   const query = q.trim();
   if (query === "") return [];
@@ -45,6 +46,7 @@ export function search(
   for (const e of idx.entries()) {
     if (!inScope(e.path, prefixes)) continue;
     if (allowed && !allowed(e.path)) continue;
+    if (!opts.includeHidden && idx.visibility?.isSearchExcluded(e.path)) continue;
     let score = 0;
     let matches = 0;
     const titleLower = e.title.toLowerCase();

@@ -553,6 +553,9 @@ async function walk(
   const entries = await readdir(abs, { withFileTypes: true });
   for (const ent of entries) {
     const name = ent.name;
+    // Dot names are reserved for control dirs (.brain, .git) and tools
+    // (.obsidian, .trash); like Obsidian, they are never notes.
+    if (name.startsWith(".")) continue;
     if (ent.isDirectory()) {
       if (SKIP_DIRS.has(name)) continue;
       if (name === MEDIA_DIR) continue;

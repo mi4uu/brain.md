@@ -241,12 +241,13 @@ function registerHandlers(
     {
       annotations: READ_ONLY_LOCAL,
       description:
-        "Full-text search across the vault. Returns top 50 hits. Optional `scope` confines the search to one or more folders.",
-      inputSchema: { query: z.string().min(1), scope: scopeSchema },
+        "Full-text search across the vault. Returns top 50 hits. Optional `scope` confines the search to one or more folders. " +
+        "Notes the owner hid (hidden globs, `hidden: true`, `search: false`) are skipped unless include_hidden is true.",
+      inputSchema: { query: z.string().min(1), scope: scopeSchema, include_hidden: z.boolean().optional() },
     },
-    async ({ query, scope }) => {
+    async ({ query, scope, include_hidden }) => {
       const allowed = await readFilter();
-      const hits = fullTextSearch(index, query, scope, allowed);
+      const hits = fullTextSearch(index, query, scope, allowed, { includeHidden: include_hidden === true });
       logCall("search_notes", { query, scope }, true);
       return { content: [{ type: "text", text: JSON.stringify(hits) }] };
     },
@@ -330,15 +331,19 @@ function registerHandlers(
     "list_notes",
     {
       annotations: READ_ONLY_LOCAL,
-      description: "List all notes (and folders) in the vault.",
-      inputSchema: { folder: z.string().optional() },
+      description:
+        "List all notes (and folders) in the vault. Hidden notes and folders (the owner's hidden globs, " +
+        "`hidden: true`) are left out unless include_hidden is true; read_note and write_note work on them by path either way.",
+      inputSchema: { folder: z.string().optional(), include_hidden: z.boolean().optional() },
     },
-    async ({ folder }) => {
+    async ({ folder, include_hidden }) => {
       const allowedPath = await readFilter();
       const tree = await vault.listTree();
+      const v = include_hidden === true ? undefined : index.visibility;
       // Filter notes by per-folder read perm (V52).
-      const allowedNotes = tree.notes.filter(allowedPath);
+      const allowedNotes = tree.notes.filter((n) => allowedPath(n) && !v?.isHidden(n));
       const allowedFolders = tree.folders.filter((f) => {
+        if (v?.isFolderHidden(f)) return false;
         // a folder is visible if its own (or any descendant note's) perm
         // is read=true; cheapest approximation = check resolveFolderPerms
         // on the folder path itself
