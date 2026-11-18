@@ -31,9 +31,10 @@ see no difference.
 
 ### Fixed
 
-- A wikilink to a note with a dot in its name, like `[[brain.md launch]]`,
-  was treated as an attachment with the extension `md launch` and could
-  not be opened.
+- A wikilink to a note with a dot in its name, like `[[brain.md launch]]`
+  or `[[Release 0.6]]`, was treated as an attachment and could not be
+  opened. An extension now needs 1-10 letters or digits with at least one
+  letter.
 - `[[#Heading]]` links to a heading in the same note rendered as broken
   in the web preview; they now jump to the heading.
 

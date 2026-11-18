@@ -67,7 +67,7 @@ describe("MCP Apps note view", () => {
     const texts: unknown[] = [];
     for (const withView of [true, false]) {
       const { c, handle } = await client(withView);
-      await handle.vault.writeNote("a.md", "# A\n\nsee [[b]] and [[missing]]\n");
+      await handle.vault.writeNote("a.md", "# A\n\nsee [[b]] and [[missing]] and [[toString]]\n");
       await handle.vault.writeNote("b.md", "# B\n\nback to [[a]]\n");
       await handle.index.updatePath("a.md");
       await handle.index.updatePath("b.md");
@@ -80,7 +80,7 @@ describe("MCP Apps note view", () => {
       if (withView) {
         expect(data).toEqual({
           backlinks: [{ from: "b.md", lineNo: 3, context: "back to [[a]]", embed: false }],
-          links: { b: "b.md", missing: null },
+          links: { b: "b.md", missing: null, tostring: null },
         });
       } else {
         expect(data).toBeUndefined();

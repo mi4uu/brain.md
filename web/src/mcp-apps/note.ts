@@ -111,7 +111,9 @@ function renderDoc(note: Note, data: ViewData | null): HTMLElement {
   const { html } = renderMarkdown(note.content, {
     currentPath: note.path,
     resolveWikilink: (target) =>
-      data && linkKey(target) in data.links ? (data.links[linkKey(target)] ?? null) : resolveWikilinkIn(list, target),
+      data && Object.hasOwn(data.links, linkKey(target))
+        ? (data.links[linkKey(target)] ?? null)
+        : resolveWikilinkIn(list, target),
     isMediaTarget: () => false,
     buildMediaUrl: () => "",
   });

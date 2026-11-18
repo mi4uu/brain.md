@@ -52,9 +52,9 @@ export interface NoteViewData {
 }
 
 export function noteViewData(index: VaultIndex, path: string, allowed: (path: string) => boolean): NoteViewData {
-  const links: Record<string, string | null> = {};
+  const links: Record<string, string | null> = Object.create(null);
   for (const l of index.get(path)?.outLinks ?? []) {
-    if (l.targetLower in links) continue;
+    if (Object.hasOwn(links, l.targetLower)) continue;
     links[l.targetLower] = index.resolveAny(l.targetLower).matches.find(allowed) ?? null;
   }
   return { backlinks: index.backlinks(path, allowed), links };

@@ -5,11 +5,15 @@ describe("isAttachmentName", () => {
   test("a note name with a dot and spaces is not an attachment", () => {
     expect(isAttachmentName("brain.md launch")).toBe(false);
     expect(isAttachmentName("v1.2 release notes")).toBe(false);
+    expect(isAttachmentName("Release 0.6")).toBe(false);
+    expect(isAttachmentName("Notes 2026.11")).toBe(false);
   });
 
   test("real attachments still match", () => {
     expect(isAttachmentName("report.docx")).toBe(true);
     expect(isAttachmentName("data/export.csv")).toBe(true);
+    expect(isAttachmentName("backup.tar.gz")).toBe(true);
+    expect(isAttachmentName("archive.7z")).toBe(true);
     expect(isAttachmentName("photo.png")).toBe(false);
     expect(isAttachmentName("note.md")).toBe(false);
   });
