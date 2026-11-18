@@ -78,7 +78,10 @@ async function main() {
       ragPipeline.applyConfig(loaded.rag);
       ragPipeline.start();
       const count = await ragStore.countAll().catch(() => 0);
-      if (count === 0) {
+      // An empty store, or rows embedded under another model or prompt
+      // format (an upgrade or a settings change while stopped), get a full
+      // reindex in the background; searches fall back to keywords meanwhile.
+      if (count === 0 || ragStore.isIncompatible()) {
         // fire-and-forget initial reindex (V50)
         void ragPipeline
           .reindexAll()

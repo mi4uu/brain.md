@@ -22,8 +22,12 @@ interface RagConfigUI {
     model: string;
     apiKey?: string;
     apiKeySet?: boolean; // server never returns the real key; this just says one is stored
+    apiKeyFromEnv?: boolean; // set by BRAINMD_EMBED_API_KEY on the server, not editable here
     dim: number;
   };
+  queryTemplate?: string;
+  documentTemplate?: string;
+  exclude?: string[];
 }
 
 interface RagStatusUI {
@@ -35,6 +39,7 @@ interface RagStatusUI {
   lastIndexedAt: number | null;
   needsReindex: boolean;
   lastError: string | null;
+  format?: { query: string; document: string };
 }
 
 interface Props {
@@ -413,8 +418,15 @@ function RagPanel() {
             <input
               className="input"
               type="password"
+              disabled={cfg.openaiCompat.apiKeyFromEnv}
               value={cfg.openaiCompat.apiKey ?? ""}
-              placeholder={cfg.openaiCompat.apiKeySet ? "Set: leave blank to keep, clear to remove" : ""}
+              placeholder={
+                cfg.openaiCompat.apiKeyFromEnv
+                  ? "Set by the server (BRAINMD_EMBED_API_KEY)"
+                  : cfg.openaiCompat.apiKeySet
+                    ? "Set: leave blank to keep, clear to remove"
+                    : ""
+              }
               onChange={(e) =>
                 setCfg({
                   ...cfg,
@@ -450,6 +462,46 @@ function RagPanel() {
           </Field>
         </>
       )}
+      <Field label="Never send to the embedder (one glob per line)">
+        <textarea
+          className="input min-h-16 font-mono text-xs"
+          value={(cfg.exclude ?? []).join("\n")}
+          placeholder="**/secrets/**"
+          onChange={(e) => setCfg({ ...cfg, exclude: e.target.value.split("\n") })}
+          onBlur={() => void save({ exclude: (cfg.exclude ?? []).map((g) => g.trim()).filter(Boolean) })}
+        />
+      </Field>
+      <p className="text-xs text-fg-3">
+        Matching notes stay out of semantic search and are never sent to the embedder; keyword search still finds them.
+      </p>
+      <details className="text-sm">
+        <summary className="cursor-pointer text-fg-2">Prompt templates</summary>
+        <div className="mt-2 space-y-3">
+          <p className="text-xs text-fg-3">
+            Text around what gets embedded: <code>{"{text}"}</code> is the query or note chunk,{" "}
+            <code>{"{title}"}</code> the note name. Leave empty for the model's default. Changing either needs a
+            reindex.
+          </p>
+          <Field label="Query">
+            <input
+              className="input font-mono text-xs"
+              value={cfg.queryTemplate ?? ""}
+              placeholder={status?.format?.query}
+              onChange={(e) => setCfg({ ...cfg, queryTemplate: e.target.value })}
+              onBlur={() => void save({ queryTemplate: cfg.queryTemplate ?? "" })}
+            />
+          </Field>
+          <Field label="Document">
+            <input
+              className="input font-mono text-xs"
+              value={cfg.documentTemplate ?? ""}
+              placeholder={status?.format?.document.replaceAll("\n", "\\n")}
+              onChange={(e) => setCfg({ ...cfg, documentTemplate: e.target.value })}
+              onBlur={() => void save({ documentTemplate: cfg.documentTemplate ?? "" })}
+            />
+          </Field>
+        </div>
+      </details>
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"

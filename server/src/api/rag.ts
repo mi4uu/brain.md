@@ -4,6 +4,7 @@ import type { SettingsStore } from "../settings/settings";
 import type { Vault } from "../vault/vault";
 import type { VaultIndex } from "../index/index";
 import { describeProvider } from "../rag/provider";
+import { resolveFormat } from "../rag/format";
 import { LocalEmbedderWasm as LocalEmbedder } from "../rag/embedder-local-wasm";
 import {
   OpenAICompatEmbedder,
@@ -20,6 +21,8 @@ import {
   orphans as qOrphans,
   weeklyDigest as qDigest,
   RagDisabledError,
+  semanticUnavailable,
+  keywordHits,
   type RagDeps,
 } from "../rag/queries";
 import { decodeWildcard } from "./wildcard";
@@ -96,9 +99,9 @@ export function ragRoutes(
           set.status = 503;
           return { error: "RAG disabled in settings", code: "RAG_DISABLED" };
         }
+        const allowed = await readFilterFor(vault, request);
         try {
-          const allowed = await readFilterFor(vault, request);
-          const vec = (await pipeline.embed([q]))[0]!;
+          const vec = (await pipeline.embedQuery([q]))[0]!;
           // The store has no notion of permissions itself, so a fixed
           // over-fetch (e.g. k+50) can run out before k permitted hits
           // are found if enough of the nearest neighbours are denied.
@@ -114,6 +117,9 @@ export function ragRoutes(
           const hits = (await pipeline.dropMissing(permitted.slice(0, k + 20))).slice(0, k);
           return hits;
         } catch (e) {
+          // Embedder away or index being rebuilt: keyword hits, each marked
+          // `source: "keyword"`, instead of an error.
+          if (semanticUnavailable(e)) return keywordHits(index, q, k, [], allowed);
           set.status = 500;
           return {
             error: e instanceof Error ? e.message : String(e),
@@ -132,9 +138,9 @@ export function ragRoutes(
         chunks = await pipeline.store.countAll();
         if (chunks > 0) {
           const distinct = await pipeline.store.distinctProviderModel();
-          needsReindex = distinct.some(
-            (d) => d.providerId !== desc.providerId || d.modelId !== desc.modelId,
-          );
+          needsReindex =
+            pipeline.store.isIncompatible() ||
+            distinct.some((d) => d.providerId !== desc.providerId || d.modelId !== desc.modelId);
         }
       } catch {
         // store not opened or empty → leave defaults
@@ -148,6 +154,7 @@ export function ragRoutes(
         lastIndexedAt: pipeline.lastIndexedAt,
         needsReindex,
         lastError: pipeline.lastProbeError,
+        format: resolveFormat(cfg),
       };
     })
     .post("/api/rag/reindex", async ({ set, request }) => {

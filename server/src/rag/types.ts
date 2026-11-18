@@ -36,6 +36,13 @@ export interface RagConfig {
   provider: ProviderId;
   local: LocalProviderConfig;
   openaiCompat: OpenAICompatProviderConfig;
+  // Prompt templates around what gets embedded ({text}, plus {title} for
+  // documents). Empty means the model's known default (rag/format.ts).
+  queryTemplate?: string;
+  documentTemplate?: string;
+  // Vault path globs never sent to the embedder. Matching notes stay
+  // findable by keyword search.
+  exclude: string[];
 }
 
 export const DEFAULT_RAG_CONFIG: RagConfig = {
@@ -47,6 +54,7 @@ export const DEFAULT_RAG_CONFIG: RagConfig = {
     model: "nomic-embed-text",
     dim: 768,
   },
+  exclude: ["**/secrets/**"],
 };
 
 export interface SearchHit {
@@ -70,6 +78,8 @@ export interface RagStatus {
   // V59: most recent embedder failure, if any. Null when probe last succeeded
   // OR when no probe has ever run. UI surfaces this in a persistent banner.
   lastError: string | null;
+  // The prompt templates in effect (settings or the model's default).
+  format: { query: string; document: string };
 }
 
 // V49: chunker constants

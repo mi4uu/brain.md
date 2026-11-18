@@ -4,7 +4,9 @@ import type { VaultIndex } from "../index/index";
 import type { RagPipeline } from "./pipeline";
 import { chunkNote } from "./chunker";
 import type { SearchHit, TaskHit } from "./types";
-import type { TaskDoneFilter } from "./store";
+import { StoreIncompatibleError, type TaskDoneFilter } from "./store";
+import { isEmbedderUnavailable } from "./embedder-openai";
+import { search as keywordSearch } from "../index/search";
 import {
   loadFolderMeta,
   resolveFolderPerms,
@@ -38,6 +40,36 @@ export class RagDisabledError extends Error {
     super("RAG disabled");
     this.name = "RagDisabledError";
   }
+}
+
+// Semantic search can't answer right now: the embedder is down, asleep or
+// refusing the key, or the store is being rebuilt for a new model. Callers
+// that take a free-text query fall back to keyword search instead of failing.
+export function semanticUnavailable(e: unknown): boolean {
+  return isEmbedderUnavailable(e) || e instanceof StoreIncompatibleError;
+}
+
+// Keyword search results in the same shape as vector hits, marked so the
+// caller (and the agent reading the result) can tell them apart.
+export function keywordHits(
+  index: VaultIndex,
+  q: string,
+  k: number,
+  scope: string[],
+  allowed?: (path: string) => boolean,
+): Array<SearchHit & { source: "keyword" }> {
+  const hits = keywordSearch(index, q, scope, allowed).slice(0, k);
+  const top = hits[0]?.score ?? 1;
+  return hits.map((h) => ({
+    path: h.path,
+    chunkIndex: 0,
+    score: h.score / top,
+    snippet: h.snippet,
+    headingTrail: [],
+    lineStart: 0,
+    lineEnd: 0,
+    source: "keyword" as const,
+  }));
 }
 
 function assertEnabled(deps: RagDeps): void {
@@ -102,6 +134,24 @@ async function filterReadable<T extends { path: string }>(
   return rows.filter((r) => mayReadPath(deps, r.path, map) && inScope(r.path, prefixes));
 }
 
+// Tools that only work semantically (outline, compare) can't fall back to
+// keywords; they say why instead of leaking the embedder URL in a 500.
+export class SemanticUnavailableError extends Error {
+  constructor() {
+    super("semantic search is unavailable right now: the embedder is unreachable or the index is being rebuilt");
+    this.name = "SemanticUnavailableError";
+  }
+}
+
+async function semanticOrExplain<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (semanticUnavailable(e)) throw new SemanticUnavailableError();
+    throw e;
+  }
+}
+
 // ---------------- related ----------------
 
 export interface RelatedHit extends SearchHit {}
@@ -113,6 +163,8 @@ export async function related(
   scope?: Scope,
 ): Promise<RelatedHit[]> {
   assertEnabled(deps);
+  // An excluded note is never sent to the embedder, so it has no neighbours.
+  if (deps.pipeline.isExcluded(path)) return [];
   let body = "";
   try {
     body = (await deps.vault.readNote(path)).content;
@@ -125,10 +177,17 @@ export async function related(
   // Cheaper than averaging across all chunks and good enough for "what is
   // this note about".
   const prefixes = normalizeScope(scope);
-  const [vec] = await deps.pipeline.embed([chunks[0]!.text]);
   // Over-fetch so the scope/perm filter still leaves ~k hits.
   const fetchK = prefixes.length > 0 ? k + 50 : k + 5;
-  const hits = await deps.pipeline.search(vec!, fetchK);
+  let hits: SearchHit[];
+  try {
+    const [vec] = await deps.pipeline.embedDocuments([{ path, text: chunks[0]!.text }]);
+    hits = await deps.pipeline.search(vec!, fetchK);
+  } catch (e) {
+    // Related is a side panel: empty beats an error while the embedder is away.
+    if (semanticUnavailable(e)) return [];
+    throw e;
+  }
   const filtered = await filterReadable(deps, hits, prefixes);
   return filtered.filter((h) => h.path !== path).slice(0, k);
 }
@@ -144,6 +203,9 @@ export interface ContextResult {
     score: number;
   }>;
   truncated: boolean;
+  // "keyword" when semantic search was unavailable and keyword search
+  // answered instead.
+  mode?: "semantic" | "keyword";
 }
 
 export async function contextForQuery(
@@ -156,12 +218,17 @@ export async function contextForQuery(
   if (q.trim() === "") return { text: "", sources: [], truncated: false };
 
   const prefixes = normalizeScope(scope);
-  const [vec] = await deps.pipeline.embed([q]);
-  // Over-fetch under a scope so enough in-scope candidates survive the filter.
-  const candidates = await deps.pipeline.search(
-    vec!,
-    prefixes.length > 0 ? 80 : 20,
-  );
+  let candidates: SearchHit[];
+  let mode: "semantic" | "keyword" = "semantic";
+  try {
+    const [vec] = await deps.pipeline.embedQuery([q]);
+    // Over-fetch under a scope so enough in-scope candidates survive the filter.
+    candidates = await deps.pipeline.search(vec!, prefixes.length > 0 ? 80 : 20);
+  } catch (e) {
+    if (!semanticUnavailable(e)) throw e;
+    mode = "keyword";
+    candidates = keywordHits(deps.index, q, 20, prefixes);
+  }
   const readable = await filterReadable(deps, candidates, prefixes);
 
   // Greedy pack ordered by score, dedupe by path (highest-score per path).
@@ -192,7 +259,7 @@ export async function contextForQuery(
     });
     used += tokens;
   }
-  return { text: parts.join("\n"), sources, truncated };
+  return { text: parts.join("\n"), sources, truncated, mode };
 }
 
 // ---------------- semantic outline ----------------
@@ -237,7 +304,9 @@ export async function semanticOutline(
     ];
   }
 
-  const vecs = await deps.pipeline.embed(chunks.map((c) => c.text));
+  const vecs = await semanticOrExplain(() =>
+    deps.pipeline.embedDocuments(chunks.map((c) => ({ path, text: c.text }))),
+  );
 
   // Online clustering: each cluster keeps a centroid; new chunk joins the
   // nearest centroid above threshold or starts a fresh cluster. Simple,
@@ -339,6 +408,7 @@ export async function orphans(
   const noBacklinks = allPaths.filter(
     (p) =>
       (inbound.get(p) ?? 0) === 0 &&
+      !deps.pipeline.isExcluded(p) &&
       mayReadPath(deps, p, map) &&
       inScope(p, prefixes),
   );
@@ -357,11 +427,13 @@ export async function orphans(
   const validIdx = seeds.map((s, i) => (s ? i : -1)).filter((i) => i >= 0);
   if (validIdx.length === 0) return [];
 
-  const vecs = await deps.pipeline.embed(validIdx.map((i) => seeds[i]!));
+  const vecs = await semanticOrExplain(() =>
+    deps.pipeline.embedDocuments(validIdx.map((i) => ({ path: noBacklinks[i]!, text: seeds[i]! }))),
+  );
   const out: OrphanNote[] = [];
   for (let n = 0; n < validIdx.length; n++) {
     const p = noBacklinks[validIdx[n]!]!;
-    const hits = await deps.pipeline.search(vecs[n]!, 5);
+    const hits = await semanticOrExplain(() => deps.pipeline.search(vecs[n]!, 5));
     // Exclude self; the top remaining score is the closest neighbour.
     const others = hits.filter((h) => h.path !== p);
     const topSim = others[0]?.score ?? 0;
@@ -412,6 +484,7 @@ export async function weeklyDigest(
   const map = await permsMap(deps.vault);
   const prefixes = normalizeScope(scope);
   const entries = deps.index.entries().filter((e) => {
+    if (deps.pipeline.isExcluded(e.path)) return false;
     if (!mayReadPath(deps, e.path, map)) return false;
     if (!inScope(e.path, prefixes)) return false;
     return (e.mtime ?? 0) >= cutoff;
@@ -425,7 +498,7 @@ export async function weeklyDigest(
   }
   if (allChunks.length === 0) return [];
 
-  const vecs = await deps.pipeline.embed(allChunks.map((c) => c.text));
+  const vecs = await semanticOrExplain(() => deps.pipeline.embedDocuments(allChunks));
 
   // Same online-clustering pass as outline; aggregate paths instead of lines.
   const clusters: Array<{
@@ -532,7 +605,10 @@ export async function compareNotes(
 
   let cos = 0;
   if (ca.length > 0 && cb.length > 0) {
-    const [va, vb] = await deps.pipeline.embed([ca[0]!.text, cb[0]!.text]);
+    const [va, vb] = await semanticOrExplain(() => deps.pipeline.embedDocuments([
+      { path: a, text: ca[0]!.text },
+      { path: b, text: cb[0]!.text },
+    ]));
     cos = cosine(va!, vb!);
   }
 
@@ -555,9 +631,15 @@ export async function similarTasks(
   assertEnabled(deps);
   if (query.trim() === "") return [];
   const prefixes = normalizeScope(scope);
-  const [vec] = await deps.pipeline.embed([query]);
   const fetchK = prefixes.length > 0 ? k + 50 : k + 5;
-  const hits = await deps.pipeline.searchTasks(vec!, fetchK, filter);
+  let hits: TaskHit[];
+  try {
+    const [vec] = await deps.pipeline.embedQuery([query]);
+    hits = await deps.pipeline.searchTasks(vec!, fetchK, filter);
+  } catch (e) {
+    if (semanticUnavailable(e)) return [];
+    throw e;
+  }
   const filtered = await filterReadable(deps, hits, prefixes);
   return filtered.slice(0, k);
 }

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { VaultIndex } from "../src/index/index";
 import type { Embedder } from "../src/rag/provider";
+import { EmbedderHttpError } from "../src/rag/embedder-openai";
 import { RagPipeline } from "../src/rag/pipeline";
 import { RagStore } from "../src/rag/store";
 import type { ProviderId } from "../src/rag/types";
@@ -142,19 +143,34 @@ describe("vector store follows the disk", () => {
     await reindex;
   });
 
-  test("an embedder failure stops the sync after the first note", async () => {
+  test("an unreachable embedder stops the sync after the first note", async () => {
     for (const p of ["a.md", "b.md", "c.md"]) await writeFile(join(dir, p), `# ${p}\n`);
     let calls = 0;
     (pipeline as unknown as { embedder: Embedder }).embedder = {
       ...new FlatEmbedder(),
       embed: async () => {
         calls++;
-        throw new Error("embedder down");
+        throw new EmbedderHttpError("network error reaching http://x", 0);
       },
     } as unknown as Embedder;
     const r = await pipeline.syncWithDisk();
     expect(r.updated).toEqual([]);
     expect(calls).toBe(1);
+  });
+
+  test("one note the embedder rejects does not block the others", async () => {
+    await writeFile(join(dir, "bad.md"), "# bad\n");
+    await writeFile(join(dir, "good.md"), "# good\n");
+    const flat = new FlatEmbedder();
+    (pipeline as unknown as { embedder: Embedder }).embedder = {
+      ...flat,
+      embed: async (texts: string[]) => {
+        if (texts.some((t) => t.includes("bad"))) throw new EmbedderHttpError("input too long", 400);
+        return flat.embed(texts);
+      },
+    } as unknown as Embedder;
+    const r = await pipeline.syncWithDisk();
+    expect(r.updated).toEqual(["good.md"]);
   });
 
   test("with RAG off the sync touches nothing", async () => {

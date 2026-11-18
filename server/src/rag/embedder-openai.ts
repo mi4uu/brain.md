@@ -1,10 +1,13 @@
-import type { Embedder } from "./provider";
+import type { EmbedOptions, Embedder } from "./provider";
 import type { OpenAICompatProviderConfig } from "./types";
 
 // V49: any OpenAI-compatible /v1/embeddings endpoint. Works against
 // Ollama (http://localhost:11434/v1), LM Studio (http://localhost:1234/v1),
 // OpenAI itself (https://api.openai.com/v1), or anything else that mirrors
 // the request/response shape.
+
+const BATCH = 8;
+const DOCUMENT_TIMEOUT_MS = 180_000;
 
 export class EmbedderHttpError extends Error {
   constructor(
@@ -40,15 +43,28 @@ export class OpenAICompatEmbedder implements Embedder {
     this.modelId = cfg.model;
     this.dim = cfg.dim;
     this.baseURL = normalizeBaseURL(cfg.baseURL);
-    this.apiKey = cfg.apiKey?.trim() || undefined;
+    // An operator-managed key (systemd EnvironmentFile) wins over the one
+    // saved from Settings, so it never has to touch settings.json.
+    this.apiKey = process.env.BRAINMD_EMBED_API_KEY?.trim() || cfg.apiKey?.trim() || undefined;
   }
 
   async ready(): Promise<void> {
     // no warm-up needed; HTTP endpoint is assumed reachable
   }
 
-  async embed(texts: string[]): Promise<Float32Array[]> {
+  async embed(texts: string[], opts: EmbedOptions = {}): Promise<Float32Array[]> {
     if (texts.length === 0) return [];
+    // Small batches: a CPU-only server embeds a 40-chunk note for over a
+    // minute in one request, and one oversized request can hit its context
+    // or the timeout as a whole.
+    const out: Float32Array[] = [];
+    for (let i = 0; i < texts.length; i += BATCH) {
+      out.push(...(await this.embedBatch(texts.slice(i, i + BATCH), opts.timeoutMs ?? DOCUMENT_TIMEOUT_MS)));
+    }
+    return out;
+  }
+
+  private async embedBatch(texts: string[], timeoutMs: number): Promise<Float32Array[]> {
     const headers: Record<string, string> = {
       "content-type": "application/json",
     };
@@ -61,6 +77,7 @@ export class OpenAICompatEmbedder implements Embedder {
         method: "POST",
         headers,
         body: JSON.stringify({ input: texts, model: this.modelId }),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (e) {
       throw new EmbedderHttpError(
@@ -76,7 +93,17 @@ export class OpenAICompatEmbedder implements Embedder {
         body,
       );
     }
-    const json = (await res.json()) as OpenAIEmbeddingsResponse;
+    let json: OpenAIEmbeddingsResponse;
+    try {
+      json = (await res.json()) as OpenAIEmbeddingsResponse;
+    } catch (e) {
+      // Timed out mid-body, or something that isn't the embedder answered
+      // (a proxy's HTML page): treat as unreachable, not as a bad note.
+      throw new EmbedderHttpError(
+        `unreadable embeddings response from ${url}: ${e instanceof Error ? e.message : String(e)}`,
+        0,
+      );
+    }
     if (!json.data || !Array.isArray(json.data)) {
       throw new EmbedderHttpError(
         `malformed embeddings response from ${url} (no data array)`,
@@ -89,7 +116,10 @@ export class OpenAICompatEmbedder implements Embedder {
         res.status,
       );
     }
-    return json.data.map((row, i) => {
+    const rows = json.data.every((r) => typeof r.index === "number")
+      ? [...json.data].sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
+      : json.data;
+    return rows.map((row, i) => {
       const arr =
         row.embedding instanceof Float32Array
           ? new Float32Array(row.embedding)
@@ -103,4 +133,11 @@ export class OpenAICompatEmbedder implements Embedder {
       return arr;
     });
   }
+}
+
+// True when the embedder itself is unreachable or refusing everyone (down,
+// timed out, bad key, overloaded), as opposed to one input it can't take.
+export function isEmbedderUnavailable(e: unknown): boolean {
+  if (!(e instanceof EmbedderHttpError)) return false;
+  return e.status === 0 || e.status === 401 || e.status === 403 || e.status === 429 || e.status >= 500;
 }

@@ -1,7 +1,9 @@
 import type { Vault, MutationEvent } from "../vault/vault";
 import { chunkNote, chunkTasks } from "./chunker";
 import { LocalEmbedderWasm as LocalEmbedder } from "./embedder-local-wasm";
-import { OpenAICompatEmbedder } from "./embedder-openai";
+import { OpenAICompatEmbedder, isEmbedderUnavailable } from "./embedder-openai";
+import { formatDocument, formatQuery, resolveFormat } from "./format";
+import { globMatcher } from "../vault/glob";
 import type { Embedder } from "./provider";
 import { describeProvider } from "./provider";
 import type { RagStore } from "./store";
@@ -23,6 +25,18 @@ function makeEmbedder(cfg: RagConfig): Embedder {
 }
 
 type PendingAction = "write" | "delete";
+
+const QUERY_TIMEOUT_MS = 4000;
+// Per batch of 8 chunks for note-to-note tools (outline, digest, compare):
+// a CPU-only embedder needs seconds per batch.
+const DOCUMENT_QUERY_TIMEOUT_MS = 60_000;
+
+export class EmbedExcludedError extends Error {
+  constructor(public readonly path: string) {
+    super(`${path} is excluded from embedding (Settings, AI / RAG, "Never send to the embedder")`);
+    this.name = "EmbedExcludedError";
+  }
+}
 
 export class RagPipeline {
   private embedder: Embedder;
@@ -91,6 +105,8 @@ export class RagPipeline {
     this.cfg = cfg;
     this.embedder = makeEmbedder(cfg);
     this.store.setExpectedConfig(describeProvider(cfg));
+    // Embedded under the old config; a resumed reindex must redo them.
+    this.syncedMtime.clear();
     // Reset the cached probe error — old failures don't reflect new config.
     this.lastProbeError = null;
   }
@@ -168,23 +184,29 @@ export class RagPipeline {
   }
 
   private async indexOne(rel: string): Promise<void> {
+    if (this.isExcluded(rel)) {
+      // Never sent to the embedder; rows from before the exclusion go.
+      await this.store.deleteByPath(rel);
+      await this.store.deleteTasksByPath(rel);
+      return;
+    }
     const note = await this.vault.readNote(rel);
     const chunks = chunkNote(rel, note.content);
     const tasks = chunkTasks(rel, note.content);
     const desc = describeProvider(this.cfg);
+    const fmt = resolveFormat(this.cfg);
 
-    // Always wipe prior rows for this path so removed content doesn't linger.
+    // Embed body chunks + task texts together so we pay the embedder
+    // warm-up cost once per note. Embed first: if the embedder is down the
+    // note keeps its old rows instead of dropping out of search.
+    const docs = [...chunks.map((c) => c.text), ...tasks.map((t) => t.text)].map((t) =>
+      formatDocument(fmt, rel, t),
+    );
+    const allVectors = docs.length === 0 ? [] : await this.embedder.embed(docs);
+
+    // Wipe prior rows for this path so removed content doesn't linger.
     await this.store.deleteByPath(rel);
     await this.store.deleteTasksByPath(rel);
-
-    // Embed body chunks + task texts in a single batch so we pay the
-    // embedder warm-up cost once per note.
-    const bodyTexts = chunks.map((c) => c.text);
-    const taskTexts = tasks.map((t) => t.text);
-    const allVectors =
-      bodyTexts.length + taskTexts.length === 0
-        ? []
-        : await this.embedder.embed([...bodyTexts, ...taskTexts]);
 
     if (chunks.length > 0) {
       const noteRows: EmbeddedChunk[] = chunks.map((c, i) => ({
@@ -229,15 +251,22 @@ export class RagPipeline {
     // notes it has not reached yet a second time.
     if (!this.cfg.enabled || this.reindexing > 0) return { removed: [], updated: [] };
     await this.store.ensureOpen();
+    if (this.store.isIncompatible()) {
+      // Rows from another model or format are useless; finish (or resume)
+      // the full reindex instead of patching single notes.
+      await this.reindexAll({ resume: true });
+      return { removed: [], updated: [] };
+    }
     const startSeq = this.seq;
     const notes = await this.vault.listAllNotes();
     const onDisk = new Set(notes);
     const stored = await this.store.pathMtimes();
     // A path queued since this sync started is newer than what we saw.
     const untouched = (p: string) => (this.touchedAt.get(p) ?? 0) <= startSeq;
-    const removed = [...stored.keys()].filter((p) => !onDisk.has(p) && untouched(p));
+    const removed = [...stored.keys()].filter((p) => (!onDisk.has(p) || this.isExcluded(p)) && untouched(p));
     const updated: string[] = [];
     for (const p of notes) {
+      if (this.isExcluded(p)) continue;
       const s = await this.vault.stat(p);
       if (!s.exists) continue;
       // Notes with no chunks and no tasks (empty, frontmatter only) leave no
@@ -252,13 +281,14 @@ export class RagPipeline {
         await this.run(p, "write");
         done.push(p);
       } catch (e) {
-        // Usually the embedder is down; the rest would fail the same way.
-        // Stop here and let the next tick retry.
-        console.warn(
-          `[rag] sync stopped at ${p} (${updated.length - done.length} notes left):`,
-          e instanceof Error ? e.message : String(e),
-        );
-        break;
+        const msg = e instanceof Error ? e.message : String(e);
+        if (isEmbedderUnavailable(e)) {
+          // The rest would fail the same way; the next tick retries.
+          console.warn(`[rag] sync stopped at ${p} (${updated.length - done.length} notes left): ${msg}`);
+          break;
+        }
+        // One bad note (too long, unreadable) must not block the others.
+        console.warn(`[rag] sync skipped ${p}: ${msg}`);
       }
     }
     return { removed, updated: done };
@@ -275,7 +305,10 @@ export class RagPipeline {
         exists.set(p, (await this.vault.stat(p)).exists);
       }),
     );
-    for (const p of paths) if (!exists.get(p)) this.run(p, "delete").catch(() => {});
+    for (const p of paths) {
+      if (exists.get(p) && this.isExcluded(p)) exists.set(p, false);
+      if (!exists.get(p)) this.run(p, "delete").catch(() => {});
+    }
     return rows.filter((r) => exists.get(r.path));
   }
 
@@ -287,9 +320,55 @@ export class RagPipeline {
     return this.dropMissing(await this.store.searchTasks(...args));
   }
 
-  // Public encode hook for ad-hoc queries (used by /api/similar).
-  async embed(texts: string[]): Promise<Float32Array[]> {
-    return this.embedder.embed(texts);
+  // Search strings: query template, short timeout so an unreachable
+  // embedder falls back to keyword search fast.
+  async embedQuery(texts: string[]): Promise<Float32Array[]> {
+    const f = resolveFormat(this.cfg);
+    try {
+      return await this.embedder.embed(
+        texts.map((t) => formatQuery(f, t)),
+        { timeoutMs: QUERY_TIMEOUT_MS },
+      );
+    } catch (e) {
+      this.noteUnavailable(e);
+      throw e;
+    }
+  }
+
+  // Searches fall back to keywords quietly; still record why (Settings
+  // banner) and log it now and then, so a wrong key or a dead box is seen.
+  private lastUnavailableLog = 0;
+  private noteUnavailable(e: unknown): void {
+    if (!isEmbedderUnavailable(e)) return;
+    const msg = e instanceof Error ? e.message : String(e);
+    this.lastProbeError = msg;
+    if (Date.now() - this.lastUnavailableLog > 60_000) {
+      this.lastUnavailableLog = Date.now();
+      console.warn(`[rag] embedder unavailable, answering with keyword search: ${msg}`);
+    }
+  }
+
+  // Note text compared with stored chunks (Related, outline, compare,
+  // digest, orphans): same document template the chunks were stored with.
+  async embedDocuments(items: Array<{ path: string; text: string }>): Promise<Float32Array[]> {
+    // Last line of defence for rag.exclude: callers filter first, but no
+    // excluded note's text may reach the embedder through any path.
+    const excluded = items.find((i) => this.isExcluded(i.path));
+    if (excluded) throw new EmbedExcludedError(excluded.path);
+    const f = resolveFormat(this.cfg);
+    try {
+      return await this.embedder.embed(
+        items.map((i) => formatDocument(f, i.path, i.text)),
+        { timeoutMs: DOCUMENT_QUERY_TIMEOUT_MS },
+      );
+    } catch (e) {
+      this.noteUnavailable(e);
+      throw e;
+    }
+  }
+
+  isExcluded(path: string): boolean {
+    return globMatcher(this.cfg.exclude ?? [])(path);
   }
 
   // V59: preflight probe. Used by Settings PATCH on Enable RAG, by
@@ -309,16 +388,19 @@ export class RagPipeline {
     }
   }
 
-  async reindexAll(): Promise<{ indexed: number; skipped: number; durationMs: number }> {
+  // `resume`: skip notes this process already embedded under the current
+  // config and mtime, so a reindex cut short by an unreachable embedder
+  // picks up where it stopped instead of starting over.
+  async reindexAll(opts: { resume?: boolean } = {}): Promise<{ indexed: number; skipped: number; durationMs: number }> {
     this.reindexing++;
     try {
-      return await this.reindexAllInner();
+      return await this.reindexAllInner(opts.resume ?? false);
     } finally {
       this.reindexing--;
     }
   }
 
-  private async reindexAllInner(): Promise<{ indexed: number; skipped: number; durationMs: number }> {
+  private async reindexAllInner(resume: boolean): Promise<{ indexed: number; skipped: number; durationMs: number }> {
     const t0 = Date.now();
     await this.ensureRunning();
     const reindexStartSeq = this.seq;
@@ -326,11 +408,28 @@ export class RagPipeline {
     let indexed = 0;
     let skipped = 0;
     const errors: string[] = [];
-    for (const rel of notes) {
+    for (let n = 0; n < notes.length; n++) {
+      const rel = notes[n]!;
       try {
+        if (resume) {
+          const done = this.syncedMtime.get(rel);
+          if (done !== undefined && done === (await this.vault.stat(rel)).mtime) {
+            indexed++;
+            continue;
+          }
+        }
         await this.indexNote(rel);
         indexed++;
       } catch (e) {
+        if (isEmbedderUnavailable(e)) {
+          // Every remaining note would fail the same way (and a hung
+          // embedder costs a timeout each). Stop; the disk sync resumes.
+          skipped += notes.length - n;
+          const msg = e instanceof Error ? e.message : String(e);
+          this.lastProbeError = msg;
+          console.warn(`[rag] reindex stopped, embedder unavailable (${notes.length - n} notes left): ${msg}`);
+          break;
+        }
         skipped++;
         // V58: surface skip reasons — silent skips made debugging the
         // "Indexed 0 / 17 skipped" failure mode impossible.
