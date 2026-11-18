@@ -52,8 +52,11 @@ import {
   normalizeScope,
   inScope,
   RagDisabledError,
+  semanticUnavailable,
+  keywordHits,
   type RagDeps,
 } from "../rag/queries";
+import { StoreIncompatibleError } from "../rag/store";
 
 // MCP tool annotations. Hosts such as OpenClaw use them for approval modes:
 // read-only tools can run without a prompt while writes still ask. The RAG
@@ -267,35 +270,28 @@ function registerHandlers(
           ],
         };
       }
-      const total = await pipeline.store.countAll().catch(() => 0);
-      if (total === 0) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                error: "index building",
-                indexed: 0,
-                total,
-              }),
-            },
-          ],
-        };
-      }
       const prefixes = normalizeScope(scope);
       const limit = k ?? 5;
-      const [vec] = await pipeline.embed([query]);
       const allowed = await readFilter();
-      // Over-fetch so enough in-scope, permitted hits survive both filters.
-      const needsOverfetch = prefixes.length > 0 || !bypassesFolderPermsForMcp(principal);
-      const raw = await pipeline.search(
-        vec!,
-        needsOverfetch ? limit + 50 : limit,
-      );
-      const hits = raw
-        .filter((h) => inScope(h.path, prefixes))
-        .filter((h) => allowed(h.path))
-        .slice(0, limit);
+      let hits: Array<{ path: string }>;
+      try {
+        const total = await pipeline.store.countAll().catch(() => 0);
+        // Nothing embedded yet (first index still running): keywords.
+        if (total === 0) throw new StoreIncompatibleError("index building");
+        const [vec] = await pipeline.embedQuery([query]);
+        // Over-fetch so enough in-scope, permitted hits survive both filters.
+        const needsOverfetch = prefixes.length > 0 || !bypassesFolderPermsForMcp(principal);
+        const raw = await pipeline.search(vec!, needsOverfetch ? limit + 50 : limit);
+        hits = raw
+          .filter((h) => inScope(h.path, prefixes))
+          .filter((h) => allowed(h.path))
+          .slice(0, limit);
+      } catch (e) {
+        if (!semanticUnavailable(e)) throw e;
+        // Each hit says `"source": "keyword"` so the agent knows these are
+        // keyword matches, not semantic neighbours.
+        hits = keywordHits(index, query, limit, prefixes, allowed);
+      }
       logCall("similar_notes", { query, k, scope }, true);
       return { content: [{ type: "text", text: JSON.stringify(hits) }] };
     },

@@ -1,3 +1,4 @@
+import { formatId, resolveFormat } from "./format";
 import type { RagConfig, ProviderId } from "./types";
 
 // V49: provider abstraction. Concrete implementations in
@@ -12,7 +13,13 @@ export interface Embedder {
   ready(): Promise<void>;
 
   // Batch encode — many providers accept arrays directly for throughput.
-  embed(texts: string[]): Promise<Float32Array[]>;
+  embed(texts: string[], opts?: EmbedOptions): Promise<Float32Array[]>;
+}
+
+export interface EmbedOptions {
+  // Per request. Queries use a short one so a sleeping or unreachable
+  // embedder falls back to keyword search quickly.
+  timeoutMs?: number;
 }
 
 // Factory implemented in pipeline (so this file stays cycle-free).
@@ -21,12 +28,15 @@ export function describeProvider(cfg: RagConfig): {
   modelId: string;
   dim: number;
   endpoint?: string;
+  format: string;
 } {
+  const format = formatId(resolveFormat(cfg));
   if (cfg.provider === "local") {
     return {
       providerId: "local",
       modelId: cfg.local.model,
       dim: cfg.local.dim,
+      format,
     };
   }
   return {
@@ -37,5 +47,6 @@ export function describeProvider(cfg: RagConfig): {
     // embedder; fold the endpoint into the fingerprint used to decide
     // whether existing rows are still comparable.
     endpoint: cfg.openaiCompat.baseURL,
+    format,
   };
 }

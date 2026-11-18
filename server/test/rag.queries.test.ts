@@ -78,8 +78,10 @@ function makeDeps(opts: {
   const searchTasks = opts.searchTasks ?? (async () => []);
   // Queries go through pipeline.search (which drops notes missing on disk,
   // covered in rag.disk-sync.test.ts); here every note exists.
+  const embed = opts.embed ?? (async (texts: string[]) => texts.map(() => makeVec([1, 0, 0])));
   const pipeline = {
-    embed: opts.embed ?? (async (texts: string[]) => texts.map(() => makeVec([1, 0, 0]))),
+    embedQuery: embed,
+    embedDocuments: (items: Array<{ text: string }>) => embed(items.map((i) => i.text)),
     search,
     searchTasks,
     store: { search, searchTasks },

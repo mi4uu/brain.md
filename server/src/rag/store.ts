@@ -21,6 +21,8 @@ import type {
   TaskHit,
 } from "./types";
 
+export class StoreIncompatibleError extends Error {}
+
 export type TaskDoneFilter = "open" | "done" | "all";
 
 // Internal persisted shape — Float32Array doesn't JSON-serialise, so
@@ -55,6 +57,8 @@ interface StoreFile {
   providerId?: ProviderId;
   modelId?: string;
   endpoint?: string;
+  // Query/document templates the rows were embedded with (rag/format.ts).
+  format?: string;
   incompatible?: boolean;
   notes: NoteRowDisk[];
   tasks: TaskRowDisk[];
@@ -70,6 +74,8 @@ export interface EmbeddingConfig {
   // queries compare vectors from two different embedders as if they were
   // compatible.
   endpoint?: string;
+  // Prompt templates; undefined for stores written before 0.8.0.
+  format?: string;
 }
 
 function chunkToDisk(r: EmbeddedChunk): NoteRowDisk {
@@ -149,7 +155,8 @@ export class RagStore {
       (prev.providerId !== cfg.providerId ||
         prev.modelId !== cfg.modelId ||
         prev.dim !== cfg.dim ||
-        prev.endpoint !== cfg.endpoint)
+        prev.endpoint !== cfg.endpoint ||
+        prev.format !== cfg.format)
     ) {
       this.incompatible = true;
       // Persist immediately: this flag is the only record that the rows
@@ -158,6 +165,12 @@ export class RagStore {
       // before any write happens.
       if (this.opened) this.scheduleWrite();
     }
+  }
+
+  // True when the rows were embedded under another provider, model,
+  // endpoint or prompt format than the one configured now.
+  isIncompatible(): boolean {
+    return this.incompatible;
   }
 
   getExpectedConfig(): EmbeddingConfig | null {
@@ -177,7 +190,7 @@ export class RagStore {
   // comparing incompatible vectors (NaN scores) or mixing old and new rows.
   checkQueryable(): void {
     if (this.incompatible) {
-      throw new Error(
+      throw new StoreIncompatibleError(
         "RAG index was embedded with a different provider/model than is now configured; run a full reindex before querying.",
       );
     }
@@ -211,6 +224,7 @@ export class RagStore {
               modelId: raw.modelId,
               dim: raw.dim,
               endpoint: raw.endpoint,
+              format: raw.format,
             };
           }
           // Without persisting this, a restart forgets that rows were left
@@ -252,6 +266,7 @@ export class RagStore {
       providerId: this.expectedConfig?.providerId,
       modelId: this.expectedConfig?.modelId,
       endpoint: this.expectedConfig?.endpoint,
+      format: this.expectedConfig?.format,
       incompatible: this.incompatible,
       notes: [...this.notes.values()],
       tasks: [...this.tasks.values()],

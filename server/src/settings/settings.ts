@@ -117,6 +117,11 @@ function mergeRag(cur: RagConfig, patch?: Partial<RagConfig>): RagConfig {
           ? patch.openaiCompat.dim
           : cur.openaiCompat.dim,
     },
+    queryTemplate: typeof patch.queryTemplate === "string" ? patch.queryTemplate : cur.queryTemplate,
+    documentTemplate: typeof patch.documentTemplate === "string" ? patch.documentTemplate : cur.documentTemplate,
+    exclude: Array.isArray(patch.exclude)
+      ? patch.exclude.filter((g): g is string => typeof g === "string" && g.trim() !== "")
+      : (cur.exclude ?? DEFAULT_RAG_CONFIG.exclude),
   };
 }
 
