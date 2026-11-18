@@ -129,6 +129,34 @@ describe("vector store follows the disk", () => {
     expect(index.backlinks("target.md")).toEqual([]);
   });
 
+  test("an empty or frontmatter-only note is not re-synced on every tick", async () => {
+    await addNote("empty.md", "");
+    await addNote("fm.md", "---\ntags: [x]\n---\n");
+    expect(await pipeline.syncWithDisk()).toEqual({ removed: [], updated: [] });
+  });
+
+  test("no sync while a full reindex runs", async () => {
+    await vault.writeNote("a.md", "# A\n");
+    const reindex = pipeline.reindexAll();
+    expect(await pipeline.syncWithDisk()).toEqual({ removed: [], updated: [] });
+    await reindex;
+  });
+
+  test("an embedder failure stops the sync after the first note", async () => {
+    for (const p of ["a.md", "b.md", "c.md"]) await writeFile(join(dir, p), `# ${p}\n`);
+    let calls = 0;
+    (pipeline as unknown as { embedder: Embedder }).embedder = {
+      ...new FlatEmbedder(),
+      embed: async () => {
+        calls++;
+        throw new Error("embedder down");
+      },
+    } as Embedder;
+    const r = await pipeline.syncWithDisk();
+    expect(r.updated).toEqual([]);
+    expect(calls).toBe(1);
+  });
+
   test("with RAG off the sync touches nothing", async () => {
     await addNote("x.md", "# X\n");
     pipeline.applyConfig({ ...DEFAULT_RAG_CONFIG, enabled: false });

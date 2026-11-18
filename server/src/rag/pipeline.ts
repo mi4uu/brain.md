@@ -57,6 +57,10 @@ export class RagPipeline {
     this.store.setExpectedConfig(describeProvider(cfg));
   }
 
+  // Last mtime each note was embedded at, rows or not (see syncWithDisk).
+  private readonly syncedMtime = new Map<string, number>();
+  private reindexing = 0;
+
   start(): void {
     if (this.unsubscribe) return;
     this.unsubscribe = this.vault.onMutation((e) => {
@@ -153,6 +157,7 @@ export class RagPipeline {
     if (action === "delete") {
       await this.store.deleteByPath(path);
       await this.store.deleteTasksByPath(path);
+      this.syncedMtime.delete(path);
       return;
     }
     await this.indexOne(path);
@@ -206,6 +211,7 @@ export class RagPipeline {
       await this.store.upsertTasks(taskRows);
     }
 
+    this.syncedMtime.set(rel, note.mtime);
     this.lastIndexedAt = Date.now();
   }
 
@@ -219,7 +225,9 @@ export class RagPipeline {
   // since they were indexed. Mutation events only cover changes made
   // through brain.md, so this runs at startup and on a timer.
   async syncWithDisk(): Promise<{ removed: string[]; updated: string[] }> {
-    if (!this.cfg.enabled) return { removed: [], updated: [] };
+    // A full reindex covers everything; syncing alongside it would embed the
+    // notes it has not reached yet a second time.
+    if (!this.cfg.enabled || this.reindexing > 0) return { removed: [], updated: [] };
     await this.store.ensureOpen();
     const startSeq = this.seq;
     const notes = await this.vault.listAllNotes();
@@ -232,18 +240,28 @@ export class RagPipeline {
     for (const p of notes) {
       const s = await this.vault.stat(p);
       if (!s.exists) continue;
-      const indexed = stored.get(p);
-      if ((indexed === undefined || s.mtime > indexed) && untouched(p)) updated.push(p);
+      // Notes with no chunks and no tasks (empty, frontmatter only) leave no
+      // rows, so the mtime of the last successful pass counts too.
+      const seen = Math.max(stored.get(p) ?? -1, this.syncedMtime.get(p) ?? -1);
+      if ((seen < 0 || s.mtime > seen) && untouched(p)) updated.push(p);
     }
     await Promise.all(removed.map((p) => this.run(p, "delete")));
+    const done: string[] = [];
     for (const p of updated) {
       try {
         await this.run(p, "write");
+        done.push(p);
       } catch (e) {
-        console.warn(`[rag] sync ${p} failed:`, e instanceof Error ? e.message : String(e));
+        // Usually the embedder is down; the rest would fail the same way.
+        // Stop here and let the next tick retry.
+        console.warn(
+          `[rag] sync stopped at ${p} (${updated.length - done.length} notes left):`,
+          e instanceof Error ? e.message : String(e),
+        );
+        break;
       }
     }
-    return { removed, updated };
+    return { removed, updated: done };
   }
 
   // Search results whose note no longer exists on disk are dropped, and the
@@ -292,6 +310,15 @@ export class RagPipeline {
   }
 
   async reindexAll(): Promise<{ indexed: number; skipped: number; durationMs: number }> {
+    this.reindexing++;
+    try {
+      return await this.reindexAllInner();
+    } finally {
+      this.reindexing--;
+    }
+  }
+
+  private async reindexAllInner(): Promise<{ indexed: number; skipped: number; durationMs: number }> {
     const t0 = Date.now();
     await this.ensureRunning();
     const reindexStartSeq = this.seq;
