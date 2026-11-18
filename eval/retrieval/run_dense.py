@@ -40,7 +40,8 @@ def enc(texts, prefix, batch=8):
     return model.encode(texts, batch_size=batch, normalize_embeddings=True, convert_to_numpy=True, **kw)
 
 os.makedirs("cache", exist_ok=True)
-cache = f"cache/{name}-{e.chunks_key(chunks, dp)}.npy"
+key = e.chunks_key(chunks, dp, "%s@%s" % (repo, PIN.get(repo)))
+cache = f"cache/{name}-{key}.npy"
 t0 = time.time()
 try:
     D = np.load(cache)
@@ -66,9 +67,9 @@ for q in golden:
     scores = D @ qv
     rankings[q["id"]] = e.doc_ranking(chunks, scores.tolist())
 json.dump({
-    "name": name, "repo": repo, "revision": PIN.get(repo), "query_prefix": qp, "doc_prefix": dp,
+    "name": name + TAG, "repo": repo, "revision": PIN.get(repo), "query_prefix": qp, "doc_prefix": dp,
     "load_s": round(load_s, 1), "index_s": None if index_s is None else round(index_s, 1),
-    "query_ms_p50": round(statistics.median(lat), 1), "query_ms_p95": round(sorted(lat)[int(len(lat) * 0.95) - 1], 1),
+    "query_ms_p50": round(statistics.median(lat), 1), "query_ms_p95": round(e.p95(lat), 1),
     "rss_peak_mb": e.peak_rss_mb(),
     "rankings": rankings,
     "device": DEVICE, "chunks_per_s": throughput, "threads": torch.get_num_threads(),

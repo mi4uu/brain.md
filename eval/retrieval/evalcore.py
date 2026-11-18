@@ -1,11 +1,12 @@
 """Shared pieces of the brain.md retrieval eval: data, BM25, fusion, metrics."""
-import hashlib, json, math, re, resource, sys
+import hashlib, json, math, re, sys
 from collections import Counter, defaultdict
 
 def load_chunks(path="chunks.jsonl"):
     out = []
     for line in open(path):
         c = json.loads(line)
+        c["path"] = c["path"].replace("\\", "/")
         if "/secrets/" in "/" + c["path"] or c["path"].startswith(".brain/"):
             continue
         title = c["path"].rsplit("/", 1)[-1].removesuffix(".md")
@@ -13,14 +14,27 @@ def load_chunks(path="chunks.jsonl"):
         out.append(c)
     return out
 
-def chunks_key(chunks, prefix=""):
-    """Cache key for an embedding matrix: changes when the chunk set or the document prefix changes."""
-    h = hashlib.sha1(prefix.encode())
+def chunks_key(chunks, prefix="", model=""):
+    """Cache key for an embedding matrix: changes with the model artifact, the document prefix or the chunk set."""
+    h = hashlib.sha1(f"{model}\0{prefix}".encode())
     for c in chunks:
         h.update(c["passage"].encode())
     return h.hexdigest()[:12]
 
+def p95(values):
+    """Nearest-rank 95th percentile."""
+    v = sorted(values)
+    return round(v[math.ceil(0.95 * len(v)) - 1], 1)
+
+def free_port():
+    import socket
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
 def peak_rss_mb():
+    import resource
+
     # ru_maxrss is bytes on macOS and KiB on Linux.
     r = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     return round(r / (1024 * 1024 if sys.platform == "darwin" else 1024))
@@ -57,14 +71,19 @@ class BM25:
             out.append(s)
         return out
 
-def doc_ranking(chunks, chunk_scores, k=50):
-    """Note score = best chunk score; returns [(path, score, best_chunk_idx)] sorted."""
+def doc_ranking(chunks, chunk_scores, k=50, positive_only=False):
+    """Note score = best chunk score; returns [(path, score, best_chunk_idx)] sorted.
+
+    positive_only drops notes with no lexical match (BM25); cosine scores keep every note.
+    """
     best = {}
     for i, (c, s) in enumerate(zip(chunks, chunk_scores)):
         if c["path"] not in best or s > best[c["path"]][0]:
             best[c["path"]] = (s, i)
     ranked = sorted(best.items(), key=lambda kv: -kv[1][0])
-    return [(p, s, i) for p, (s, i) in ranked[:k] if s > 0]
+    if positive_only:
+        ranked = [kv for kv in ranked if kv[1][0] > 0]
+    return [(p, s, i) for p, (s, i) in ranked[:k]]
 
 def rrf(*rankings, k=60, top=50):
     score = defaultdict(float)

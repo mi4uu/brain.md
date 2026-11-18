@@ -5,7 +5,7 @@ import evalcore as e
 LLAMA = os.environ.get("LLAMA_SERVER", "llama-server")
 THREADS = os.environ.get("THREADS", "4")
 name, gguf, qp, dp = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
-PORT = 8781
+PORT = e.free_port()
 
 def embed(texts):
     req = urllib.request.Request(f"http://127.0.0.1:{PORT}/v1/embeddings", data=json.dumps({"input": texts}).encode(),
@@ -45,7 +45,7 @@ try:
         embed(texts[i:i + 8])
     full_s = time.perf_counter() - t
     out = {"name": name, "threads": int(THREADS), "query_ms_p50": round(statistics.median(lat), 1),
-           "query_ms_p95": round(sorted(lat)[int(len(lat) * 0.95) - 1], 1), "rss_mb_after_queries": rss_query,
+           "query_ms_p95": round(e.p95(lat), 1), "rss_mb_after_queries": rss_query,
            "rss_mb_peak": rss(p.pid), "notes": len(per_note), "chunks": len(chunks),
            "median_note_chunks": median_n, "median_note_s": round(note_s, 2),
            "largest_note_chunks": len(big), "largest_note_s": round(big_s, 1),

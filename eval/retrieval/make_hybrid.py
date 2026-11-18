@@ -4,7 +4,7 @@ import evalcore as e
 chunks = e.load_chunks()
 golden = e.load_golden()
 bm = e.BM25(chunks)
-bm_rank = {q["id"]: e.doc_ranking(chunks, bm.chunk_scores(q["q"])) for q in golden}
+bm_rank = {q["id"]: e.doc_ranking(chunks, bm.chunk_scores(q["q"]), positive_only=True) for q in golden}
 json.dump({"name": "bm25", "rankings": bm_rank}, open("results/bm25.json", "w"))
 for f in sorted(glob.glob("results/dense-*.json")) + glob.glob("results/brainmd-similar.json"):
     d = json.load(open(f))

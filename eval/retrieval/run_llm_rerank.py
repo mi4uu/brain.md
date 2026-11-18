@@ -55,7 +55,7 @@ def main():
         order = sorted(zip(top, scores), key=lambda x: -x[1])
         rankings[qid] = [[p, s, ci] for (p, _o, ci), s in order] + ranked[TOP:]
     json.dump({"name": f"{base}+llm-{model}", "model": model, "where": "llm",
-               "rerank20_ms_p50": round(statistics.median(lat)), "rerank20_ms_p95": round(sorted(lat)[int(len(lat) * 0.95) - 1]),
+               "rerank20_ms_p50": round(statistics.median(lat)), "rerank20_ms_p95": round(e.p95(lat)),
                "rankings": rankings}, open(f"results/rerank-{base}+llm-{model}.json", "w"))
     print(model, "done", round(statistics.median(lat)))
 

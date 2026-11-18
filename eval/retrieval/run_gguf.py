@@ -31,35 +31,38 @@ def embed(port, texts):
 
 chunks, golden = e.load_chunks(), e.load_golden()
 os.makedirs("cache", exist_ok=True)
-cache = f"cache/gguf-{name}-{e.chunks_key(chunks, dp)}.npy"
+key = e.chunks_key(chunks, dp, "%s:%d" % (os.path.basename(gguf), os.path.getsize(gguf)))
+cache = f"cache/gguf-{name}-{key}.npy"
 if os.path.exists(cache):
     D = np.load(cache)
 else:
-    p = serve(8771, ["-ngl", "99"])
+    gpu_port = e.free_port()
+    p = serve(gpu_port, ["-ngl", "99"])
     try:
-        D = np.concatenate([embed(8771, [dp + c["passage"] for c in chunks[i:i + 16]]) for i in range(0, len(chunks), 16)])
+        D = np.concatenate([embed(gpu_port, [dp + c["passage"] for c in chunks[i:i + 16]]) for i in range(0, len(chunks), 16)])
     finally:
         p.kill(); p.wait()
     np.save(cache, D)
 
-p = serve(8772, ["-ngl", "0", "-t", "1", "-tb", "1"], pin=CORE)
+cpu_port = e.free_port()
+p = serve(cpu_port, ["-ngl", "0", "-t", "1", "-tb", "1"], pin=CORE)
 try:
-    embed(8772, [qp + "warm up"])
+    embed(cpu_port, [qp + "warm up"])
     rankings, lat = {}, []
     for q in golden:
         t = time.perf_counter()
-        qv = embed(8772, [qp + q["q"]])[0]
+        qv = embed(cpu_port, [qp + q["q"]])[0]
         lat.append((time.perf_counter() - t) * 1000)
         rankings[q["id"]] = e.doc_ranking(chunks, (D @ qv).tolist())
     sample = [dp + c["passage"] for c in chunks[:40]]
     t = time.time()
     for i in range(0, len(sample), 4):
-        embed(8772, sample[i:i + 4])
+        embed(cpu_port, sample[i:i + 4])
     cps = round(len(sample) / (time.time() - t), 2)
     rss = int(next(l for l in open(f"/proc/{p.pid}/status") if l.startswith("VmHWM")).split()[1]) // 1024
 finally:
     p.kill(); p.wait()
 json.dump({"name": f"gguf-{name}", "gguf": os.path.basename(gguf), "query_ms_p50": round(statistics.median(lat), 1),
-           "query_ms_p95": round(sorted(lat)[int(len(lat) * 0.95) - 1], 1), "rss_peak_mb": rss, "chunks_per_s": cps,
+           "query_ms_p95": round(e.p95(lat), 1), "rss_peak_mb": rss, "chunks_per_s": cps,
            "device": "cpu-1thread", "rankings": rankings}, open(f"results/gguf-{name}.json", "w"))
 print(name, "p50", round(statistics.median(lat), 1), "rss", rss, "cps", cps)

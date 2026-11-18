@@ -37,8 +37,8 @@ for qid, ranked in base_rank.items():
     order = sorted(zip(top, scores.tolist()), key=lambda x: -x[1])
     rankings[qid] = [[p, s, ci] for (p, _old, ci), s in order] + ranked[TOP:]
 json.dump({
-    "name": f"{base}+{name}" + ("-lat" if LIMIT else ""), "repo": repo, "revision": PIN.get(repo), "load_s": round(load_s, 1),
-    "rerank20_ms_p50": round(statistics.median(lat)), "rerank20_ms_p95": round(sorted(lat)[int(len(lat) * 0.95) - 1]),
+    "name": f"{base}+{name}" + ("" if DEVICE == "cpu" else "-" + DEVICE) + ("-lat" if LIMIT else ""), "repo": repo, "revision": PIN.get(repo), "load_s": round(load_s, 1),
+    "rerank20_ms_p50": round(statistics.median(lat)), "rerank20_ms_p95": round(e.p95(lat)),
     "rss_peak_mb": e.peak_rss_mb(),
     "rankings": rankings, "device": DEVICE, "queries": len(rankings),
 }, open(f"results/rerank-{base}+{name}{'' if DEVICE == 'cpu' else '-' + DEVICE}{'-lat' if LIMIT else ''}.json", "w"))
