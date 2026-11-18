@@ -13,6 +13,8 @@ import { CommandBar } from "./components/CommandBar";
 import { Outline } from "./components/Outline";
 import { Settings } from "./components/Settings";
 import { TasksView } from "./components/TasksView";
+import { GraphView } from "./components/GraphView";
+import { LocalGraph } from "./components/LocalGraph";
 import { TrashView } from "./components/TrashView";
 import { EditorToolbar } from "./components/EditorToolbar";
 import { HistoryPanel } from "./components/HistoryPanel";
@@ -35,6 +37,7 @@ import {
   ColumnsIcon,
   TagIcon,
   CheckSquareIcon,
+  GraphIcon,
   TrashIcon,
   HistoryIcon,
   GitCommitIcon,
@@ -83,6 +86,7 @@ import "./styles/preview.css";
 import "./styles/panels.css";
 import "./styles/toolbar.css";
 import "./styles/history.css";
+import "./styles/graph.css";
 import "./styles/hljs.css";
 import "katex/dist/katex.min.css";
 
@@ -156,6 +160,7 @@ export function App() {
   const dailyDir = settings.dailyDir;
   const [showSettings, setShowSettings] = useState(false);
   const [showTasks, setShowTasks] = useState(false);
+  const [showGraph, setShowGraph] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
@@ -985,6 +990,9 @@ export function App() {
         <IconBtn label="Tasks" onClick={() => setShowTasks(true)}>
           <CheckSquareIcon />
         </IconBtn>
+        <IconBtn label="Graph" onClick={() => setShowGraph(true)}>
+          <GraphIcon />
+        </IconBtn>
         <IconBtn label="Trash" onClick={() => setShowTrash(true)}>
           <TrashIcon />
         </IconBtn>
@@ -1122,6 +1130,17 @@ export function App() {
                   <Backlinks items={backlinks} onOpen={openNote} />
                 ) : (
                   <p className="sidebar-empty">Open a note to see backlinks.</p>
+                )}
+              </AccordionContent>
+            </AccordionItem>
+
+            <AccordionItem value="graph" className="sidebar-item">
+              <AccordionTrigger className="sidebar-trigger">Graph</AccordionTrigger>
+              <AccordionContent className="sidebar-body">
+                {path ? (
+                  <LocalGraph path={path} onOpen={openNote} onExpand={() => setShowGraph(true)} />
+                ) : (
+                  <p className="sidebar-empty">Open a note to see its graph.</p>
                 )}
               </AccordionContent>
             </AccordionItem>
@@ -1277,6 +1296,10 @@ export function App() {
             setShowTasks(false);
           }}
         />
+      ) : null}
+
+      {showGraph ? (
+        <GraphView currentPath={path} onOpen={(p) => void openNote(p)} onClose={() => setShowGraph(false)} />
       ) : null}
 
       {showTrash ? (

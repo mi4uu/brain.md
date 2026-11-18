@@ -9,6 +9,8 @@ import type {
   WriteNoteResult,
 } from "./types";
 
+import type { GraphInput } from "../graph/engine";
+
 const BASE = "";
 
 // Thrown by writeNote on a 409 from the server: someone else (another tab,
@@ -90,6 +92,9 @@ export const api = {
     return jsonOrThrow(
       await fetch(`${BASE}/api/backlinks/${encodePath(path)}`),
     );
+  },
+  async graph(): Promise<GraphInput> {
+    return jsonOrThrow(await fetch(`${BASE}/api/graph`));
   },
   async resolve(name: string): Promise<ResolveResult> {
     return jsonOrThrow(

@@ -94,6 +94,20 @@
   --cm-comment: #6b7280;
   --cm-meta: #6b7280;
   --cm-invalid: #dc2626;
+  --graph-bg: var(--bg-surface);
+  --graph-edge: rgba(60, 60, 80, 0.16);
+  --graph-edge-hi: rgba(110, 86, 207, 0.85);
+  --graph-text: #2a2a2e;
+  --graph-text-dim: rgba(60, 60, 70, 0.45);
+  --graph-focus: #6e56cf;
+  --graph-1: #6e56cf;
+  --graph-2: #0d9488;
+  --graph-3: #d97706;
+  --graph-4: #e11d48;
+  --graph-5: #0284c7;
+  --graph-6: #65a30d;
+  --graph-7: #c026d3;
+  --graph-8: #ea580c;
 }
 
 :root[data-theme="dark"] {
@@ -145,6 +159,20 @@
   --cm-meta: #9ca3af;
   --cm-invalid: #f87171;
   --callout-quote: #94a3b8;
+  --graph-bg: var(--bg-surface);
+  --graph-edge: rgba(200, 200, 230, 0.13);
+  --graph-edge-hi: rgba(167, 139, 250, 0.9);
+  --graph-text: #e6e6ea;
+  --graph-text-dim: rgba(200, 200, 210, 0.4);
+  --graph-focus: #c4b5fd;
+  --graph-1: #a78bfa;
+  --graph-2: #2dd4bf;
+  --graph-3: #fbbf24;
+  --graph-4: #fb7185;
+  --graph-5: #38bdf8;
+  --graph-6: #a3e635;
+  --graph-7: #e879f9;
+  --graph-8: #fb923c;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -195,5 +223,19 @@
     --cm-comment: #6b7280;
     --cm-meta: #9ca3af;
     --cm-invalid: #f87171;
+    --graph-bg: var(--bg-surface);
+    --graph-edge: rgba(200, 200, 230, 0.13);
+    --graph-edge-hi: rgba(167, 139, 250, 0.9);
+    --graph-text: #e6e6ea;
+    --graph-text-dim: rgba(200, 200, 210, 0.4);
+    --graph-focus: #c4b5fd;
+    --graph-1: #a78bfa;
+    --graph-2: #2dd4bf;
+    --graph-3: #fbbf24;
+    --graph-4: #fb7185;
+    --graph-5: #38bdf8;
+    --graph-6: #a3e635;
+    --graph-7: #e879f9;
+    --graph-8: #fb923c;
   }
 }

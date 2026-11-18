@@ -11,7 +11,7 @@
     },
     "server": {
       "name": "@brain/server",
-      "version": "0.5.1",
+      "version": "0.6.0",
       "dependencies": {
         "@elysiajs/cors": "^1.4.3",
         "@lancedb/lancedb": "^0.20.0",
@@ -33,7 +33,7 @@
     },
     "web": {
       "name": "@brain/web",
-      "version": "0.5.1",
+      "version": "0.6.0",
       "dependencies": {
         "@codemirror/autocomplete": "^6.18.3",
         "@codemirror/commands": "^6.7.1",
@@ -63,6 +63,8 @@
         "clsx": "^2.1.1",
         "cmdk": "^1.0.4",
         "codemirror": "^6.0.1",
+        "d3-force": "3",
+        "d3-quadtree": "3",
         "hast-util-sanitize": "^5.0.2",
         "highlight.js": "^11.10.0",
         "katex": "^0.16.11",
@@ -86,6 +88,8 @@
         "yaml": "^2.6.0",
       },
       "devDependencies": {
+        "@types/d3-force": "3",
+        "@types/d3-quadtree": "3",
         "@types/hast": "^3.0.4",
         "@types/katex": "^0.16.7",
         "@types/mdast": "^4.0.4",

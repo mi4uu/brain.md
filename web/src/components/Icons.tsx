@@ -159,6 +159,19 @@ export function CheckSquareIcon(p: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function GraphIcon(p: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...baseProps} {...p}>
+      <circle cx="6" cy="6" r="2.5" />
+      <circle cx="18" cy="8" r="2.5" />
+      <circle cx="9" cy="18" r="2.5" />
+      <line x1="8.2" y1="7" x2="15.6" y2="7.8" />
+      <line x1="7" y1="8.3" x2="8.4" y2="15.6" />
+      <line x1="11.1" y1="16.8" x2="16.3" y2="9.9" />
+    </svg>
+  );
+}
+
 export function TagIcon(p: SVGProps<SVGSVGElement>) {
   return (
     <svg {...baseProps} {...p}>
