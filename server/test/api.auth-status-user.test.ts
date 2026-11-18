@@ -46,6 +46,12 @@ describe("GET /api/auth/status reports who is signed in", () => {
     expect(r.json.user).toBeUndefined();
   });
 
+  test("unknown bearer: not authenticated, no user", async () => {
+    const r = await call("GET", "/api/auth/status", undefined, "not-a-real-token");
+    expect(r.json.authenticated).toBe(false);
+    expect(r.json.user).toBeUndefined();
+  });
+
   test("external login token: method idp with the email", async () => {
     const { token } = handle.tokenStore.issue("github:42", { name: "Bob", email: "bob@example.com" });
     const r = await call("GET", "/api/auth/status", undefined, token);
@@ -71,5 +77,14 @@ describe("GET /api/auth/status reports who is signed in", () => {
       new Request("http://localhost/api/tree", { headers: { authorization: `Bearer ${token}` } }),
     );
     expect(tree.status).toBe(401);
+  });
+});
+
+describe("GET /api/auth/status with auth off", () => {
+  test("authenticated without a token, and no user", async () => {
+    const open = createApp({ vaultDir: dir, gitAutocommit: false });
+    const res = await open.app.handle(new Request("http://localhost/api/auth/status"));
+    const body = await res.json();
+    expect(body).toEqual({ configured: false, authenticated: true });
   });
 });

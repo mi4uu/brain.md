@@ -108,6 +108,7 @@ const MOD_KEY = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘" : "Ctrl+";
 export function App() {
   const { theme, setTheme, resolved } = useTheme();
   const auth = useAuth();
+  const refreshAuth = auth.refresh;
   const isMobile = useMediaQuery("(max-width: 840px)");
   const [tree, setTree] = useState<TreeData>({ folders: [], notes: [] });
   const [path, setPath] = useState<string | null>(null);
@@ -336,8 +337,10 @@ export function App() {
       setTree(t);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      // Signed out: the login dialog already says so.
-      if (!msg.startsWith("401")) setToast(`Load failed: ${msg}`);
+      // Signed out or the session expired: re-check auth so the login
+      // dialog opens instead of a toast over an empty tree.
+      if (msg.startsWith("401")) void refreshAuth();
+      else setToast(`Load failed: ${msg}`);
     }
     try {
       const r = await fetch("/api/tags");
@@ -349,7 +352,7 @@ export function App() {
     } catch {
       // tags optional; silent fail
     }
-  }, []);
+  }, [refreshAuth]);
 
   const refreshAliases = useCallback(async () => {
     try {
