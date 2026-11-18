@@ -109,6 +109,7 @@ function titleOf(path: string): string {
 function renderDoc(note: Note, data: ViewData | null): HTMLElement {
   const list = notes;
   const { html } = renderMarkdown(note.content, {
+    currentPath: note.path,
     resolveWikilink: (target) =>
       data && linkKey(target) in data.links ? (data.links[linkKey(target)] ?? null) : resolveWikilinkIn(list, target),
     isMediaTarget: () => false,
@@ -227,7 +228,10 @@ root.addEventListener("click", (e) => {
     e.preventDefault();
     const resolved = a.getAttribute("data-resolved");
     const target = a.getAttribute("data-wikilink");
-    if (resolved && known.has(resolved)) void open(resolved, true);
+    const fragment = (a.getAttribute("href") ?? "").split("#")[2];
+    if (resolved && resolved === current) {
+      if (fragment) document.getElementById(decodeURIComponent(fragment))?.scrollIntoView({ block: "start" });
+    } else if (resolved && known.has(resolved)) void open(resolved, true);
     else if (target) void openTarget(target);
     return;
   }
