@@ -29,6 +29,7 @@ import {
   PlusIcon,
   SearchIcon,
   SettingsIcon,
+  LogOutIcon,
   StarIcon,
   SunIcon,
   CalendarIcon,
@@ -69,6 +70,8 @@ import {
 import { validateBasename } from "./lib/validate";
 import { extractTagsFromMd, insertFrontmatterTag } from "./lib/tags";
 import { useAuth } from "./hooks/useAuth";
+import { signedInAs } from "./auth/api";
+import { LinkResolver } from "./lib/link-resolve";
 import { LoginDialog } from "./components/LoginDialog";
 import { FolderPermsDialog } from "./components/FolderPermsDialog";
 import { AboutDialog } from "./components/AboutDialog";
@@ -106,6 +109,7 @@ const MOD_KEY = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘" : "Ctrl+";
 export function App() {
   const { theme, setTheme, resolved } = useTheme();
   const auth = useAuth();
+  const refreshAuth = auth.refresh;
   const isMobile = useMediaQuery("(max-width: 840px)");
   const [tree, setTree] = useState<TreeData>({ folders: [], notes: [] });
   const [path, setPath] = useState<string | null>(null);
@@ -300,32 +304,26 @@ export function App() {
     return m;
   }, [tree.notes]);
 
+  // Same resolver as the server's backlinks and graph, so a click lands
+  // where the backlinks panel says the link points.
+  const linkResolver = useMemo(() => {
+    const aliasesOf = new Map<string, string[]>();
+    for (const [alias, paths] of Object.entries(aliasMap)) {
+      for (const p of paths) aliasesOf.set(p, [...(aliasesOf.get(p) ?? []), alias]);
+    }
+    return new LinkResolver(
+      tree.notes.map((p) => ({
+        path: p,
+        basenameLower: (p.split("/").pop() ?? p).replace(/\.md$/i, "").toLowerCase(),
+        aliases: aliasesOf.get(p) ?? [],
+      })),
+    );
+  }, [tree.notes, aliasMap]);
+
   const resolveWikilink = useCallback(
-    (target: string): string | null => {
-      if (!target) return null;
-      const trimmed = target.trim();
-      const stripped = trimmed.replace(/\.md$/i, "");
-      // 1. exact path match (full path)
-      if (stripped.includes("/")) {
-        const candidate = `${stripped}.md`;
-        const lower = candidate.toLowerCase();
-        for (const p of tree.notes) {
-          if (p === candidate) return p;
-          if (p.toLowerCase() === lower) return p;
-        }
-      }
-      // 2. basename match (first wins for ambiguous)
-      const lower = stripped.toLowerCase();
-      for (const p of tree.notes) {
-        const base = (p.split("/").pop() ?? p).replace(/\.md$/, "").toLowerCase();
-        if (base === lower) return p;
-      }
-      // 3. alias from frontmatter
-      const aliasHits = aliasMap[lower];
-      if (aliasHits && aliasHits.length > 0) return aliasHits[0] ?? null;
-      return null;
-    },
-    [tree.notes, aliasMap],
+    (target: string, fromPath?: string): string | null =>
+      target ? (linkResolver.resolve(fromPath ?? path ?? "", target) ?? null) : null,
+    [linkResolver, path],
   );
 
   const refreshTree = useCallback(async () => {
@@ -333,7 +331,11 @@ export function App() {
       const t = await api.tree();
       setTree(t);
     } catch (e) {
-      setToast(`Load failed: ${e instanceof Error ? e.message : String(e)}`);
+      const msg = e instanceof Error ? e.message : String(e);
+      // Signed out or the session expired: re-check auth so the login
+      // dialog opens instead of a toast over an empty tree.
+      if (msg.startsWith("401")) void refreshAuth();
+      else setToast(`Load failed: ${msg}`);
     }
     try {
       const r = await fetch("/api/tags");
@@ -345,7 +347,7 @@ export function App() {
     } catch {
       // tags optional; silent fail
     }
-  }, []);
+  }, [refreshAuth]);
 
   const refreshAliases = useCallback(async () => {
     try {
@@ -1016,6 +1018,11 @@ export function App() {
         <IconBtn label="Settings" onClick={() => setShowSettings(true)}>
           <SettingsIcon />
         </IconBtn>
+        {auth.configured && auth.authenticated && !auth.loading ? (
+          <IconBtn label={`Log out (signed in as ${signedInAs(auth.user)})`} onClick={() => void auth.logout()}>
+            <LogOutIcon />
+          </IconBtn>
+        ) : null}
         <IconBtn label="About brain.md" onClick={() => setShowAbout(true)}>
           <InfoCircledIcon />
         </IconBtn>

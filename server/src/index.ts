@@ -5,6 +5,7 @@ import { parseArgs, getUsage, CliError } from "./cli";
 import { LoginConfigError } from "./auth/login-config";
 import { mkdir } from "node:fs/promises";
 import { VERSION } from "./version";
+import { startDiskSync } from "./vault/disk-sync";
 
 async function main() {
   let action: ReturnType<typeof parseArgs>;
@@ -87,11 +88,22 @@ async function main() {
             ),
           )
           .catch((e) => console.warn("[rag] initial index failed:", e));
+      } else {
+        // Notes deleted, moved or edited while the server was down (or
+        // while RAG was off) still have rows from before; drop or refresh
+        // them now instead of serving them from search.
+        void ragPipeline
+          .syncWithDisk()
+          .then((r) =>
+            console.log(`[rag] startup sync: ${r.removed.length} removed, ${r.updated.length} re-embedded`),
+          )
+          .catch((e) => console.warn("[rag] startup sync failed:", e));
       }
     } catch (e) {
       console.warn("[rag] startup failed; RAG disabled:", e);
     }
   }
+  startDiskSync(index, ragPipeline);
 
   // Mount the embedded / on-disk / downloaded web client last so it
   // acts as the SPA catch-all for everything not handled by /api or /mcp.

@@ -4,6 +4,7 @@ import type { Vault, MutationEvent } from "../vault/vault";
 import { atomicWrite } from "../vault/atomic-write";
 import { basenameNoExt } from "../vault/paths";
 import { parseNote } from "./parse";
+import { LinkResolver } from "./resolve";
 
 export interface IndexEntry {
   path: string;
@@ -37,6 +38,12 @@ export class VaultIndex {
   private data: IndexData = { version: 1, entries: {} };
   private unsubscribe?: () => void;
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
+  // Resolved link targets and the inbound links they give each note, rebuilt
+  // lazily after any change to the entries.
+  private links?: {
+    resolver: LinkResolver;
+    inbound: Map<string, Array<{ from: string; lineNo: number; context: string; embed: boolean }>>;
+  };
 
   constructor(private readonly vault: Vault) {}
 
@@ -189,24 +196,40 @@ export class VaultIndex {
       .sort((a, b) => a.tag.localeCompare(b.tag));
   }
 
+  private invalidateLinks(): void {
+    this.links = undefined;
+  }
+
+  private linkData(): NonNullable<VaultIndex["links"]> {
+    if (this.links) return this.links;
+    const resolver = new LinkResolver(this.entries());
+    const inbound: NonNullable<VaultIndex["links"]>["inbound"] = new Map();
+    for (const e of this.entries()) {
+      for (const l of e.outLinks) {
+        const to = resolver.resolve(e.path, l.target);
+        if (!to || to === e.path) continue;
+        const list = inbound.get(to) ?? [];
+        list.push({ from: e.path, lineNo: l.lineNo, context: l.context, embed: l.embed });
+        inbound.set(to, list);
+      }
+    }
+    this.links = { resolver, inbound };
+    return this.links;
+  }
+
+  /** Where `target`, written as a wikilink inside `fromPath`, points. */
+  resolveLink(fromPath: string, target: string): string | undefined {
+    return this.linkData().resolver.resolve(fromPath, target);
+  }
+
   backlinks(
     toPath: string,
     allowed?: (path: string) => boolean,
   ): Array<{ from: string; lineNo: number; context: string; embed: boolean }> {
-    const target = basenameNoExt(toPath).toLowerCase();
-    const out: Array<{ from: string; lineNo: number; context: string; embed: boolean }> = [];
-    for (const e of this.entries()) {
-      if (e.path === toPath) continue;
-      // The backlink's source note is itself content, don't leak its
-      // path or quoted context if the caller can't read that note.
-      if (allowed && !allowed(e.path)) continue;
-      for (const l of e.outLinks) {
-        if (l.targetLower === target) {
-          out.push({ from: e.path, lineNo: l.lineNo, context: l.context, embed: l.embed });
-        }
-      }
-    }
-    return out;
+    const all = this.linkData().inbound.get(toPath) ?? [];
+    // The backlink's source note is itself content, don't leak its
+    // path or quoted context if the caller can't read that note.
+    return all.filter((b) => !allowed || allowed(b.from)).map((b) => ({ ...b }));
   }
 
   async buildAll(): Promise<void> {
@@ -219,17 +242,20 @@ export class VaultIndex {
       }),
     );
     this.data = { version: 1, entries: next };
+    this.invalidateLinks();
   }
 
   async updatePath(path: string): Promise<void> {
     const e = await this.buildEntry(path);
     if (e) this.data.entries[path] = e;
     else delete this.data.entries[path];
+    this.invalidateLinks();
     this.schedulePersist();
   }
 
   remove(path: string): void {
     delete this.data.entries[path];
+    this.invalidateLinks();
   }
 
   rename(from: string, to: string): void {
@@ -237,6 +263,7 @@ export class VaultIndex {
     if (!e) return;
     delete this.data.entries[from];
     this.data.entries[to] = { ...e, path: to, basename: basenameNoExt(to), basenameLower: basenameNoExt(to).toLowerCase() };
+    this.invalidateLinks();
   }
 
   // V-concurrency: the initial build is persisted but nothing after it was,
@@ -245,12 +272,18 @@ export class VaultIndex {
   // for notes that no longer exist are dropped, entries for notes whose
   // mtime moved (edited while the server was down, or never indexed) are
   // rebuilt.
-  async reconcile(): Promise<void> {
+  async reconcile(): Promise<{ removed: number; updated: number }> {
     const notes = await this.vault.listAllNotes();
     const onDisk = new Set(notes);
+    let removed = 0;
+    let updated = 0;
     for (const path of Object.keys(this.data.entries)) {
-      if (!onDisk.has(path)) delete this.data.entries[path];
+      if (!onDisk.has(path)) {
+        delete this.data.entries[path];
+        removed++;
+      }
     }
+    this.invalidateLinks();
     await Promise.all(
       notes.map(async (path) => {
         const existing = this.data.entries[path];
@@ -259,9 +292,15 @@ export class VaultIndex {
           if (s.exists && s.mtime === existing.mtime) return;
         }
         const e = await this.buildEntry(path);
-        if (e) this.data.entries[path] = e;
+        if (e) {
+          this.data.entries[path] = e;
+          updated++;
+        }
       }),
     );
+    this.invalidateLinks();
+    if (removed + updated > 0) this.schedulePersist();
+    return { removed, updated };
   }
 
   private async buildEntry(path: string): Promise<IndexEntry | null> {
@@ -307,6 +346,7 @@ export class VaultIndex {
       const parsed = JSON.parse(raw) as IndexData;
       if (parsed.version === 1) {
         this.data = parsed;
+        this.invalidateLinks();
         return true;
       }
     } catch {

@@ -418,6 +418,12 @@ and upserts the vectors into a per-vault embedded store at
 `<VAULT>/.brain/vectors.json` (pure JS, brute-force cosine, well
 under 10ms for typical vaults).
 
+The store follows the disk. Notes deleted, moved or edited outside
+brain.md (`mv`, `git pull`, a sync tool, another agent) are picked up at
+startup and by a sync every 60 seconds. A search hit whose note no
+longer exists is dropped and its vectors deleted on the spot, so a
+deleted note never comes back through semantic search.
+
 | Provider                | Model                                       | dim   | Local? | API key |
 |-------------------------|---------------------------------------------|------:|:------:|:-------:|
 | Local *(default)*       | `bge-small-en-v1.5` (WASM)                  |   384 |   ✓    |   no    |
@@ -657,7 +663,8 @@ Default: no auth. Set a password in **Settings → Security** to switch
 on bearer-token authentication for *both* the HTTP API and the MCP
 endpoints. Password is hashed with **argon2id** (Bun's built-in
 `Bun.password`, no native crypto build needed); tokens live in memory
-with a 24-hour TTL.
+with a 24-hour TTL. Log out from the toolbar or from **Settings →
+Security**, which also shows who is signed in.
 
 ![Settings, Security](docs/img/settings-security.png)
 
