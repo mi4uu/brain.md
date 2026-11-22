@@ -5,6 +5,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "./ui/dialog";
 import { Switch } from "./ui/switch";
 
@@ -122,7 +123,8 @@ export function FolderPermsDialog({ folderPath, onClose }: Props) {
             />
           </label>
         </div>
-        <div className="flex justify-between gap-2 pt-2">
+        {msg ? <p className="text-sm text-fg-3">{msg}</p> : null}
+        <DialogFooter className="justify-between">
           {hasOverride ? (
             <button
               type="button"
@@ -153,8 +155,7 @@ export function FolderPermsDialog({ folderPath, onClose }: Props) {
               Save
             </button>
           </div>
-        </div>
-        {msg ? <p className="text-sm text-fg-3">{msg}</p> : null}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

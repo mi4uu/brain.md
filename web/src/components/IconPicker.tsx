@@ -6,6 +6,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "./ui/dialog";
 import { ScrollArea } from "./ui/scroll-area";
 
@@ -84,7 +85,7 @@ export function IconPicker({
           </div>
         </fieldset>
 
-        <div className="flex justify-between gap-2">
+        <DialogFooter className="justify-between">
           <button
             type="button"
             onClick={() => onSave(null)}
@@ -99,7 +100,7 @@ export function IconPicker({
           >
             Cancel
           </button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

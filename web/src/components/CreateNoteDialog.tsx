@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 
 interface Props {
   path: string;
@@ -19,7 +19,7 @@ export function CreateNoteDialog({ path, onCreate, onClose }: Props) {
           <DialogDescription className="break-all">{path}</DialogDescription>
         </DialogHeader>
         <p className="text-sm text-fg-2">There is no note with this name yet. It will be created as an empty note.</p>
-        <div className="flex justify-end gap-2 pt-2">
+        <DialogFooter>
           <button
             type="button"
             disabled={busy}
@@ -39,7 +39,7 @@ export function CreateNoteDialog({ path, onCreate, onClose }: Props) {
           >
             Create
           </button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

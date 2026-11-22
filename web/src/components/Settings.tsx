@@ -5,6 +5,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "./ui/dialog";
@@ -503,7 +504,8 @@ function RagPanel() {
           </Field>
         </div>
       </details>
-      <div className="flex flex-wrap items-center gap-2">
+      {msg ? <p className="text-sm text-fg-3">{msg}</p> : null}
+      <DialogFooter className="justify-start !-mb-5">
         <button
           type="button"
           disabled={busy}
@@ -526,8 +528,7 @@ function RagPanel() {
             {status.needsReindex ? " · needs reindex" : ""}
           </span>
         ) : null}
-      </div>
-      {msg ? <p className="text-sm text-fg-3">{msg}</p> : null}
+      </DialogFooter>
     </div>
   );
 }

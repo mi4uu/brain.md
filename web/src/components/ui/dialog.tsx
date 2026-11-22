@@ -35,7 +35,8 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed left-1/2 top-1/2 z-modal grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 " +
+        "fixed left-1/2 top-1/2 z-modal grid grid-cols-[minmax(0,1fr)] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 " +
+          "max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain " +
           "border border-border bg-surface-elev p-5 text-fg-1 shadow-2 rounded-3 outline-none " +
           "data-[state=open]:animate-zoom-in data-[state=closed]:animate-zoom-out",
         className,
@@ -70,13 +71,17 @@ const DialogHeader = ({
 );
 DialogHeader.displayName = "DialogHeader";
 
+// Sticks to the bottom of the scrolling DialogContent, so the actions stay reachable when the body
+// is taller than the viewport. Chrome measures sticky offsets inside the scroller's padding, so
+// -bottom-5 and the negative margins cancel DialogContent's p-5 and the bar sits on the edge.
 const DialogFooter = ({
   className,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      "flex flex-col-reverse gap-2 sm:flex-row sm:justify-end",
+      "sticky -bottom-5 z-10 -mx-5 -mb-5 flex flex-wrap items-center justify-end gap-2 " +
+        "border-t border-border bg-surface-elev px-5 pb-5 pt-3",
       className,
     )}
     {...props}
