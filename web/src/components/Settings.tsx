@@ -41,6 +41,7 @@ interface RagStatusUI {
   needsReindex: boolean;
   lastError: string | null;
   format?: { query: string; document: string };
+  failedNotes?: Array<{ path: string; error: string; at: number }>;
 }
 
 interface Props {
@@ -211,6 +212,28 @@ function buildSearchQuery(err: string): string {
   return cleaned || err.slice(0, 200);
 }
 
+function FailedNotes({ notes }: { notes: NonNullable<RagStatusUI["failedNotes"]> }) {
+  return (
+    <div role="status" className="rounded-2 border border-callout-warn/40 bg-callout-warn/10 p-3 text-sm text-fg-1">
+      <div className="font-semibold">
+        {notes.length === 1 ? "1 note is" : `${notes.length} notes are`} left out of semantic search
+      </div>
+      <p className="mt-1 text-xs text-fg-3">
+        The embedder rejected them. Keyword search still finds them; editing a note retries it, otherwise it is
+        retried every few hours.
+      </p>
+      <ul className="mt-2 space-y-1">
+        {notes.map((n) => (
+          <li key={n.path} className="text-xs">
+            <span className="font-mono text-fg-1">{n.path}</span>
+            <span className="block break-words text-fg-3">{n.error}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function RagErrorBanner({ error }: { error: string }) {
   const q = buildSearchQuery(error);
   const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(`brain.md ${q}`)}`;
@@ -347,6 +370,7 @@ function RagPanel() {
       {cfg.enabled && status?.lastError ? (
         <RagErrorBanner error={status.lastError} />
       ) : null}
+      {cfg.enabled && status?.failedNotes?.length ? <FailedNotes notes={status.failedNotes} /> : null}
       <Field label="Provider">
         <select
           className="input"

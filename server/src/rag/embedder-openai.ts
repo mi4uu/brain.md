@@ -135,9 +135,20 @@ export class OpenAICompatEmbedder implements Embedder {
   }
 }
 
+// llama-server answers an input past its context with HTTP 500 ("input (2196
+// tokens) is too large to process"); other servers use 400/413. Either way it
+// is this note's text, not the embedder, so the rest of the queue can go on.
+const INPUT_TOO_LARGE = /too large|too long|exceeds?|context length|maximum context|batch size/i;
+
+export function isInputRejected(e: unknown): boolean {
+  if (!(e instanceof EmbedderHttpError)) return false;
+  if (e.status === 413) return true;
+  return e.status >= 400 && e.status !== 401 && e.status !== 403 && e.status !== 429 && INPUT_TOO_LARGE.test(e.body ?? "");
+}
+
 // True when the embedder itself is unreachable or refusing everyone (down,
 // timed out, bad key, overloaded), as opposed to one input it can't take.
 export function isEmbedderUnavailable(e: unknown): boolean {
-  if (!(e instanceof EmbedderHttpError)) return false;
+  if (!(e instanceof EmbedderHttpError) || isInputRejected(e)) return false;
   return e.status === 0 || e.status === 401 || e.status === 403 || e.status === 429 || e.status >= 500;
 }

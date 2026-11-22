@@ -124,3 +124,36 @@ describe("chunkTasks — V55", () => {
     );
   });
 });
+
+describe("RAG chunker: blocks past the target", () => {
+  const tok = (s: string) => encode(s).length;
+  const item = (i: number) =>
+    `${i}. [ ] Pozycja roadmapy numer ${i}: typy, właściwości, widoki, zadania z terminami i priorytetami, zgodność z Obsidianem.`;
+
+  test("a long list without blank lines is split into chunks within the target", () => {
+    const body = `# Roadmapa\n\n## Kolejność\n${Array.from({ length: 120 }, (_, i) => item(i + 1)).join("\n")}\n`;
+    const chunks = chunkNote("roadmap.md", body);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const c of chunks) expect(tok(c.text)).toBeLessThanOrEqual(512);
+    // Every item is still in some chunk, in order, with its own line number.
+    const joined = chunks.map((c) => c.text).join("\n");
+    for (let i = 1; i <= 120; i++) expect(joined).toContain(`${i}. [ ] Pozycja`);
+    expect(chunks[chunks.length - 1]!.lineEnd).toBe(123);
+  });
+
+  test("one line longer than the target is split on words", () => {
+    const line = Array.from({ length: 900 }, (_, i) => `słowo${i}`).join(" ");
+    const chunks = chunkNote("wall.md", `# Ściana\n\n${line}\n`);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const c of chunks) expect(tok(c.text)).toBeLessThanOrEqual(512);
+    expect(chunks.map((c) => c.text).join(" ")).toContain("słowo899");
+  });
+
+  test("overlap is dropped when it would push a chunk past the target", () => {
+    const para = (n: number) => Array.from({ length: 60 }, (_, i) => `p${n}w${i}`).join(" ");
+    const body = Array.from({ length: 12 }, (_, i) => para(i)).join("\n\n");
+    for (const c of chunkNote("paras.md", body, { targetTokens: 200, overlapTokens: 150 })) {
+      expect(tok(c.text)).toBeLessThanOrEqual(200);
+    }
+  });
+});

@@ -1,7 +1,7 @@
 import type { Vault, MutationEvent } from "../vault/vault";
 import { chunkNote, chunkTasks } from "./chunker";
 import { LocalEmbedderWasm as LocalEmbedder } from "./embedder-local-wasm";
-import { OpenAICompatEmbedder, isEmbedderUnavailable } from "./embedder-openai";
+import { OpenAICompatEmbedder, isEmbedderUnavailable, isInputRejected } from "./embedder-openai";
 import { formatDocument, formatQuery, resolveFormat } from "./format";
 import { globMatcher } from "../vault/glob";
 import type { Embedder } from "./provider";
@@ -36,6 +36,17 @@ export class EmbedExcludedError extends Error {
     super(`${path} is excluded from embedding (Settings, AI / RAG, "Never send to the embedder")`);
     this.name = "EmbedExcludedError";
   }
+}
+
+// How long a note the embedder rejected waits before the disk sync tries it
+// again without being edited (the model or server may have changed).
+const FAILED_RETRY_MS = 6 * 60 * 60 * 1000;
+
+export interface FailedNote {
+  path: string;
+  mtime: number;
+  error: string;
+  at: number;
 }
 
 export class RagPipeline {
@@ -73,6 +84,22 @@ export class RagPipeline {
 
   // Last mtime each note was embedded at, rows or not (see syncWithDisk).
   private readonly syncedMtime = new Map<string, number>();
+  // Notes whose last embed failed for reasons of their own (too long, input
+  // rejected). Sync skips them until they change or FAILED_RETRY_MS passes,
+  // and Settings lists them, instead of one note being retried every minute.
+  private readonly failed = new Map<string, FailedNote>();
+
+  failedNotes(): FailedNote[] {
+    return [...this.failed.values()].sort((a, b) => a.path.localeCompare(b.path));
+  }
+
+  private recordFailure(path: string, mtime: number, e: unknown): void {
+    const error = e instanceof Error ? e.message : String(e);
+    const detail = e instanceof Error && "body" in e && typeof e.body === "string" ? e.body.slice(0, 300) : "";
+    const known = this.failed.get(path);
+    this.failed.set(path, { path, mtime, error: detail ? `${error}: ${detail}` : error, at: Date.now() });
+    if (!known || known.mtime !== mtime) console.warn(`[rag] could not embed ${path}: ${error}${detail ? ` (${detail})` : ""}`);
+  }
   private reindexing = 0;
 
   start(): void {
@@ -236,6 +263,7 @@ export class RagPipeline {
     }
 
     this.syncedMtime.set(rel, note.mtime);
+    this.failed.delete(rel);
     this.lastIndexedAt = Date.now();
   }
 
@@ -266,11 +294,18 @@ export class RagPipeline {
     // A path queued since this sync started is newer than what we saw.
     const untouched = (p: string) => (this.touchedAt.get(p) ?? 0) <= startSeq;
     const removed = [...stored.keys()].filter((p) => (!onDisk.has(p) || this.isExcluded(p)) && untouched(p));
+    for (const p of this.failed.keys()) {
+      if (!onDisk.has(p) || this.isExcluded(p)) this.failed.delete(p);
+    }
     const updated: string[] = [];
+    const mtimes = new Map<string, number>();
     for (const p of notes) {
       if (this.isExcluded(p)) continue;
       const s = await this.vault.stat(p);
       if (!s.exists) continue;
+      const f = this.failed.get(p);
+      if (f && f.mtime === s.mtime && Date.now() - f.at < FAILED_RETRY_MS) continue;
+      mtimes.set(p, s.mtime);
       // Notes with no chunks and no tasks (empty, frontmatter only) leave no
       // rows, so the mtime of the last successful pass counts too.
       const seen = Math.max(stored.get(p) ?? -1, this.syncedMtime.get(p) ?? -1);
@@ -290,7 +325,7 @@ export class RagPipeline {
           break;
         }
         // One bad note (too long, unreadable) must not block the others.
-        console.warn(`[rag] sync skipped ${p}: ${msg}`);
+        this.recordFailure(p, mtimes.get(p) ?? 0, e);
       }
     }
     return { removed, updated: done };
@@ -442,10 +477,12 @@ export class RagPipeline {
         // "Indexed 0 / 17 skipped" failure mode impossible.
         const msg = e instanceof Error ? e.message : String(e);
         errors.push(`${rel}: ${msg}`);
-        if (errors.length <= 5) console.warn(`[rag] skip ${rel}:`, msg);
+        this.recordFailure(rel, (await this.vault.stat(rel).catch(() => ({ mtime: 0 }))).mtime, e);
         // V59: also bubble into lastProbeError so the UI banner reflects
         // bulk-reindex failures (most users won't hit "Test connection").
-        this.lastProbeError = msg;
+        // A note the embedder rejected is listed on its own instead: the
+        // embedder works, so the "RAG not working" banner would mislead.
+        if (!isInputRejected(e)) this.lastProbeError = msg;
       }
     }
     if (errors.length > 0) {

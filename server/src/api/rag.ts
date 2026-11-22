@@ -129,7 +129,7 @@ export function ragRoutes(
       },
       { query: t.Object({ q: t.Optional(t.String()), k: t.Optional(t.String()) }) },
     )
-    .get("/api/rag/status", async (): Promise<RagStatus> => {
+    .get("/api/rag/status", async ({ request }): Promise<RagStatus> => {
       const cfg = settings.get().rag;
       const desc = describeProvider(cfg);
       let chunks = 0;
@@ -155,6 +155,13 @@ export function ragRoutes(
         needsReindex,
         lastError: pipeline.lastProbeError,
         format: resolveFormat(cfg),
+        failedNotes: await (async () => {
+          const allowed = await readFilterFor(vault, request);
+          return pipeline
+            .failedNotes()
+            .filter((f) => allowed(f.path))
+            .map(({ path, error, at }) => ({ path, error, at }));
+        })(),
       };
     })
     .post("/api/rag/reindex", async ({ set, request }) => {

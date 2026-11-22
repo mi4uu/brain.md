@@ -173,6 +173,43 @@ describe("vector store follows the disk", () => {
     expect(r.updated).toEqual(["good.md"]);
   });
 
+  test("a note past the embedder's context is listed, skipped until it changes, and the rest goes on", async () => {
+    await writeFile(join(dir, "big.md"), "# big\nTOO_LONG\n");
+    await writeFile(join(dir, "good.md"), "# good\n");
+    const flat = new FlatEmbedder();
+    let bigCalls = 0;
+    (pipeline as unknown as { embedder: Embedder }).embedder = {
+      ...flat,
+      embed: async (texts: string[]) => {
+        if (texts.some((t) => t.includes("TOO_LONG"))) {
+          bigCalls++;
+          throw new EmbedderHttpError(
+            "embeddings request failed (500) at http://x/v1/embeddings",
+            500,
+            '{"error":{"message":"input (2196 tokens) is too large to process. increase the physical batch size"}}',
+          );
+        }
+        return flat.embed(texts);
+      },
+    } as unknown as Embedder;
+
+    expect((await pipeline.syncWithDisk()).updated).toEqual(["good.md"]);
+    expect(pipeline.failedNotes().map((f) => f.path)).toEqual(["big.md"]);
+    expect(pipeline.failedNotes()[0]!.error).toContain("too large");
+    expect(pipeline.lastProbeError).toBeNull();
+
+    // Unchanged: the next sync leaves it alone instead of retrying every tick.
+    await pipeline.syncWithDisk();
+    expect(bigCalls).toBe(1);
+
+    // Edited: retried, and once it embeds it drops off the list.
+    await writeFile(join(dir, "big.md"), "# fixed\nshorter now\n");
+    const later = new Date(Date.now() + 5000);
+    await utimes(join(dir, "big.md"), later, later);
+    expect((await pipeline.syncWithDisk()).updated).toEqual(["big.md"]);
+    expect(pipeline.failedNotes()).toEqual([]);
+  });
+
   test("with RAG off the sync touches nothing", async () => {
     await addNote("x.md", "# X\n");
     pipeline.applyConfig({ ...DEFAULT_RAG_CONFIG, enabled: false });

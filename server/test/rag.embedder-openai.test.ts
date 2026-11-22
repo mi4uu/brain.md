@@ -2,6 +2,8 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import {
   EmbedderHttpError,
   OpenAICompatEmbedder,
+  isEmbedderUnavailable,
+  isInputRejected,
   normalizeBaseURL,
 } from "../src/rag/embedder-openai";
 
@@ -155,5 +157,24 @@ describe("OpenAICompatEmbedder — V49", () => {
       dim: 4,
     });
     expect(e.embed(["hi"])).rejects.toThrow(EmbedderHttpError);
+  });
+});
+
+describe("input rejected vs embedder unavailable", () => {
+  test("llama-server's 500 for an input past the batch is the note's fault", () => {
+    const e = new EmbedderHttpError(
+      "embeddings request failed (500) at http://x/v1/embeddings",
+      500,
+      '{"error":{"code":500,"message":"input (2196 tokens) is too large to process. increase the physical batch size (current batch size: 2048)","type":"server_error"}}',
+    );
+    expect(isInputRejected(e)).toBe(true);
+    expect(isEmbedderUnavailable(e)).toBe(false);
+  });
+
+  test("413 is the note's fault; a bare 500, 401 or network error is the embedder", () => {
+    expect(isInputRejected(new EmbedderHttpError("x", 413))).toBe(true);
+    expect(isEmbedderUnavailable(new EmbedderHttpError("x", 500, "internal error"))).toBe(true);
+    expect(isEmbedderUnavailable(new EmbedderHttpError("x", 401, "context length"))).toBe(true);
+    expect(isEmbedderUnavailable(new EmbedderHttpError("x", 0))).toBe(true);
   });
 });

@@ -34,7 +34,7 @@ export function chunkNote(
   const { body, bodyOffset } = stripFrontmatter(content);
   if (body.trim() === "") return [];
 
-  const blocks = blockify(body, bodyOffset);
+  const blocks = blockify(body, bodyOffset).flatMap((b) => splitOversized(b, target));
   if (blocks.length === 0) return [];
 
   return packBlocks(path, blocks, target, overlap);
@@ -137,6 +137,64 @@ function tokensIn(s: string): number {
   return encode(s).length;
 }
 
+// A block is a paragraph, so a long list or a wall of text without blank
+// lines is one block. Packing never splits a block, and a chunk past the
+// embedder's context comes back as an error for the whole note (llama-server:
+// "input is too large to process"). Split such a block on lines, and a line
+// that is still too long on words, into pieces of at most `target` tokens.
+function splitOversized(block: Block, target: number): Block[] {
+  if (tokensIn(block.text) <= target) return [block];
+  const lines = block.text.split("\n");
+  const pieces: Block[] = [];
+  let buf: string[] = [];
+  let bufTokens = 0;
+  let bufStart = block.lineStart;
+  const flush = (lineEnd: number) => {
+    if (buf.length === 0) return;
+    const text = buf.join("\n").trim();
+    if (text !== "") {
+      pieces.push({ text, lineStart: bufStart, lineEnd, heading: pieces.length === 0 ? block.heading : null });
+    }
+    buf = [];
+    bufTokens = 0;
+  };
+  lines.forEach((line, i) => {
+    const lineNo = block.lineStart + i;
+    const lt = tokensIn(line);
+    if (lt > target) {
+      flush(lineNo - 1);
+      for (const part of splitWords(line, target)) {
+        pieces.push({ text: part, lineStart: lineNo, lineEnd: lineNo, heading: pieces.length === 0 ? block.heading : null });
+      }
+      bufStart = lineNo + 1;
+      return;
+    }
+    if (bufTokens + lt > target) {
+      flush(lineNo - 1);
+      bufStart = lineNo;
+    }
+    if (buf.length === 0) bufStart = lineNo;
+    buf.push(line);
+    bufTokens += lt + 1;
+  });
+  flush(block.lineEnd);
+  return pieces;
+}
+
+function splitWords(line: string, target: number): string[] {
+  const out: string[] = [];
+  let cur = "";
+  for (const word of line.split(/(?<=\s)/)) {
+    if (cur !== "" && tokensIn(cur + word) > target) {
+      out.push(cur.trim());
+      cur = "";
+    }
+    cur += word;
+  }
+  if (cur.trim() !== "") out.push(cur.trim());
+  return out;
+}
+
 // Build the overlap suffix: take complete trailing blocks from the
 // previous chunk until they total ~overlap tokens. Block-aligned to
 // keep semantic chunks intact.
@@ -199,9 +257,16 @@ function packBlocks(
     if (curTokens + bt > target) {
       // emit current chunk, start a new one with overlap
       emit();
-      const overlapBlocks = buildOverlap(cur, overlap);
+      let overlapBlocks = buildOverlap(cur, overlap);
+      let overlapTokens = overlapBlocks.reduce((n, x) => n + tokensIn(x.text), 0);
+      // The overlap is whole blocks, so it can be large; never let it push
+      // the new chunk past the target.
+      if (overlapTokens + bt > target) {
+        overlapBlocks = [];
+        overlapTokens = 0;
+      }
       cur = [...overlapBlocks];
-      curTokens = overlapBlocks.reduce((n, x) => n + tokensIn(x.text), 0);
+      curTokens = overlapTokens;
       // trail at start of new chunk = current running trail (already includes
       // anything the overlap blocks may have updated previously)
       chunkTrailAtStart = [...trail];

@@ -80,6 +80,9 @@ export interface RagStatus {
   lastError: string | null;
   // The prompt templates in effect (settings or the model's default).
   format: { query: string; document: string };
+  // Notes the embedder rejected (too long, bad input), limited to what the
+  // caller may read. They stay out of semantic search until fixed.
+  failedNotes: Array<{ path: string; error: string; at: number }>;
 }
 
 // V49: chunker constants
