@@ -165,9 +165,6 @@ const BREAKS = "edit would break the frontmatter; edit in source";
 function openBlock(loc: Located): { props: Record<string, PropValue>; map: YAMLMap | null } {
   const p = parseProps(loc.raw);
   if (p.props === null) throw new FrontmatterError(p.code, p.error);
-  // Edits splice block-style lines; inside `{a: 1, b: 2}` they would drop
-  // or corrupt the other keys.
-  if (p.map?.flow) throw new FrontmatterError("INVALID_YAML", "frontmatter is a flow mapping; edit in source");
   return p;
 }
 
@@ -263,6 +260,9 @@ export function setProperties(content: string, set: Record<string, PropValue>, u
   const setKeys = Object.keys(set);
   if (!loc) return setKeys.length === 0 ? content : newBlock(content, set);
   const { props, map } = openBlock(loc);
+  // Set and unset splice block-style lines; inside `{a: 1, b: 2}` they would
+  // drop or corrupt the other keys.
+  if (map?.flow) throw new FrontmatterError("INVALID_YAML", "frontmatter is a flow mapping; edit in source");
   const indentUnit = detectIndent(loc.raw);
   const edits: Edit[] = [];
   const appended: string[] = [];

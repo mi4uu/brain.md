@@ -193,3 +193,7 @@ test("a property named error is an ordinary property", () => {
   expect(readFrontmatter(wrap("error: x"))).toMatchObject({ props: { error: "x" }, error: null });
   expect(setProperties(wrap("error: x"), { error: "y" })).toBe(wrap("error: y"));
 });
+
+test("rename works inside a flow-style root mapping", () => {
+  expect(renameProperty(wrap("{a: 1, b: 2}"), "a", "c")).toBe(wrap("{c: 1, b: 2}"));
+});
