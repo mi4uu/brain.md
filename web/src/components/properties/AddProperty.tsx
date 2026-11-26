@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Command } from "cmdk";
 import type { PropertyInfo, PropertyType } from "@brainmd/shared/property-types";
 import { TYPE_META } from "../../properties/type-meta";
@@ -16,12 +16,14 @@ interface Props {
 export function AddProperty({ infos, existing, onOpen, onAdd }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const pickedRef = useRef(false);
   const typed = query.trim();
   const candidates = infos.filter((i) => !existing.has(i.name));
   const canCreate =
     typed !== "" && typed !== "__proto__" && !existing.has(typed) && !infos.some((i) => i.name === typed);
 
   const pick = (name: string, type: PropertyType) => {
+    pickedRef.current = true;
     setOpen(false);
     onAdd(name, type);
   };
@@ -41,7 +43,16 @@ export function AddProperty({ infos, existing, onOpen, onAdd }: Props) {
           <span>Add property</span>
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="props-add-pop">
+      <PopoverContent
+        align="start"
+        className="props-add-pop"
+        onCloseAutoFocus={(e) => {
+          if (pickedRef.current) {
+            e.preventDefault();
+            pickedRef.current = false;
+          }
+        }}
+      >
         <Command label="Add property">
           <Command.Input
             className="props-add-input"

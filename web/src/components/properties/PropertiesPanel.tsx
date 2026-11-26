@@ -40,13 +40,15 @@ export function PropertiesPanel({ variant, notePath, content, onEdit, onFixInSou
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
-  const pendingFocus = useRef<string | null>(null);
+  const pendingFocus = useRef<{ name: string; target: "row" | "value" | "add" } | null>(null);
 
   const run = useCallback(
-    (edit: (current: string) => string) => {
+    (edit: (current: string) => string, focus?: { name: string; target: "row" | "value" | "add" }) => {
+      pendingFocus.current = focus ?? null;
       try {
         onEdit(edit);
       } catch (e) {
+        pendingFocus.current = null;
         onNotice(e instanceof Error ? e.message : String(e));
       }
     },
@@ -54,13 +56,31 @@ export function PropertiesPanel({ variant, notePath, content, onEdit, onFixInSou
   );
 
   useEffect(() => {
-    const name = pendingFocus.current;
-    if (!name || model.kind !== "rows") return;
-    const row = rowEl(bodyRef.current, name);
+    const pending = pendingFocus.current;
+    if (!pending) return;
+    if (pending.target === "add") {
+      pendingFocus.current = null;
+      bodyRef.current?.querySelector<HTMLElement>("[data-prop-add]")?.focus();
+      return;
+    }
+    if (model.kind !== "rows") return;
+    const row = rowEl(bodyRef.current, pending.name);
     if (!row) return;
     pendingFocus.current = null;
-    row.querySelector<HTMLElement>("[data-prop-value]")?.focus();
+    if (pending.target === "value") row.querySelector<HTMLElement>("[data-prop-value]")?.focus();
+    else row.focus();
   }, [model]);
+
+  useEffect(() => {
+    pendingFocus.current = null;
+  }, [notePath]);
+
+  const removeRow = (name: string) => {
+    const names = model.kind === "rows" ? model.rows.map((r) => r.name) : [];
+    const i = names.indexOf(name);
+    const neighbour = names[i + 1] ?? names[i - 1];
+    run(editUnset(name), neighbour ? { name: neighbour, target: "row" } : { name, target: "add" });
+  };
 
   const changeType = async (name: string, type: PropertyType) => {
     try {
@@ -138,8 +158,8 @@ export function PropertiesPanel({ variant, notePath, content, onEdit, onFixInSou
                     name={row.name}
                     taken={taken}
                     onNotice={onNotice}
-                    onRename={(to) => run(editRename(row.name, to))}
-                    onRemove={() => run(editUnset(row.name))}
+                    onRename={(to) => run(editRename(row.name, to), { name: to, target: "row" })}
+                    onRemove={() => removeRow(row.name)}
                     onLeave={() => rowEl(bodyRef.current, row.name)?.focus()}
                   />
                   <div className="prop-value">
@@ -155,7 +175,7 @@ export function PropertiesPanel({ variant, notePath, content, onEdit, onFixInSou
                     type="button"
                     className="prop-remove"
                     aria-label={`Remove ${row.name}`}
-                    onClick={() => run(editUnset(row.name))}
+                    onClick={() => removeRow(row.name)}
                   >
                     <CloseIcon width={12} height={12} />
                   </button>
@@ -167,8 +187,7 @@ export function PropertiesPanel({ variant, notePath, content, onEdit, onFixInSou
             existing={taken}
             onOpen={refresh}
             onAdd={(name, type) => {
-              pendingFocus.current = name;
-              run(editSet(name, initialValue(type)));
+              run(editSet(name, initialValue(type)), { name, target: "value" });
             }}
           />
         </div>
@@ -222,7 +241,7 @@ function NameInput({
           e.preventDefault();
           e.currentTarget.value = name;
           onLeave();
-        } else if (e.key === "Backspace" && e.currentTarget.value === "") {
+        } else if (e.key === "Backspace" && !e.repeat && e.currentTarget.value === "") {
           e.preventDefault();
           onRemove();
         }

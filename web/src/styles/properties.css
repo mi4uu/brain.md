@@ -299,6 +299,11 @@
   .props-add-item {
     min-height: 40px;
   }
+  .prop-link {
+    min-height: 40px;
+    min-width: 40px;
+    padding: 0 var(--space-2);
+  }
   .prop-row {
     min-height: 40px;
     grid-template-columns: 40px minmax(72px, 120px) minmax(0, 1fr) 40px;
@@ -310,20 +315,22 @@
   }
   .prop-name,
   .prop-input,
-  .prop-chip-input {
+  .prop-chip-input,
+  .props-add-input {
     height: 40px;
     font-size: 16px;
   }
   .prop-chip {
-    height: 32px;
+    height: 40px;
   }
   .prop-chip-x {
-    width: 28px;
-    height: 28px;
+    width: 40px;
+    height: 40px;
   }
   .prop-check {
     width: 24px;
     height: 24px;
+    margin: 8px;
   }
   .prop-remove {
     opacity: 1;
