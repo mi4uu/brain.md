@@ -122,3 +122,7 @@ test("unset several trailing keys leaves no blank line", () => {
   expect(setProperties(wrap("a: 1\nb: 2\nc: 3"), {}, ["a", "b", "c"])).toBe("---\n\n---\nbody\n");
   expect(setProperties(wrap("a: 1\nb: 2\nc: 3"), { d: 4 }, ["b", "c"])).toBe(wrap("a: 1\nd: 4"));
 });
+
+test("unset removes keys named like Object.prototype members", () => {
+  expect(setProperties(wrap("constructor: x\ntoString: y\na: 1"), {}, ["constructor", "toString"])).toBe(wrap("a: 1"));
+});

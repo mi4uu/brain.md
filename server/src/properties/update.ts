@@ -49,7 +49,7 @@ export async function updateProperties(
   input: UpdatePropertiesInput,
   canRead: boolean,
 ): Promise<NoteData> {
-  const set: Record<string, PropValue> = {};
+  const set: Record<string, PropValue> = Object.create(null);
   for (const [name, value] of Object.entries(input.set ?? {})) {
     checkName(name);
     set[name] = checkValue(value);

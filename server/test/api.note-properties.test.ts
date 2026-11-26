@@ -103,6 +103,15 @@ describe("PATCH /api/note-properties/*", () => {
     expect((await call("PATCH", "/api/note-properties/a.txt", { set: { a: 1 } })).status).toBe(400);
   });
 
+  test("unset removes a key named like an Object.prototype member", async () => {
+    await h.vault.writeNote("proto.md", "---\nconstructor: x\ntoString: y\n---\nbody\n");
+    const before = (await call("GET", "/api/note/proto.md")).json.revision;
+    const r = await call("PATCH", "/api/note-properties/proto.md", { unset: ["constructor", "toString"] });
+    expect(r.status).toBe(200);
+    expect(r.json.revision).not.toBe(before);
+    expect(await read("proto.md")).toBe("---\n\n---\nbody\n");
+  });
+
   test("concurrent edits to different keys both land", async () => {
     await Promise.all([
       call("PATCH", "/api/note-properties/a.md", { set: { one: 1 } }),

@@ -234,7 +234,7 @@ export function setProperties(content: string, set: Record<string, PropValue>, u
   let deleted = false;
 
   for (const name of unset) {
-    if (name in set) continue;
+    if (Object.hasOwn(set, name)) continue;
     const hit = map ? findPair(map, name) : null;
     if (hit && map) {
       edits.push(deletePairEdit(loc.raw, map, hit.index));
