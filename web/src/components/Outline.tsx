@@ -42,7 +42,7 @@ export function Outline({ content, onJump }: { content: string; onJump: (line: n
     return null;
   }
   return (
-    <div className="outline">
+    <div className="doc-outline">
       <h3>Outline</h3>
       {headings.map((h, i) => (
         <a

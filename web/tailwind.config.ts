@@ -30,6 +30,7 @@ const config: Config = {
           DEFAULT: "var(--accent)",
           strong: "var(--accent-strong)",
           soft: "var(--accent-soft)",
+          on: "var(--on-accent)",
         },
         link: {
           DEFAULT: "var(--link)",

@@ -28,7 +28,9 @@ import {
   MoonIcon,
   PlusIcon,
   SearchIcon,
+  FileSearchIcon,
   SettingsIcon,
+  BrandMark,
   LogOutIcon,
   StarIcon,
   SunIcon,
@@ -77,9 +79,18 @@ import { CreateNoteDialog } from "./components/CreateNoteDialog";
 import { FolderPermsDialog } from "./components/FolderPermsDialog";
 import { AboutDialog } from "./components/AboutDialog";
 import {
+  DotsHorizontalIcon,
   HeartFilledIcon,
   InfoCircledIcon,
 } from "@radix-ui/react-icons";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "./components/ui/dropdown-menu";
 import "./styles/tw.css";
 import "./styles/tokens.css";
 import "./styles/global.css";
@@ -1040,8 +1051,10 @@ export function App() {
             })();
           }}
         >
-          <img src="/brainmdlogo.png" alt="" width={22} height={22} />
-          <span className="brand-name">brain.md</span>
+          <BrandMark />
+          <span className="brand-name">
+            brain<span className="brand-ext">.md</span>
+          </span>
         </a>
         <span className="title">{path ? path.replace(/\.md$/, "") : ""}</span>
         {gitStatus?.enabled ? (
@@ -1063,9 +1076,6 @@ export function App() {
         <IconBtn label="Search (⌘P)" onClick={() => setCmd("search")}>
           <SearchIcon />
         </IconBtn>
-        <IconBtn label="Quick switch (⌘O)" onClick={() => setCmd("switcher")}>
-          <SearchIcon />
-        </IconBtn>
         <IconBtn
           label={path && bookmarks.includes(path) ? "Remove bookmark" : "Bookmark"}
           onClick={toggleBookmark}
@@ -1073,58 +1083,113 @@ export function App() {
         >
           <StarIcon filled={path ? bookmarks.includes(path) : false} />
         </IconBtn>
-        <IconBtn label="Daily note" onClick={openDaily}>
-          <CalendarIcon />
-        </IconBtn>
-        <IconBtn label="Tasks" onClick={() => setShowTasks(true)}>
-          <CheckSquareIcon />
-        </IconBtn>
-        <IconBtn label="Graph" onClick={() => setShowGraph(true)}>
-          <GraphIcon />
-        </IconBtn>
-        <IconBtn label="Trash" onClick={() => setShowTrash(true)}>
-          <TrashIcon />
-        </IconBtn>
-        {gitStatus?.enabled ? (
-          <>
-            <IconBtn label="History" onClick={() => setShowHistory(true)}>
-              <HistoryIcon />
-            </IconBtn>
-            <IconBtn label="Commit now" onClick={doCommit}>
-              <GitCommitIcon />
-            </IconBtn>
-            <IconBtn label="Checkpoint" onClick={doCheckpoint}>
-              <FlagIcon />
-            </IconBtn>
-          </>
-        ) : null}
-        <ThemeButton theme={theme} setTheme={setTheme} />
-        <IconBtn label="Settings" onClick={() => setShowSettings(true)}>
-          <SettingsIcon />
-        </IconBtn>
-        {auth.configured && auth.authenticated && !auth.loading ? (
-          <IconBtn label={`Log out (signed in as ${signedInAs(auth.user)})`} onClick={() => void auth.logout()}>
-            <LogOutIcon />
+        <div className="topbar-wide-only">
+          <IconBtn label="Daily note" onClick={openDaily}>
+            <CalendarIcon />
           </IconBtn>
-        ) : null}
-        <IconBtn label="About brain.md" onClick={() => setShowAbout(true)}>
-          <InfoCircledIcon />
-        </IconBtn>
-        <a
-          href="https://github.com/sponsors/mi4uu"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn icon sponsor-btn"
-          aria-label="Sponsor brain.md on GitHub"
-          title="Sponsor brain.md on GitHub"
-        >
-          <HeartFilledIcon />
-        </a>
+          <IconBtn label="Tasks" onClick={() => setShowTasks(true)}>
+            <CheckSquareIcon />
+          </IconBtn>
+          <IconBtn label="Graph" onClick={() => setShowGraph(true)}>
+            <GraphIcon />
+          </IconBtn>
+          <span className="topbar-sep" aria-hidden="true" />
+          <IconBtn label="Settings" onClick={() => setShowSettings(true)}>
+            <SettingsIcon />
+          </IconBtn>
+        </div>
+        <DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger asChild>
+                <button type="button" className="btn icon" aria-label="More">
+                  <DotsHorizontalIcon />
+                </button>
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">More</TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent align="end" className="topbar-menu min-w-[220px]">
+            <DropdownMenuItem className="narrow-only" onSelect={openDaily}>
+              <CalendarIcon />
+              <span>Daily note</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem className="narrow-only" onSelect={() => setShowTasks(true)}>
+              <CheckSquareIcon />
+              <span>Tasks</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem className="narrow-only" onSelect={() => setShowGraph(true)}>
+              <GraphIcon />
+              <span>Graph</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem className="narrow-only" onSelect={() => setShowSettings(true)}>
+              <SettingsIcon />
+              <span>Settings</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator className="narrow-only" />
+            <DropdownMenuItem onSelect={() => setCmd("switcher")}>
+              <FileSearchIcon />
+              <span>Quick switch</span>
+              <DropdownMenuShortcut>⌘O</DropdownMenuShortcut>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setShowTrash(true)}>
+              <TrashIcon />
+              <span>Trash</span>
+            </DropdownMenuItem>
+            {gitStatus?.enabled ? (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => setShowHistory(true)}>
+                  <HistoryIcon />
+                  <span>History</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void doCommit()}>
+                  <GitCommitIcon />
+                  <span>Commit now</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void doCheckpoint()}>
+                  <FlagIcon />
+                  <span>Checkpoint</span>
+                </DropdownMenuItem>
+              </>
+            ) : null}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={(e) => {
+                e.preventDefault();
+                setTheme(theme === "light" ? "dark" : theme === "dark" ? "system" : "light");
+              }}
+            >
+              {theme === "dark" ? <MoonIcon /> : <SunIcon />}
+              <span>Theme</span>
+              <DropdownMenuShortcut>{theme}</DropdownMenuShortcut>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setShowAbout(true)}>
+              <InfoCircledIcon />
+              <span>About brain.md</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <a href="https://github.com/sponsors/mi4uu" target="_blank" rel="noopener noreferrer">
+                <HeartFilledIcon />
+                <span>Sponsor on GitHub</span>
+              </a>
+            </DropdownMenuItem>
+            {auth.configured && auth.authenticated && !auth.loading ? (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => void auth.logout()}>
+                  <LogOutIcon />
+                  <span>Log out ({signedInAs(auth.user)})</span>
+                </DropdownMenuItem>
+              </>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </header>
 
       <aside className={clsx("sidebar", drawerOpen && "open")}>
         <header>
-          <strong style={{ fontSize: "var(--text-sm)", color: "var(--text-2)" }}>Vault</strong>
+          <strong className="sidebar-title">Vault</strong>
           <span style={{ flex: 1 }} />
           <IconBtn label="Search (⌘P)" onClick={() => setCmd("search")}>
             <SearchIcon />
@@ -1148,11 +1213,14 @@ export function App() {
           >
             <AccordionItem value="bookmarks" className="sidebar-item">
               <AccordionTrigger className="sidebar-trigger">
-                Bookmarks{bookmarks.length > 0 ? ` · ${bookmarks.length}` : ""}
+                <span>
+                  Bookmarks
+                  {bookmarks.length > 0 ? <span className="sidebar-count">{bookmarks.length}</span> : null}
+                </span>
               </AccordionTrigger>
               <AccordionContent className="sidebar-body">
                 {bookmarks.length === 0 ? (
-                  <p className="sidebar-empty">No bookmarks yet.</p>
+                  <p className="sidebar-empty">No bookmarks yet</p>
                 ) : (
                   bookmarks.map((b) => {
                     const missing = tree.notes.length > 0 && !tree.notes.includes(b);
@@ -1223,7 +1291,10 @@ export function App() {
 
             <AccordionItem value="tags" className="sidebar-item">
               <AccordionTrigger className="sidebar-trigger">
-                Tags{tags.length > 0 ? ` · ${tags.length}` : ""}
+                <span>
+                  Tags
+                  {tags.length > 0 ? <span className="sidebar-count">{tags.length}</span> : null}
+                </span>
               </AccordionTrigger>
               <AccordionContent className="sidebar-body">
                 <TagsContent
@@ -1241,20 +1312,23 @@ export function App() {
                 {path ? (
                   <Outline content={content} onJump={onOutlineJump} />
                 ) : (
-                  <p className="sidebar-empty">Open a note to see its outline.</p>
+                  <p className="sidebar-empty">Open a note to see its outline</p>
                 )}
               </AccordionContent>
             </AccordionItem>
 
             <AccordionItem value="backlinks" className="sidebar-item">
               <AccordionTrigger className="sidebar-trigger">
-                Backlinks{backlinks.length > 0 ? ` · ${backlinks.length}` : ""}
+                <span>
+                  Backlinks
+                  {backlinks.length > 0 ? <span className="sidebar-count">{backlinks.length}</span> : null}
+                </span>
               </AccordionTrigger>
               <AccordionContent className="sidebar-body">
                 {path ? (
                   <Backlinks items={backlinks} onOpen={openNote} />
                 ) : (
-                  <p className="sidebar-empty">Open a note to see backlinks.</p>
+                  <p className="sidebar-empty">Open a note to see backlinks</p>
                 )}
               </AccordionContent>
             </AccordionItem>
@@ -1265,23 +1339,23 @@ export function App() {
                 {path ? (
                   <LocalGraph path={path} onOpen={openNote} onExpand={() => setShowGraph(true)} />
                 ) : (
-                  <p className="sidebar-empty">Open a note to see its graph.</p>
+                  <p className="sidebar-empty">Open a note to see its graph</p>
                 )}
               </AccordionContent>
             </AccordionItem>
 
             <AccordionItem value="related" className="sidebar-item">
               <AccordionTrigger className="sidebar-trigger">
-                Related
-                {relatedState.kind === "ready" && relatedState.hits.length > 0
-                  ? ` · ${relatedState.hits.length}`
-                  : ""}
+                <span>
+                  Related
+                  {relatedState.kind === "ready" && relatedState.hits.length > 0 ? <span className="sidebar-count">{relatedState.hits.length}</span> : null}
+                </span>
               </AccordionTrigger>
               <AccordionContent className="sidebar-body">
                 {path ? (
                   <Related state={relatedState} onOpen={openNote} />
                 ) : (
-                  <p className="sidebar-empty">Open a note to see related ones.</p>
+                  <p className="sidebar-empty">Open a note to see related ones</p>
                 )}
               </AccordionContent>
             </AccordionItem>
@@ -1298,6 +1372,7 @@ export function App() {
           isMobile && mobileView === "preview" && "show-preview",
           !isMobile && desktopView !== "split" && `view-${desktopView}`,
           path && "has-toolbar",
+          !path && "is-empty",
         )}
       >
         <div className="pane-head editor-head">
@@ -1345,7 +1420,13 @@ export function App() {
           ) : (
             <div className="empty-state">
               <h2>No note open</h2>
-              <p className="hint">Pick a note from the sidebar or press ⌘O to switch.</p>
+              <p className="hint">
+                Pick a note from the sidebar
+                <span className="fine-pointer-only">
+                  {" "}
+                  or press <kbd>⌘O</kbd> to switch
+                </span>
+              </p>
               <button className="btn primary" onClick={() => createNote("")}>
                 <PlusIcon /> New note
               </button>
@@ -1383,7 +1464,7 @@ export function App() {
         ) : null}
       </main>
 
-      {isMobile ? (
+      {isMobile && path ? (
         <nav className="mobile-tabs" aria-label="Editor view">
           <Tabs
             value={mobileView}
@@ -1547,7 +1628,7 @@ function TagsContent({
   activeTag: string | null;
 }) {
   if (tags.length === 0 && currentDocTags.size === 0) {
-    return <p className="sidebar-empty">No tags in vault.</p>;
+    return <p className="sidebar-empty">No tags in vault</p>;
   }
 
   // Tags in current doc but not yet indexed (just-typed) — render with count "·".
@@ -1579,9 +1660,11 @@ function TagsContent({
 
   return (
     <>
-      <div className="sidebar-subhead">In this note · {inDoc.length}</div>
+      <div className="sidebar-subhead">
+        In this note<span className="sidebar-count">{inDoc.length}</span>
+      </div>
       {inDoc.length === 0 ? (
-        <p className="sidebar-empty">None.</p>
+        <p className="sidebar-empty">None</p>
       ) : (
         <ul className="sidebar-tags">
           {inDoc.map((t) => (
@@ -1594,9 +1677,11 @@ function TagsContent({
           ))}
         </ul>
       )}
-      <div className="sidebar-subhead">Other tags · {notInDoc.length}</div>
+      <div className="sidebar-subhead">
+        Other tags<span className="sidebar-count">{notInDoc.length}</span>
+      </div>
       {notInDoc.length === 0 ? (
-        <p className="sidebar-empty">None.</p>
+        <p className="sidebar-empty">None</p>
       ) : (
         <ul className="sidebar-tags">
           {notInDoc.map((t) => (
@@ -1634,29 +1719,6 @@ function GitStatusChip({ status }: { status: GitStatus }) {
       <span className="dot" />
       <span>{status.dirty ? "uncommitted" : ts}</span>
     </span>
-  );
-}
-
-function ThemeButton({ theme, setTheme }: { theme: ReturnType<typeof useTheme>["theme"]; setTheme: (t: ReturnType<typeof useTheme>["theme"]) => void }) {
-  const label = `Theme: ${theme} (click to cycle)`;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          className="btn icon"
-          aria-label={label}
-          onClick={() => {
-            const next =
-              theme === "light" ? "dark" : theme === "dark" ? "system" : "light";
-            setTheme(next);
-          }}
-        >
-          {theme === "dark" ? <MoonIcon /> : <SunIcon />}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">{label}</TooltipContent>
-    </Tooltip>
   );
 }
 

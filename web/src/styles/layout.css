@@ -37,39 +37,30 @@
 @media (max-width: 720px) {
   .topbar-center { display: none; }
 }
-/* V62: on narrow viewports the topbar action row overflows past the
-   right edge — allow horizontal scroll for the actions, but keep the
-   left identity zone (hamburger + brand) pinned via `position: sticky`
-   so the user never loses orientation. Sticky children need a solid
-   background so scrolled-under content doesn't bleed through. */
+/* Below the desktop breakpoint the secondary actions move into the More
+   menu instead of the bar scrolling sideways. */
+.topbar-wide-only {
+  display: contents;
+}
+.topbar-menu .narrow-only {
+  display: none;
+}
 @media (max-width: 840px) {
-  .topbar {
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
+  .topbar-wide-only {
+    display: none;
   }
-  .topbar::-webkit-scrollbar { display: none; }
-  .topbar > * { flex-shrink: 0; }
-  .topbar .menu-btn {
-    position: sticky;
-    left: 0;
-    z-index: 2;
-    background: var(--bg-surface);
+  .topbar-menu .narrow-only {
+    display: flex;
   }
-  .topbar .brand {
-    position: sticky;
-    left: 44px; /* approx menu-btn width incl. padding */
-    z-index: 2;
-    background: var(--bg-surface);
-    /* slight right-padding so scrolled content has visual separation */
-    padding-right: var(--space-2);
+  .topbar-menu [role="separator"].narrow-only {
+    display: block;
   }
 }
 
 .topbar .brand {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   padding: 4px 8px;
   margin-left: 4px;
   border-radius: var(--radius-1);
@@ -81,15 +72,16 @@
 .topbar .brand:hover {
   background: var(--bg-hover);
 }
-.topbar .brand img {
+.topbar .brand svg {
   display: block;
-  width: 22px;
-  height: 22px;
+  flex-shrink: 0;
+}
+.topbar .brand-ext {
+  color: var(--text-3);
 }
 .topbar .brand-name {
-  font-weight: 600;
+  font-weight: 500;
   font-size: var(--text-sm);
-  letter-spacing: -0.01em;
 }
 @media (max-width: 540px) {
   .topbar .brand-name {
@@ -104,13 +96,13 @@
   transition: color var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
 }
 .topbar .sponsor-btn:hover {
-  color: #ec4899; /* pink-500 */
+  color: var(--text-1);
   opacity: 1;
 }
 
 .topbar .title {
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-weight: 500;
+  font-size: var(--text-sm);
   color: var(--text-1);
   white-space: nowrap;
   overflow: hidden;
@@ -121,13 +113,44 @@
   flex: 1;
 }
 
+.topbar-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 var(--space-1);
+  background: var(--border-strong);
+  flex-shrink: 0;
+}
+@media (hover: hover) and (min-width: 841px) {
+  .topbar .btn.icon,
+  .sidebar header .btn.icon {
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0;
+  }
+  .topbar {
+    gap: var(--space-1);
+  }
+  .topbar .brand {
+    margin-right: var(--space-2);
+  }
+}
+
+.topbar-menu [role="menuitem"] > svg {
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+
 .topbar .crumb {
   color: var(--text-3);
   font-size: var(--text-sm);
 }
 
 .topbar .saved {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono);
   font-size: var(--text-xs);
+  line-height: 1;
   color: var(--text-3);
   margin-right: var(--space-2);
   white-space: nowrap;
@@ -147,9 +170,14 @@
 .sidebar header {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2);
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--border);
+}
+.sidebar .sidebar-title {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-2);
 }
 
 /* Legacy .tree-wrap / .side-section removed in T89 — replaced by .sidebar-scroll + Accordion */
@@ -168,19 +196,29 @@
   border-bottom: 1px solid var(--border);
 }
 .sidebar .sidebar-trigger {
-  padding: 6px 10px;
-  font-size: var(--text-xs);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  min-height: 36px;
+  padding: 8px 12px;
+  font-size: var(--text-sm);
   color: var(--text-3);
-  background: var(--bg-surface-2);
-  font-weight: 600;
+  background: transparent;
+  font-weight: 500;
   cursor: pointer;
   user-select: none;
 }
 .sidebar .sidebar-trigger:hover {
   color: var(--text-1);
-  background: var(--bg-active);
+  background: var(--bg-hover);
+}
+.sidebar .sidebar-count {
+  margin-left: 8px;
+}
+.sidebar .sidebar-count,
+.sidebar .sidebar-tag-count {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
 }
 .sidebar .sidebar-trigger[data-state="open"] {
   color: var(--text-2);
@@ -188,7 +226,7 @@
 .sidebar .sidebar-trigger > svg {
   width: 12px;
   height: 12px;
-  color: var(--text-4);
+  color: var(--text-3);
 }
 .sidebar .sidebar-body {
   padding: 4px 0;
@@ -196,33 +234,34 @@
 .sidebar .sidebar-empty {
   margin: 0;
   padding: 8px 12px;
-  font-size: var(--text-xs);
-  color: var(--text-4);
+  font-size: var(--text-sm);
+  color: var(--text-3);
 }
-.sidebar .sidebar-body .outline,
+.sidebar .sidebar-body .doc-outline,
 .sidebar .sidebar-body .backlinks {
   border-top: none;
-  padding: 4px 10px;
+  padding: 4px 12px;
   background: transparent;
 }
-.sidebar .sidebar-body .outline h3,
+.sidebar .sidebar-body .doc-outline h3,
 .sidebar .sidebar-body .backlinks h3 {
   display: none;
 }
 
 .sidebar .sidebar-tags {
   list-style: none;
-  padding: 4px 6px 6px;
+  padding: 4px 8px 8px;
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
 .sidebar .sidebar-tag {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 8px;
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 8px;
   border-radius: var(--radius-1);
   color: var(--text-2);
   text-decoration: none;
@@ -235,7 +274,7 @@
 }
 .sidebar .sidebar-tag.active {
   background: var(--bg-selected);
-  color: var(--accent-strong);
+  color: var(--text-1);
 }
 .sidebar .sidebar-tag-name {
   flex: 1;
@@ -244,18 +283,10 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sidebar .sidebar-tag-count {
+.sidebar .sidebar-subhead {
+  padding: 12px 8px 4px;
   font-size: var(--text-xs);
   color: var(--text-3);
-  font-variant-numeric: tabular-nums;
-}
-.sidebar .sidebar-subhead {
-  padding: 8px 12px 4px;
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-4);
-  font-weight: 600;
 }
 
 .sync-connector {
@@ -365,11 +396,9 @@
   align-items: center;
   gap: var(--space-2);
   height: 36px;
-  padding: 0 var(--space-3);
-  font-size: var(--text-xs);
+  padding: 0 var(--space-4);
+  font-size: var(--text-sm);
   color: var(--text-3);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
   border-bottom: 1px solid var(--border);
   background: var(--bg-surface);
 }
@@ -479,4 +508,24 @@
   .drawer-backdrop {
     display: none;
   }
+}
+
+/* No note open: the empty state takes the whole main area, an empty
+   preview beside it says nothing. */
+.main.is-empty,
+.main.is-empty.show-preview {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "editor";
+}
+.main.is-empty .pane-head,
+.main.is-empty .pane.preview-pane {
+  display: none;
+}
+.main.is-empty .pane.editor-pane {
+  display: flex;
+  border-right: none;
+}
+.main.is-empty {
+  padding-bottom: 0;
 }

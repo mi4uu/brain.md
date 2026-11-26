@@ -73,7 +73,7 @@ export function LoginDialog({ open, onLogin, error, loginMethods }: Props) {
             <button
               type="submit"
               disabled={busy || !password}
-              className="rounded-1 bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-strong disabled:opacity-50"
+              className="rounded-1 bg-accent px-3 py-1.5 text-sm font-medium text-accent-on hover:bg-accent-strong disabled:opacity-50"
             >
               {busy ? "Signing in…" : "Sign in"}
             </button>

@@ -112,7 +112,7 @@ export class GraphEngine {
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(host);
     this.mo = new MutationObserver(() => this.refreshTheme());
-    this.mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "class", "style"] });
+    this.mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-accent", "class", "style"] });
     this.mq = matchMedia("(prefers-color-scheme: dark)");
     this.mq.addEventListener("change", this.refreshTheme);
     this.canvas.addEventListener("pointerdown", this.onPointerDown);

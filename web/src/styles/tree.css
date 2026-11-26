@@ -7,8 +7,8 @@
   position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 6px;
+  gap: 8px;
+  padding: 4px 8px;
   border-radius: var(--radius-1);
   color: var(--text-2);
   min-height: 32px;
@@ -24,8 +24,11 @@
 }
 .tree-row.active {
   background: var(--bg-selected);
-  color: var(--accent-strong);
+  color: var(--text-1);
   font-weight: 500;
+}
+.tree-row.active .icon {
+  color: var(--accent);
 }
 
 .tree-row .chev {
@@ -53,9 +56,9 @@
 }
 
 .tree-children {
-  padding-left: 14px;
+  padding-left: 12px;
   border-left: 1px solid var(--border);
-  margin-left: 8px;
+  margin-left: 16px;
 }
 
 .tree-empty {
@@ -176,10 +179,10 @@
 .icon-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
-  gap: 6px;
+  gap: 8px;
   max-height: 42vh;
   overflow: auto;
-  padding: 6px;
+  padding: 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius-2);
   background: var(--bg-surface);
@@ -208,8 +211,8 @@
 
 .bookmark-row .bookmark-remove {
   flex-shrink: 0;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border: 0;
   border-radius: var(--radius-1);
   background: transparent;
@@ -245,5 +248,5 @@
   opacity: 0.55;
 }
 .tree-row.is-hidden .label {
-  font-style: italic;
+  color: var(--text-3);
 }

@@ -137,7 +137,7 @@ const DropdownMenuLabel = React.forwardRef<
   <DropdownMenuPrimitive.Label
     ref={ref}
     className={cn(
-      "px-2 py-1.5 text-xs font-medium uppercase tracking-wide text-fg-3",
+      "px-2 py-1.5 text-xs font-medium text-fg-3",
       inset && "pl-7",
       className,
     )}
@@ -164,7 +164,7 @@ const DropdownMenuShortcut = ({
 }: React.HTMLAttributes<HTMLSpanElement>) => (
   <span
     className={cn(
-      "ml-auto text-xs tracking-widest text-fg-3",
+      "ml-auto font-mono text-xs text-fg-3",
       className,
     )}
     {...props}

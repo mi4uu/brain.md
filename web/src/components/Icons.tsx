@@ -6,7 +6,7 @@ const baseProps = {
   viewBox: "0 0 24 24",
   fill: "none",
   stroke: "currentColor",
-  strokeWidth: 1.8,
+  strokeWidth: 1.5,
   strokeLinecap: "round" as const,
   strokeLinejoin: "round" as const,
   "aria-hidden": true,
@@ -259,6 +259,29 @@ export function FolderPlusIcon(p: SVGProps<SVGSVGElement>) {
       <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
       <line x1="12" y1="11" x2="12" y2="17" />
       <line x1="9" y1="14" x2="15" y2="14" />
+    </svg>
+  );
+}
+
+export function FileSearchIcon(p: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...baseProps} {...p}>
+      <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+      <polyline points="14 3 14 9 20 9" />
+      <circle cx="11.5" cy="14.5" r="2.5" />
+      <line x1="13.3" y1="16.3" x2="15" y2="18" />
+    </svg>
+  );
+}
+
+export function BrandMark(p: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...baseProps} width={20} height={20} strokeWidth={1.75} strokeLinecap="square" strokeLinejoin="miter" {...p}>
+      <path d="M7 4H4v16h3" />
+      <path d="M10.5 7.5H8.5v9h2" />
+      <path d="M17 4h3v16h-3" />
+      <path d="M13.5 7.5h2v9h-2" />
+      <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
     </svg>
   );
 }

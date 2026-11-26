@@ -150,7 +150,7 @@ export function FolderPermsDialog({ folderPath, onClose }: Props) {
               type="button"
               disabled={busy}
               onClick={save}
-              className="rounded-1 bg-accent px-3 py-1 text-sm font-medium text-white hover:bg-accent-strong disabled:opacity-50"
+              className="rounded-1 bg-accent px-3 py-1 text-sm font-medium text-accent-on hover:bg-accent-strong disabled:opacity-50"
             >
               Save
             </button>

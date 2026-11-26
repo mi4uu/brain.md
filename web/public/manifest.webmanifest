@@ -4,8 +4,8 @@
   "description": "Web Obsidian-flavored markdown vault",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#16161a",
-  "theme_color": "#9b87f5",
+  "background_color": "#141415",
+  "theme_color": "#141415",
   "scope": "/",
   "icons": [
     {

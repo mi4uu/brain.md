@@ -60,13 +60,14 @@ kbd {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--text-2);
+  font-variant-numeric: tabular-nums;
 }
 
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   min-height: var(--tap);
   padding: 8px 12px;
   border-radius: var(--radius-2);
@@ -84,11 +85,15 @@ kbd {
 }
 .btn.primary {
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 .btn.primary:hover {
   background: var(--accent-strong);
-  color: white;
+  color: var(--on-accent);
+}
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 .btn.icon {
   padding: 8px;
@@ -129,4 +134,50 @@ kbd {
 
 .muted {
   color: var(--text-3);
+}
+
+:root {
+  accent-color: var(--accent);
+}
+
+.accent-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 12px 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  background: transparent;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+.accent-swatch:hover {
+  background: var(--bg-hover);
+  color: var(--text-1);
+}
+.accent-swatch.is-active {
+  border-color: var(--border-strong);
+  background: var(--bg-active);
+  color: var(--text-1);
+}
+.accent-swatch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.accent-swatch-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--sw-light);
+}
+:root[data-theme="dark"] .accent-swatch-dot {
+  background: var(--sw-dark);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .accent-swatch-dot {
+    background: var(--sw-dark);
+  }
 }
