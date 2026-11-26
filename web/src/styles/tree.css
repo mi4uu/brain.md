@@ -127,6 +127,14 @@
   .tree-actions button {
     width: 40px;
     height: 40px;
+    color: var(--text-4);
+  }
+  /* Always visible on touch, so no hover backdrop: a quiet "..." per row,
+     not a grey tile on every line. */
+  .tree-actions,
+  .tree-row.active .tree-actions {
+    background: none;
+    padding-left: 0;
   }
 }
 
