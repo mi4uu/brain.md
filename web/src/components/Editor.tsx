@@ -14,6 +14,7 @@ import {
 } from "@codemirror/autocomplete";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { isMediaName } from "../renderer/render";
+import { tableKeymap } from "../tables/cm";
 
 function wikilinkFor(name: string): string {
   return isMediaName(name) ? `![[${name}]]` : `[[${name}]]`;
@@ -289,6 +290,7 @@ export function Editor({
         closeOnBlur: false,
         activateOnTyping: true,
       }),
+      tableKeymap,
       keymap.of([
         ...defaultKeymap,
         ...historyKeymap,
