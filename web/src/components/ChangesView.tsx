@@ -18,10 +18,11 @@ import {
 interface Props {
   changes: ChangesState;
   onOpen: (path: string) => void;
+  beforeRevert: (path: string) => Promise<void>;
   onVaultChanged: (path: string) => void;
 }
 
-export function ChangesView({ changes, onOpen, onVaultChanged }: Props) {
+export function ChangesView({ changes, onOpen, beforeRevert, onVaultChanged }: Props) {
   const { page, unseen, unseenCount } = changes;
   const [older, setOlder] = useState<ChangeCommit[]>([]);
   const [olderHasMore, setOlderHasMore] = useState<boolean | null>(null);
@@ -146,6 +147,7 @@ export function ChangesView({ changes, onOpen, onVaultChanged }: Props) {
           note={reverting.note}
           edit={reverting.edit}
           laterEdits={laterEditsOf(commits, reverting.note.path, reverting.edit)}
+          beforeRevert={beforeRevert}
           onClose={() => setReverting(null)}
           onDone={() => {
             const p = reverting.note.path;
@@ -266,12 +268,14 @@ function RevertDialog({
   note,
   edit,
   laterEdits,
+  beforeRevert,
   onClose,
   onDone,
 }: {
   note: NoteChange;
   edit: NoteEdit;
   laterEdits: NoteEdit[];
+  beforeRevert: (path: string) => Promise<void>;
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -285,6 +289,7 @@ function RevertDialog({
     setBusy(true);
     setError(null);
     try {
+      await beforeRevert(note.path);
       if (created) await api.deleteNote(note.path);
       else await gitApi.revert(edit.sha, note.path, mode);
       onDone();

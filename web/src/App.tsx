@@ -222,13 +222,14 @@ export function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showTasks, setShowTasks] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
-  const changes = useChanges();
+  const changes = useChanges(showHidden);
   const [showChanges, setShowChanges] = useState(false);
   // A link to a note or tag wins over the Changes start screen.
   const deepLinkAtLoad = useRef(
     window.location.hash.startsWith("#/note/") || window.location.hash.startsWith("#/tag/"),
   );
   const startDecided = useRef(false);
+  const ownHashRef = useRef<string | null>(null);
   useEffect(() => {
     if (startDecided.current || !changes.loaded || changes.error) return;
     startDecided.current = true;
@@ -492,6 +493,11 @@ export function App() {
   useEffect(() => {
     function onHash() {
       const h = window.location.hash;
+      // openNote() already did the work for a hash it set itself.
+      if (h === ownHashRef.current) {
+        ownHashRef.current = null;
+        return;
+      }
       if (h.startsWith("#/note/")) {
         const rest = decodeURI(h.slice("#/note/".length));
         // split a single trailing #<slug> off the path
@@ -572,7 +578,10 @@ export function App() {
         setMobileView("edit");
         if (!opts?.keepChanges) setShowChanges(false);
         const want = `#/note/${encodeURI(p)}${opts?.headingSlug ? `#${opts.headingSlug}` : ""}`;
-        if (window.location.hash !== want) window.location.hash = want;
+        if (window.location.hash !== want) {
+          ownHashRef.current = want;
+          window.location.hash = want;
+        }
         const bl = await api.backlinks(p);
         setBacklinks(bl);
         // V54: kick off the related fetch in parallel. The server responds
@@ -1455,6 +1464,11 @@ export function App() {
         <ChangesView
           changes={changes}
           onOpen={(p) => void openNote(p)}
+          beforeRevert={async (p) => {
+            // Typing in the open note that has not reached the server yet
+            // would otherwise be overwritten by the reverted text.
+            if (p === path) await flushSaveRef.current();
+          }}
           onVaultChanged={(p) => {
             void refreshTree();
             void refreshGit();

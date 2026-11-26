@@ -77,6 +77,7 @@ export function gitRoutes(
   repo: GitRepo,
   autocommit: Autocommit,
   settings: SettingsStore,
+  isHidden: (path: string) => boolean = () => false,
 ) {
   return new Elysia({ prefix: "/api/git" })
     .get("/status", async ({ set, request }) => {
@@ -259,6 +260,9 @@ export function gitRoutes(
           const asked = Number(query.limit);
           const limit = Number.isFinite(asked) && asked > 0 ? Math.min(500, Math.floor(asked)) : 200;
           const commits = await repo.changes({ limit: limit + 1, before: query.before });
+          // Agents' working files are often hidden notes; the UI leaves them
+          // out unless "show hidden" is on, so it needs to know which.
+          for (const c of commits) for (const f of c.files) if (isHidden(f.path)) f.hidden = true;
           return {
             enabled: true,
             seen: await readSeen(vault),

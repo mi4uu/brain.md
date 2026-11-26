@@ -17,8 +17,9 @@ export interface ChangesState {
   markAllSeen: () => Promise<void>;
 }
 
-export function useChanges(): ChangesState {
-  const [page, setPage] = useState<ChangesPage | null>(null);
+export function useChanges(showHidden: boolean): ChangesState {
+  const [raw, setPage] = useState<ChangesPage | null>(null);
+  const page = useMemo(() => (raw ? withoutHidden(raw, showHidden) : null), [raw, showHidden]);
   const [available, setAvailable] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,13 +85,23 @@ export function useChanges(): ChangesState {
   }, [page]);
 
   const markAllSeen = useCallback(async () => {
-    const newest = page?.commits[0];
+    // The newest commit of all, hidden ones included, so nothing older
+    // stays "new" behind the filter.
+    const newest = raw?.commits[0];
     if (!newest) return;
     const seen = await gitApi.markSeen(newest.sha);
     setPage((p) => (p ? { ...p, seen } : p));
-  }, [page]);
+  }, [raw]);
 
   return { available, loaded, error, page, reload, markAllSeen, ...derived };
+}
+
+function withoutHidden(p: ChangesPage, showHidden: boolean): ChangesPage {
+  if (showHidden) return p;
+  const commits = p.commits
+    .map((c) => (c.files.some((f) => f.hidden) ? { ...c, files: c.files.filter((f) => !f.hidden) } : c))
+    .filter((c) => c.files.length > 0);
+  return { ...p, commits };
 }
 
 // Paths with agent changes the owner has not seen yet; the file tree marks them.

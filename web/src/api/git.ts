@@ -26,6 +26,7 @@ export interface ChangedFile {
   status: ChangeStatus;
   actor: string;
   actorKind: ActorKind;
+  hidden?: boolean;
 }
 
 export interface ChangeCommit {

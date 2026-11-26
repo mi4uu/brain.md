@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp, type AppHandle } from "../src/app";
 import { parseChanges } from "../src/git/git";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 let h: AppHandle;
 let dir: string;
@@ -64,6 +66,30 @@ describe("GET /api/git/changes", () => {
     ]);
     expect(first!.files[0]!.status).toBe("added");
     expect(first!.files[0]!.actorKind).toBe("human");
+  });
+
+  test("a write through MCP with an API key shows up as that agent", async () => {
+    const transport = new StreamableHTTPClientTransport(new URL("http://localhost/mcp"), {
+      fetch: ((input: string | URL | Request, init?: RequestInit) =>
+        h.app.handle(new Request(input, init))) as unknown as typeof fetch,
+      requestInit: { headers: { authorization: `Bearer ${agentKey}` } },
+    });
+    const client = new Client({ name: "test", version: "0.0.0" });
+    await client.connect(transport);
+    await client.callTool({ name: "write_note", arguments: { path: "Journal/telefon.md", content: "- call\n" } });
+    await client.close();
+    await h.autocommit.flush();
+    const f = (await changes()).commits[0]!.files[0]!;
+    expect(f).toMatchObject({ path: "Journal/telefon.md", actor: "claude-code", actorKind: "agent", status: "added" });
+  });
+
+  test("marks hidden notes so the UI can leave them out", async () => {
+    expect((await call("PATCH", "/api/settings", { hidden: ["**/_*"] }, owner)).status).toBe(200);
+    await write("_templates/t.md", "x", agentKey);
+    await write("visible.md", "x", agentKey);
+    const files = (await changes()).commits.flatMap((c) => c.files);
+    expect(files.find((f) => f.path === "visible.md")!.hidden).toBeUndefined();
+    expect(files.find((f) => f.path === "_templates/t.md")!.hidden).toBe(true);
   });
 
   test("never lists .brain/ or .gitignore", async () => {
@@ -197,6 +223,28 @@ describe("POST /api/git/revert", () => {
     const r = await call("POST", "/api/git/revert", { sha: delSha, path: "gone.md", mode: "patch" }, owner);
     expect(r.status).toBe(200);
     expect(await readFile(join(dir, "gone.md"), "utf8")).toBe("keep me\n");
+  });
+
+  test("refuses to restore a note that was moved later instead of leaving a second copy", async () => {
+    await write("m.md", "one\n", owner);
+    await write("m.md", "two\n", agentKey);
+    const sha = (await changes()).commits[0]!.sha;
+    Bun.spawnSync(["git", "-C", dir, "mv", "m.md", "moved.md"]);
+    Bun.spawnSync(["git", "-C", dir, "commit", "-qm", "move"]);
+    const r = await call("POST", "/api/git/revert", { sha, path: "m.md", mode: "restore" }, owner);
+    expect(r.status).toBe(409);
+    expect(Bun.file(join(dir, "m.md")).size).toBe(0);
+  });
+
+  test("brings a deleted note back into a folder that is gone", async () => {
+    await write("deep/dir/x.md", "x\n", owner);
+    expect((await call("DELETE", "/api/note/deep/dir/x.md", undefined, agentKey)).status).toBeLessThan(300);
+    await h.autocommit.flush();
+    await rm(join(dir, "deep"), { recursive: true, force: true });
+    const sha = (await changes()).commits[0]!.sha;
+    const r = await call("POST", "/api/git/revert", { sha, path: "deep/dir/x.md", mode: "restore" }, owner);
+    expect(r.status).toBe(200);
+    expect(await readFile(join(dir, "deep/dir/x.md"), "utf8")).toBe("x\n");
   });
 
   test("agent credentials cannot revert", async () => {

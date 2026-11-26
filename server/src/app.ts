@@ -194,7 +194,7 @@ export function createApp(opts: AppOptions = {}) {
     .use(trashRoutes(vault, index))
     .use(tasksRoutes(vault, index))
     .use(tagRoutes(vault, index))
-    .use(gitRoutes(vault, repo, autocommit, settings))
+    .use(gitRoutes(vault, repo, autocommit, settings, (p) => visibility.isHidden(p)))
     .use(metaRoutes(vault))
     .use(settingsRoutes(settings, autocommit, ragPipeline))
     .use(ragRoutes(ragPipeline, settings, vault, index))

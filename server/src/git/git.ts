@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 export interface GitCommit {
   sha: string;
@@ -31,6 +31,7 @@ export interface ChangedFile {
   status: ChangeStatus;
   actor: string;
   actorKind: ActorKind;
+  hidden?: boolean;
 }
 
 export interface ChangeCommit {
@@ -470,6 +471,11 @@ export class GitRepo {
       if (before === null) throw new RevertError("CREATED", `${opts.path} did not exist before this change`);
 
       let next: string;
+      if (after !== null && !live) {
+        // The note was moved or deleted after this change; writing the old
+        // path back would leave a second copy beside wherever it went.
+        throw new RevertError("CONFLICT", `${opts.path} was moved or deleted later, open it from its new place instead`);
+      }
       if (opts.mode === "restore" || after === null) {
         // after === null: the change deleted the note; undoing it means
         // bringing it back, which only works while nothing sits there now.
@@ -482,11 +488,22 @@ export class GitRepo {
         next = await this.mergeOut(await readFile(abs, "utf8"), after, before, opts.path);
       }
 
+      const previous = live ? await readFile(abs) : null;
+      await mkdir(dirname(abs), { recursive: true });
       await writeFile(abs, next);
-      await run(this.root, ["add", "-A", "--", opts.path]);
-      const out = await this.commitStaged(opts.message, opts);
-      if (!out) throw new RevertError("NOT_CHANGED", `reverting left ${opts.path} unchanged`);
-      return out;
+      try {
+        await run(this.root, ["add", "-A", "--", opts.path]);
+        const out = await this.commitStaged(opts.message, opts);
+        if (!out) throw new RevertError("NOT_CHANGED", `reverting left ${opts.path} unchanged`);
+        return out;
+      } catch (e) {
+        // Leave the note as it was rather than half-reverted and dirty,
+        // where the next autocommit would file it under nobody.
+        if (previous) await writeFile(abs, previous);
+        else await rm(abs, { force: true });
+        await run(this.root, ["reset", "-q", "--", opts.path], { allowFail: true });
+        throw e;
+      }
     });
   }
 
