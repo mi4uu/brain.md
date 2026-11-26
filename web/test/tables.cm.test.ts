@@ -38,9 +38,27 @@ describe("formatTable", () => {
     expect(formatTable(s.view)).toBe(false);
   });
 
-  test("declines with a non-empty selection so the key keeps its default meaning", () => {
-    const s = stub(TABLE, 0, 4);
+  test("declines a multi-line selection so the key keeps its default meaning", () => {
+    const s = stub(TABLE, 0, 14);
     expect(formatTable(s.view)).toBe(false);
+    expect(s.state.doc.toString()).toBe(TABLE);
+  });
+
+  test("works after Tab, which leaves a cell selected", () => {
+    const s = stub(TABLE, 2);
+    tableTab(1)(s.view);
+    expect(formatTable(s.view)).toBe(true);
+    expect(s.state.doc.toString()).toBe("| a   | b   |\n| --- | --- |\n| 1   | 2   |\n");
+  });
+
+  test("typing then Format undoes in two steps", () => {
+    const s = stub(TABLE, 3);
+    s.view.dispatch({ changes: { from: 3, insert: "x" }, userEvent: "input.type" });
+    const typed = s.state.doc.toString();
+    expect(formatTable(s.view)).toBe(true);
+    expect(undo(s.view as never)).toBe(true);
+    expect(s.state.doc.toString()).toBe(typed);
+    expect(undo(s.view as never)).toBe(true);
     expect(s.state.doc.toString()).toBe(TABLE);
   });
 });

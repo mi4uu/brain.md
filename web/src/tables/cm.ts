@@ -8,19 +8,18 @@ import { enterEdit, formatEdit, tabEdit, type CursorEdit } from "./navigate";
 
 export type ViewLike = Pick<EditorView, "state" | "dispatch">;
 
-// Tab selects the next cell's text, so navigation must accept a selection that stays on one line.
+// Tab selects the next cell's text, so every table key must accept a selection that stays on one line.
 function runCursorEdit(
   view: ViewLike,
   make: (text: string, pos: number) => CursorEdit | null,
-  opts: { allowSelection: boolean },
+  opts: { isolate?: boolean } = {},
 ): boolean {
   const { state } = view;
   const sel = state.selection.main;
   if (completionStatus(state) !== null) return false;
-  if (!sel.empty) {
-    if (!opts.allowSelection) return false;
-    if (state.doc.lineAt(sel.from).number !== state.doc.lineAt(sel.to).number) return false;
-  }
+  const line = state.doc.lineAt(sel.from);
+  if (!line.text.includes("|")) return false;
+  if (!sel.empty && line.number !== state.doc.lineAt(sel.to).number) return false;
   const edit = make(state.doc.toString(), sel.from);
   if (!edit) return false;
   const changed = edit.from !== edit.to || edit.insert !== "";
@@ -29,20 +28,21 @@ function runCursorEdit(
     selection: { anchor: edit.anchor, head: edit.head },
     scrollIntoView: true,
     userEvent: "input.table",
+    annotations: opts.isolate ? isolateHistory.of("full") : undefined,
   });
   return true;
 }
 
 export const formatTable = (view: ViewLike): boolean =>
-  runCursorEdit(view, formatEdit, { allowSelection: false });
+  runCursorEdit(view, formatEdit, { isolate: true });
 
 export const tableTab =
   (dir: 1 | -1) =>
   (view: ViewLike): boolean =>
-    runCursorEdit(view, (t, p) => tabEdit(t, p, dir), { allowSelection: true });
+    runCursorEdit(view, (t, p) => tabEdit(t, p, dir));
 
 export const tableEnter = (view: ViewLike): boolean =>
-  runCursorEdit(view, enterEdit, { allowSelection: true });
+  runCursorEdit(view, enterEdit);
 
 export const tableKeymap: Extension = keymap.of([
   { key: "Tab", run: tableTab(1) },
