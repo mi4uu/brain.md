@@ -118,6 +118,15 @@ describe("PUT /api/properties/types", () => {
     expect(file).toEqual({ types: { old: "future-type", prio: "number" } });
   });
 
+  test("keeps non-string entries and other top-level keys on write", async () => {
+    await mkdir(join(dir, ".brain"), { recursive: true });
+    const before = { version: 2, extra: { keep: true }, types: { old: "text", weird: 5, obj: { x: 1 } } };
+    await writeFile(join(dir, ".brain/types.json"), JSON.stringify(before));
+    await call("PUT", "/api/properties/types", { name: "prio", type: "number" });
+    const file = JSON.parse(await readFile(join(dir, ".brain/types.json"), "utf8"));
+    expect(file).toEqual({ ...before, types: { ...before.types, prio: "number" } });
+  });
+
   test("a corrupt types file is not overwritten", async () => {
     await mkdir(join(dir, ".brain"), { recursive: true });
     await writeFile(join(dir, ".brain/types.json"), "{ not json");
@@ -129,7 +138,9 @@ describe("PUT /api/properties/types", () => {
   test("rejects an unknown type, an empty name and __proto__", async () => {
     expect((await call("PUT", "/api/properties/types", { name: "x", type: "bogus" })).status).toBe(422);
     expect((await call("PUT", "/api/properties/types", { name: "", type: "text" })).status).toBe(422);
-    expect((await call("PUT", "/api/properties/types", { name: "__proto__", type: "text" })).status).toBe(400);
+    const proto = await call("PUT", "/api/properties/types", { name: "__proto__", type: "text" });
+    expect(proto.status).toBe(400);
+    expect(proto.json.code).toBe("INVALID_VALUE");
   });
 
   test("an API key cannot change types; the owner can", async () => {

@@ -2,6 +2,7 @@ import { Elysia, t } from "elysia";
 import { FrontmatterError } from "@brainmd/shared/frontmatter";
 import { PROPERTY_TYPES } from "@brainmd/shared/property-types";
 import { NoteConflictError, type Vault } from "../vault/vault";
+import { VaultError } from "../vault/types";
 import type { VaultIndex } from "../index/index";
 import { listProperties, saveTypeOverride } from "../properties/registry";
 import { updateProperties } from "../properties/update";
@@ -20,10 +21,7 @@ export function propertyRoutes(vault: Vault, index: VaultIndex) {
       async ({ body, set, request }) => {
         try {
           requireOwner(request);
-          if (body.name === "__proto__") {
-            set.status = 400;
-            return { error: "invalid property name", code: "INVALID_NAME" };
-          }
+          if (body.name === "__proto__") throw new VaultError("invalid property name", "INVALID_VALUE");
           await saveTypeOverride(vault, body.name, body.type);
           return { ok: true };
         } catch (e) {

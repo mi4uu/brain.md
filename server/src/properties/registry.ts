@@ -9,20 +9,27 @@ import type { Vault } from "../vault/vault";
 const OWN_REL = ".brain/types.json";
 const OBSIDIAN_REL = ".obsidian/types.json";
 
-async function readTypesFile(vault: Vault, rel: string): Promise<Record<string, string> | null> {
+async function readJson(vault: Vault, rel: string): Promise<unknown> {
   const abs = vault.abs(rel);
   await assertRealContainment(vault.root, abs);
   let raw: string;
   try {
     raw = await readFile(abs, "utf8");
   } catch (e) {
-    if ((e as { code?: string }).code === "ENOENT") return null;
+    if ((e as { code?: string }).code === "ENOENT") return undefined;
     throw e;
   }
-  const parsed = JSON.parse(raw) as Partial<TypesFile> | null;
-  const types = parsed?.types;
+  return JSON.parse(raw);
+}
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+async function readTypesFile(vault: Vault, rel: string): Promise<Record<string, string> | null> {
+  const parsed = await readJson(vault, rel);
+  if (parsed === undefined) return null;
+  const types = isObject(parsed) ? (parsed as Partial<TypesFile>).types : undefined;
   const out: Record<string, string> = {};
-  if (!types || typeof types !== "object" || Array.isArray(types)) return out;
+  if (!isObject(types)) return out;
   for (const [name, type] of Object.entries(types)) {
     if (typeof type === "string" && name !== "__proto__") out[name] = type;
   }
@@ -51,16 +58,19 @@ export async function loadTypeOverrides(vault: Vault): Promise<Record<string, Pr
 
 let writeQueue: Promise<unknown> = Promise.resolve();
 
-// Read-modify-write of .brain/types.json. Entries this version does not
-// understand are written back unchanged. A file that exists but is not valid
-// JSON stops the write instead of being replaced.
+// Read-modify-write of .brain/types.json. Everything except this one entry
+// is written back as parsed, including entries and keys this version does
+// not understand. A file that exists but is not valid JSON stops the write
+// instead of being replaced.
 export function saveTypeOverride(vault: Vault, name: string, type: PropertyType): Promise<void> {
   const run = writeQueue.then(async () => {
-    const types = (await readTypesFile(vault, OWN_REL)) ?? {};
+    const parsed = await readJson(vault, OWN_REL);
+    const file = isObject(parsed) ? parsed : {};
+    const types = isObject(file.types) ? file.types : {};
     types[name] = type;
     const abs = vault.abs(OWN_REL);
     await mkdir(dirname(abs), { recursive: true });
-    await atomicWrite(abs, `${JSON.stringify({ types }, null, 2)}\n`);
+    await atomicWrite(abs, `${JSON.stringify({ ...file, types }, null, 2)}\n`);
   });
   writeQueue = run.catch(() => {});
   return run;
