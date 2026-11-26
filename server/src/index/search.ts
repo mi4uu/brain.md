@@ -34,7 +34,7 @@ export function search(
   // denied note never contributes a score, let alone its text, to the
   // results, not just filtered out of the final top-N.
   allowed?: (path: string) => boolean,
-  opts: { includeHidden?: boolean } = {},
+  opts: { includeHidden?: boolean; max?: number } = {},
 ): SearchHit[] {
   const query = q.trim();
   if (query === "") return [];
@@ -91,7 +91,7 @@ export function search(
   }
 
   hits.sort((a, b) => b.score - a.score || a.path.localeCompare(b.path));
-  return hits.slice(0, MAX_RESULTS);
+  return hits.slice(0, opts.max ?? MAX_RESULTS);
 }
 
 function makeSnippet(body: string, terms: string[]): string {

@@ -39,9 +39,13 @@ do through this server. Follow them unless the user explicitly overrides them.
   from assumption when a tool can give you the real content.
 - The search/RAG tools (\`search_notes\`, \`similar_notes\`, \`context_for_query\`,
   \`find_related\`, \`find_similar_tasks\`, \`find_orphans\`, \`weekly_digest\`) take
-  an optional \`scope\` — one folder path or an array of them — to confine results
+  an optional \`scope\` (one folder path or an array of them) to confine results
   to those folders and their subfolders. Use it when the owner asks about a
   specific area (e.g. \`scope: "work"\`) instead of searching the whole vault.
+- List tools (\`list_notes\`, \`search_notes\`, \`get_tasks\`, \`get_backlinks\`,
+  \`list_tags\`) return one page at a time. Narrow first (\`folder\`, \`scope\`, a
+  sharper query, \`filter\`); fetch the next page with \`offset\` only when you
+  need it. The reply says how many there are and which \`offset\` comes next.
 - When you learn something durable — a decision, a fact, a status change, a new
   task — **write it back** with \`write_note\` or \`append_note\` so the vault
   stays the source of truth. Knowledge that only lives in the chat is lost.

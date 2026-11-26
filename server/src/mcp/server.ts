@@ -9,6 +9,7 @@ import {
 } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
+import { pageArgs, pageContent, paginate } from "./paginate";
 import { NoteConflictError, type Vault } from "../vault/vault";
 import type { VaultIndex } from "../index/index";
 import type { RagPipeline } from "../rag/pipeline";
@@ -241,15 +242,22 @@ function registerHandlers(
     {
       annotations: READ_ONLY_LOCAL,
       description:
-        "Full-text search across the vault. Returns top 50 hits. Optional `scope` confines the search to one or more folders. " +
+        "Full-text search across the vault, best hits first, 20 per page by default (`limit`, `offset` for more, up to 200 hits in all). " +
+        "Optional `scope` confines the search to one or more folders. " +
         "Notes the owner hid (hidden globs, `hidden: true`, `search: false`) are skipped unless include_hidden is true.",
-      inputSchema: { query: z.string().min(1), scope: scopeSchema, include_hidden: z.boolean().optional() },
+      inputSchema: {
+        query: z.string().min(1),
+        scope: scopeSchema,
+        include_hidden: z.boolean().optional(),
+        ...pageArgs(20, 50),
+      },
     },
-    async ({ query, scope, include_hidden }) => {
+    async ({ query, scope, include_hidden, limit, offset }) => {
       const allowed = await readFilter();
-      const hits = fullTextSearch(index, query, scope, allowed, { includeHidden: include_hidden === true });
-      logCall("search_notes", { query, scope }, true);
-      return { content: [{ type: "text", text: JSON.stringify(hits) }] };
+      const hits = fullTextSearch(index, query, scope, allowed, { includeHidden: include_hidden === true, max: 200 });
+      const p = paginate(hits, limit, offset, 20);
+      logCall("search_notes", { query, scope, limit, offset }, true);
+      return pageContent("search_notes", p.items, p, "hits");
     },
   );
 
@@ -332,11 +340,13 @@ function registerHandlers(
     {
       annotations: READ_ONLY_LOCAL,
       description:
-        "List all notes (and folders) in the vault. Hidden notes and folders (the owner's hidden globs, " +
-        "`hidden: true`) are left out unless include_hidden is true; read_note and write_note work on them by path either way.",
-      inputSchema: { folder: z.string().optional(), include_hidden: z.boolean().optional() },
+        "List notes (and folders) in the vault or under `folder`, 100 notes per page by default; `limit` and `offset` page " +
+        "through the rest (the reply says total_notes and next_offset). Folders come with the first page. Hidden notes and " +
+        "folders (the owner's hidden globs, `hidden: true`) are left out unless include_hidden is true; read_note and " +
+        "write_note work on them by path either way.",
+      inputSchema: { folder: z.string().optional(), include_hidden: z.boolean().optional(), ...pageArgs(100, 1000) },
     },
-    async ({ folder, include_hidden }) => {
+    async ({ folder, include_hidden, limit, offset }) => {
       const allowedPath = await readFilter();
       const tree = await vault.listTree();
       const v = include_hidden === true ? undefined : index.visibility;
@@ -349,14 +359,20 @@ function registerHandlers(
         // on the folder path itself
         return allowedPath(`${f}/.md`);
       });
-      const filtered = folder
-        ? {
-            folders: allowedFolders.filter((f) => f.startsWith(folder)),
-            notes: allowedNotes.filter((n) => n.startsWith(folder)),
-          }
-        : { folders: allowedFolders, notes: allowedNotes };
-      logCall("list_notes", { folder }, true);
-      return { content: [{ type: "text", text: JSON.stringify(filtered) }] };
+      // A folder argument means that folder and what is inside it, not every
+      // path that merely starts with the same letters ("work" vs "workshop").
+      const base = folder?.replace(/\/+$/, "");
+      const inside = (p: string) => !base || p === base || p.startsWith(`${base}/`);
+      const notes = allowedNotes.filter(inside);
+      const p = paginate(notes, limit, offset, 100);
+      const body = {
+        folders: p.offset === 0 ? allowedFolders.filter(inside) : [],
+        notes: p.items,
+        total_notes: p.total,
+        next_offset: p.nextOffset,
+      };
+      logCall("list_notes", { folder, limit, offset }, true);
+      return pageContent("list_notes", body, p, "notes");
     },
   );
 
@@ -403,16 +419,16 @@ function registerHandlers(
     "get_backlinks",
     {
       annotations: READ_ONLY_LOCAL,
-      description: "Backlinks for a given note path.",
-      inputSchema: { path: z.string().min(1) },
+      description: "Backlinks for a given note path, 50 per page by default (`limit`, `offset` for more).",
+      inputSchema: { path: z.string().min(1), ...pageArgs(50, 500) },
     },
-    async ({ path }) => {
+    async ({ path, limit, offset }) => {
       try {
         await checkRead(vault, principal, path);
         const allowedPath = await readFilter();
-        const bls = index.backlinks(path, allowedPath);
-        logCall("get_backlinks", { path }, true);
-        return { content: [{ type: "text", text: JSON.stringify(bls) }] };
+        const p = paginate(index.backlinks(path, allowedPath), limit, offset, 50);
+        logCall("get_backlinks", { path, limit, offset }, true);
+        return pageContent("get_backlinks", p.items, p, "backlinks");
       } catch (err) {
         return toolError("get_backlinks", { path }, err);
       }
@@ -423,14 +439,16 @@ function registerHandlers(
     "list_tags",
     {
       annotations: READ_ONLY_LOCAL,
-      description: "All tags in the vault with usage counts.",
-      inputSchema: {},
+      description:
+        "Tags in the vault with usage counts, most used first, 100 per page by default (`limit`, `offset` for more).",
+      inputSchema: { ...pageArgs(100, 1000) },
     },
-    async () => {
+    async ({ limit, offset }) => {
       const allowedPath = await readFilter();
-      const tags = index.allTags(allowedPath);
-      logCall("list_tags", {}, true);
-      return { content: [{ type: "text", text: JSON.stringify(tags) }] };
+      const tags = index.allTags(allowedPath).sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+      const p = paginate(tags, limit, offset, 100);
+      logCall("list_tags", { limit, offset }, true);
+      return pageContent("list_tags", p.items, p, "tags");
     },
   );
 
@@ -474,10 +492,11 @@ function registerHandlers(
     "get_tasks",
     {
       annotations: READ_ONLY_LOCAL,
-      description: "Aggregate tasks vault-wide.",
-      inputSchema: { filter: z.enum(["open", "done", "all"]).optional() },
+      description:
+        "Tasks (checkboxes) across the vault, 50 per page by default (`limit`, `offset` for more). `filter`: open, done or all (default).",
+      inputSchema: { filter: z.enum(["open", "done", "all"]).optional(), ...pageArgs(50, 500) },
     },
-    async ({ filter }) => {
+    async ({ filter, limit, offset }) => {
       const allowedPath = await readFilter();
       const tasks = collectTasks(index).filter((t) => allowedPath(t.path));
       const f = filter ?? "all";
@@ -487,8 +506,9 @@ function registerHandlers(
           : f === "done"
             ? tasks.filter((t) => t.done)
             : tasks;
-      logCall("get_tasks", { filter: f }, true);
-      return { content: [{ type: "text", text: JSON.stringify(out) }] };
+      const p = paginate(out, limit, offset, 50);
+      logCall("get_tasks", { filter: f, limit, offset }, true);
+      return pageContent("get_tasks", p.items, p, "tasks");
     },
   );
 

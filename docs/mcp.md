@@ -15,14 +15,14 @@ or a login provider is configured, every request needs a bearer token
 
 | Tool                  | Read-only | Folder perm | What it does                                                       |
 |-----------------------|-----------|-------------|--------------------------------------------------------------------|
-| `search_notes`        | yes       | read        | Full-text vault search (top 50, optional folder scope, `include_hidden`) |
+| `search_notes`        | yes       | read        | Full-text vault search, 20 per page (`limit`, `offset`, up to 200), optional folder scope, `include_hidden` |
 | `similar_notes`       | yes       | read        | Semantic RAG search, top-k chunks (needs RAG enabled)              |
 | `read_note`           | yes       | read        | Note body + mtime; links the MCP Apps note view                    |
-| `list_notes`          | yes       | read        | Vault tree, filtered (`include_hidden` for hidden notes)           |
-| `get_backlinks`       | yes       | read        | Inbound wikilinks with line and context                            |
+| `list_notes`          | yes       | read        | Notes and folders, 100 notes per page (`limit`, `offset`, `folder`, `include_hidden`) |
+| `get_backlinks`       | yes       | read        | Inbound wikilinks with line and context, 50 per page               |
 | `graph_view`          | yes       | read        | Notes and wikilinks: vault, `folder`, or `center` + `depth` hops   |
-| `list_tags`           | yes       | read        | Tag to count map                                                   |
-| `get_tasks`           | yes       | read        | Tasks across the vault (open / done / all)                         |
+| `list_tags`           | yes       | read        | Tags with counts, most used first, 100 per page                    |
+| `get_tasks`           | yes       | read        | Tasks across the vault (open / done / all), 50 per page            |
 | `current_datetime`    | yes       | none        | Server date, time and timezone                                     |
 | `find_related`        | yes       | read        | Notes semantically close to a given note                           |
 | `find_similar_tasks`  | yes       | read        | Semantic search across task lines                                  |
@@ -53,6 +53,16 @@ prompt:
 
 Annotations are hints for the host. Access is enforced by brain.md: the
 caller's scope (owner, API key, OAuth grant) plus per-folder permissions.
+
+### Paging
+
+List tools return one page so a large vault does not flood the model's context.
+`limit` sets the page size (each tool has its own default and maximum) and
+`offset` skips that many items. The page keeps the shape the tool always
+returned (an array, or `list_notes`' object, which also carries `total_notes`
+and `next_offset`). When more remains, the result has a second text block, for
+example `Showing notes 1-100 of 523. To get more, call list_notes again with the
+same arguments and offset=100.`
 
 ## Agents editing the same notes
 
