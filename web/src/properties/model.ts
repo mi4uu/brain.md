@@ -113,3 +113,17 @@ export function minimalChange(
   }
   return { from: start, to: endBefore, insert: after.slice(start, endAfter) };
 }
+
+export type CommitDecision = { write: false } | { write: true; value: PropValue };
+
+export function numberCommit(raw: string, badInput: boolean, text: string): CommitDecision {
+  if (raw === text || badInput) return { write: false };
+  if (raw.trim() === "") return { write: true, value: null };
+  const n = parseNumber(raw);
+  return n === null ? { write: false } : { write: true, value: n };
+}
+
+export function dateCommit(raw: string, badInput: boolean, stored: string): CommitDecision {
+  if (raw === stored || badInput) return { write: false };
+  return { write: true, value: raw === "" ? null : raw };
+}

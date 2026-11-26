@@ -5,6 +5,8 @@ import {
   nativeDate,
   nativeDateTime,
   parseNumber,
+  dateCommit,
+  numberCommit,
   textOf,
   toList,
   type PropRow,
@@ -77,11 +79,20 @@ export function ValueEditor({ row, suggestions, onCommit, onLeave, onEditInSourc
           type={type === "date" ? "date" : "datetime-local"}
           aria-label={row.name}
           defaultValue={native}
-          key={native}
-          onChange={(e) => onCommit(e.currentTarget.value === "" ? null : e.currentTarget.value)}
+          key={row.name}
+          onBlur={(e) => {
+            const d = dateCommit(e.currentTarget.value, e.currentTarget.validity.badInput, native);
+            if (d.write) onCommit(d.value);
+            else e.currentTarget.value = native;
+          }}
           onKeyDown={(e) => {
-            if (e.key === "Escape") {
+            if (e.key === "Enter") {
               e.preventDefault();
+              e.currentTarget.blur();
+              onLeave();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              e.currentTarget.value = native;
               onLeave();
             }
           }}
@@ -91,7 +102,7 @@ export function ValueEditor({ row, suggestions, onCommit, onLeave, onEditInSourc
   }
 
   const text = textOf(value);
-  const numeric = type === "number";
+  const numeric = type === "number" && (text === "" || parseNumber(text) !== null);
   return (
     <input
       data-prop-value
@@ -104,8 +115,14 @@ export function ValueEditor({ row, suggestions, onCommit, onLeave, onEditInSourc
       spellCheck={false}
       onBlur={(e) => {
         const raw = e.currentTarget.value;
+        if (numeric) {
+          const d = numberCommit(raw, e.currentTarget.validity.badInput, text);
+          if (d.write) onCommit(d.value);
+          else e.currentTarget.value = text;
+          return;
+        }
         if (raw === text) return;
-        onCommit(numeric ? parseNumber(raw) : raw === "" ? null : raw);
+        onCommit(raw === "" ? null : raw);
       }}
       onKeyDown={(e) => {
         if (e.key === "Enter") {

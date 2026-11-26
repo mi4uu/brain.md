@@ -88,3 +88,20 @@ describe("offset follows the line ending", () => {
     expect(c.slice(m.offset)).toStartWith("a:");
   });
 });
+
+import { dateCommit, numberCommit } from "../src/properties/model";
+
+describe("numberCommit", () => {
+  test("unchanged text writes nothing", () => expect(numberCommit("5", false, "5")).toEqual({ write: false }));
+  test("bad input reverts", () => expect(numberCommit("", true, "")).toEqual({ write: false }));
+  test("unparseable text reverts", () => expect(numberCommit("1,5", false, "2")).toEqual({ write: false }));
+  test("cleared field writes null", () => expect(numberCommit("", false, "5")).toEqual({ write: true, value: null }));
+  test("number writes", () => expect(numberCommit("7.5", false, "5")).toEqual({ write: true, value: 7.5 }));
+});
+
+describe("dateCommit", () => {
+  test("same value writes nothing", () => expect(dateCommit("2026-01-02", false, "2026-01-02")).toEqual({ write: false }));
+  test("partial entry reverts", () => expect(dateCommit("", true, "2026-01-02")).toEqual({ write: false }));
+  test("cleared writes null", () => expect(dateCommit("", false, "2026-01-02")).toEqual({ write: true, value: null }));
+  test("new value writes", () => expect(dateCommit("2026-02-03", false, "2026-01-02")).toEqual({ write: true, value: "2026-02-03" }));
+});
