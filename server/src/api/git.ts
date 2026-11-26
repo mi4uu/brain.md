@@ -1,6 +1,6 @@
 import { Elysia, t } from "elysia";
 import { RevertError, type GitRepo } from "../git/git";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Autocommit } from "../git/autocommit";
 import { singleActorCommitOpts } from "../git/autocommit";
@@ -8,7 +8,7 @@ import { currentIdentity } from "../auth/identity";
 import type { SettingsStore } from "../settings/settings";
 import type { Vault } from "../vault/vault";
 import { asError } from "./errors";
-import { assertSafePath, assertMarkdown, assertRestoreTargetIsFile } from "../vault/paths";
+import { assertSafePath, assertMarkdown, assertRestoreTargetIsFile, assertRealContainment } from "../vault/paths";
 import { requireRead, requireWrite, requireOwner } from "./perm-guard";
 import { principalFor } from "./auth-middleware";
 import { isOwnerPrincipal } from "./principal";
@@ -55,6 +55,15 @@ const REVERT_STATUS: Record<RevertError["code"], number> = {
   PENDING: 409,
   CONFLICT: 409,
 };
+
+// Mark-seen is read, compare, write; run one at a time so two quick
+// requests cannot leave the older one on disk.
+let seenChain: Promise<unknown> = Promise.resolve();
+function oneAtATime<T>(fn: () => Promise<T>): Promise<T> {
+  const next = seenChain.then(fn, fn);
+  seenChain = next.catch(() => undefined);
+  return next;
+}
 
 function seenFile(vault: Vault): string {
   return join(vault.root, ".brain", "changes-seen.json");
@@ -287,16 +296,25 @@ export function gitRoutes(
           // Time and identity come from git, not the client, and the cursor
           // only ever moves forward along history.
           const next = await repo.commitTime(body.sha);
-          if (!next) throw new VaultError(`no commit ${body.sha}`, "NOT_FOUND");
-          const prev = await readSeen(vault);
-          if (prev && prev.sha !== next.sha && (await repo.isAncestor(next.sha, prev.sha).catch(() => false))) {
-            return prev;
+          if (!next || !(await repo.isAncestor(next.sha, "HEAD").catch(() => false))) {
+            throw new VaultError(`no commit ${body.sha} in this vault's history`, "NOT_FOUND");
           }
-          await mkdir(join(vault.root, ".brain"), { recursive: true });
-          const tmp = `${seenFile(vault)}.${process.pid}.${Date.now()}.tmp`;
-          await writeFile(tmp, JSON.stringify(next));
-          await rename(tmp, seenFile(vault));
-          return next;
+          return await oneAtATime(async () => {
+            const prev = await readSeen(vault);
+            if (prev && prev.sha !== next.sha && (await repo.isAncestor(next.sha, prev.sha).catch(() => false))) {
+              return prev;
+            }
+            await mkdir(join(vault.root, ".brain"), { recursive: true });
+            const tmp = `${seenFile(vault)}.${process.pid}.${Date.now()}.tmp`;
+            try {
+              await writeFile(tmp, JSON.stringify(next));
+              await rename(tmp, seenFile(vault));
+            } catch (e) {
+              await rm(tmp, { force: true });
+              throw e;
+            }
+            return next;
+          });
         } catch (e) {
           const { status, body: err } = asError(e);
           set.status = status;
@@ -330,24 +348,43 @@ export function gitRoutes(
           assertSafePath(body.path);
           assertMarkdown(body.path);
           await assertRestoreTargetIsFile(vault.root, body.path);
+          await assertRealContainment(vault.root, join(vault.root, body.path));
           await requireWrite(vault, request, body.path);
           // Gives edits still waiting for the debounce a chance to land as
           // their own commit; revertChange refuses if the note is still dirty.
           await autocommit.flush();
           const identity = currentIdentity();
+          const commitOpts = identity ? singleActorCommitOpts(identity) : {};
+          if (body.mode === "trash") {
+            // The change created the note: undoing it moves the note to
+            // Trash, through the vault like any delete, then records it.
+            await repo.assertCreatedHere(body.sha, body.path);
+            await vault.deleteNote(body.path);
+            const sha = await repo.commitAll(`revert ${body.path} (trash, created in ${body.sha.slice(0, 7)})`, {
+              paths: [body.path],
+              ...commitOpts,
+            });
+            return { ok: true, sha };
+          }
           const sha = await repo.revertChange({
             sha: body.sha,
             path: body.path,
             mode: body.mode,
             message: `revert ${body.path} (${body.mode === "restore" ? "restore before" : "undo"} ${body.sha.slice(0, 7)})`,
-            ...(identity ? singleActorCommitOpts(identity) : {}),
+            ...commitOpts,
           });
           await vault.notifyWrite(body.path);
           return { ok: true, sha };
         } catch (e) {
           if (e instanceof RevertError) {
             set.status = REVERT_STATUS[e.code];
-            return { error: e.message, code: e.code };
+            const message =
+              e.code === "PENDING" && !autocommit.opts.enabled
+                ? `${e.message}. Autocommit is off, so commit them first (More, Commit now)`
+                : e.code === "PENDING"
+                  ? `${e.message}, try again in a few seconds`
+                  : e.message;
+            return { error: message, code: e.code };
           }
           const { status, body: err } = asError(e);
           set.status = status;
@@ -358,7 +395,7 @@ export function gitRoutes(
         body: t.Object({
           sha: t.String(),
           path: t.String(),
-          mode: t.Union([t.Literal("patch"), t.Literal("restore")]),
+          mode: t.Union([t.Literal("patch"), t.Literal("restore"), t.Literal("trash")]),
         }),
       },
     )

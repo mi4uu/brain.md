@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import { gitApi, RevertFailed, type ChangeCommit } from "../api/git";
-import { api } from "../api/client";
 import { groupByDay, relativeTime, timeOf, type NoteChange, type NoteEdit } from "../changes/model";
 import type { ChangesState } from "../changes/useChanges";
 import { DiffView } from "./DiffView";
@@ -290,15 +289,14 @@ function RevertDialog({
     setError(null);
     try {
       await beforeRevert(note.path);
-      if (created) await api.deleteNote(note.path);
-      else await gitApi.revert(edit.sha, note.path, mode);
+      await gitApi.revert(edit.sha, note.path, created ? "trash" : mode);
       onDone();
     } catch (e) {
-      if (e instanceof RevertFailed && e.code === "CONFLICT") {
+      if (e instanceof RevertFailed && e.code === "CONFLICT" && !created) {
         setMode("restore");
         setError("Later edits touch the same lines, so this change cannot be undone on its own. Restoring the note to before it is still possible.");
-      } else if (e instanceof RevertFailed && e.code === "PENDING") {
-        setError("This note has edits that are not in history yet. Try again in a few seconds.");
+      } else if (e instanceof RevertFailed && e.code === "CONFLICT" && created) {
+        setError("The note was moved, deleted or recreated after this change, so it is not the same note any more.");
       } else {
         setError(e instanceof Error ? e.message : String(e));
       }

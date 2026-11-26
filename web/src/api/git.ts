@@ -80,7 +80,7 @@ export const gitApi = {
       await fetch(`/api/git/patch?sha=${encodeURIComponent(sha)}&path=${encPath(path)}${old}`),
     );
   },
-  async revert(sha: string, path: string, mode: "patch" | "restore"): Promise<{ ok: true; sha: string | null }> {
+  async revert(sha: string, path: string, mode: "patch" | "restore" | "trash"): Promise<{ ok: true; sha: string | null }> {
     const res = await fetch("/api/git/revert", {
       method: "POST",
       headers: { "content-type": "application/json" },

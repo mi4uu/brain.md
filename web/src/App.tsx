@@ -581,6 +581,11 @@ export function App() {
         if (window.location.hash !== want) {
           ownHashRef.current = want;
           window.location.hash = want;
+          // If the browser fires no hashchange for it, do not let the mark
+          // swallow a later, real navigation to the same note.
+          setTimeout(() => {
+            if (ownHashRef.current === want) ownHashRef.current = null;
+          }, 500);
         }
         const bl = await api.backlinks(p);
         setBacklinks(bl);

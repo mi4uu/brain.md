@@ -44,7 +44,7 @@ async function write(path: string, content: string, bearer: string) {
 interface Changes {
   enabled: boolean;
   seen: { sha: string; ts: number } | null;
-  commits: Array<{ sha: string; ts: number; files: Array<{ path: string; status: string; actor: string; actorKind: string; oldPath?: string }> }>;
+  commits: Array<{ sha: string; ts: number; files: Array<{ path: string; status: string; actor: string; actorKind: string; oldPath?: string; hidden?: boolean }> }>;
   hasMore: boolean;
 }
 
@@ -245,6 +245,55 @@ describe("POST /api/git/revert", () => {
     const r = await call("POST", "/api/git/revert", { sha, path: "deep/dir/x.md", mode: "restore" }, owner);
     expect(r.status).toBe(200);
     expect(await readFile(join(dir, "deep/dir/x.md"), "utf8")).toBe("x\n");
+  });
+
+  test("restores non-UTF-8 bytes exactly", async () => {
+    const latin1 = Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a]);
+    await writeFile(join(dir, "l.md"), latin1);
+    await h.autocommit.flush();
+    Bun.spawnSync(["git", "-C", dir, "add", "l.md"]);
+    Bun.spawnSync(["git", "-C", dir, "commit", "-qm", "latin1"]);
+    await write("l.md", "rewritten\n", agentKey);
+    const sha = (await changes()).commits[0]!.sha;
+    const r = await call("POST", "/api/git/revert", { sha, path: "l.md", mode: "restore" }, owner);
+    expect(r.status).toBe(200);
+    expect((await readFile(join(dir, "l.md"))).equals(latin1)).toBe(true);
+  });
+
+  test("commits only the reverted path, never other staged files", async () => {
+    await write("r.md", "one\n", owner);
+    await write("r.md", "two\n", agentKey);
+    const sha = (await changes()).commits[0]!.sha;
+    h.autocommit.setEnabled(false);
+    await writeFile(join(dir, "other.md"), "staged elsewhere\n");
+    Bun.spawnSync(["git", "-C", dir, "add", "other.md"]);
+    const r = await call("POST", "/api/git/revert", { sha, path: "r.md", mode: "restore" }, owner);
+    expect(r.status).toBe(200);
+    const files = Bun.spawnSync(["git", "-C", dir, "show", "--name-only", "--format=", "HEAD"]).stdout.toString().trim();
+    expect(files).toBe("r.md");
+    const staged = Bun.spawnSync(["git", "-C", dir, "diff", "--cached", "--name-only"]).stdout.toString().trim();
+    expect(staged).toBe("other.md");
+  });
+
+  test("trash mode moves a note the change created to Trash, only while it is still that note", async () => {
+    await write("made.md", "by agent\n", agentKey);
+    const sha = (await changes()).commits[0]!.sha;
+    await write("made.md", "by agent\nedited\n", owner);
+    const ok = await call("POST", "/api/git/revert", { sha, path: "made.md", mode: "trash" }, owner);
+    expect(ok.status).toBe(200);
+    expect(Bun.file(join(dir, "made.md")).size).toBe(0);
+    expect((await changes()).commits[0]!.files[0]).toMatchObject({ path: "made.md", status: "deleted" });
+
+    await write("moved.md", "x\n", agentKey);
+    const sha2 = (await changes()).commits[0]!.sha;
+    Bun.spawnSync(["git", "-C", dir, "mv", "moved.md", "elsewhere.md"]);
+    Bun.spawnSync(["git", "-C", dir, "commit", "-qm", "mv"]);
+    await writeFile(join(dir, "moved.md"), "someone else's new note\n");
+    Bun.spawnSync(["git", "-C", dir, "add", "moved.md"]);
+    Bun.spawnSync(["git", "-C", dir, "commit", "-qm", "new"]);
+    const refused = await call("POST", "/api/git/revert", { sha: sha2, path: "moved.md", mode: "trash" }, owner);
+    expect(refused.status).toBe(409);
+    expect(await readFile(join(dir, "moved.md"), "utf8")).toBe("someone else's new note\n");
   });
 
   test("agent credentials cannot revert", async () => {

@@ -96,6 +96,25 @@ async function run(
 // A commit's author/trailer metadata. `trailers` is a list, not a map, so
 // the same key (e.g. "Changed-by") can appear once per path instead of
 // collapsing to its last value.
+async function runBytes(cwd: string, args: string[]): Promise<Buffer> {
+  const proc = Bun.spawn(["git", ...args], {
+    cwd,
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_LITERAL_PATHSPECS: "1" },
+  });
+  const [out, err] = await Promise.all([new Response(proc.stdout).arrayBuffer(), new Response(proc.stderr).text()]);
+  const code = await proc.exited;
+  if (code !== 0) throw new Error(`git ${args.join(" ")} exit ${code}: ${err.trim()}`);
+  return Buffer.from(out);
+}
+
+function sameBytes(a: Buffer | null, b: Buffer | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.equals(b);
+}
+
 export interface CommitTrailer {
   key: string;
   value: string;
@@ -414,7 +433,7 @@ export class GitRepo {
 
   async isAncestor(a: string, b: string): Promise<boolean> {
     assertSha(a);
-    assertSha(b);
+    if (b !== "HEAD") assertSha(b);
     const r = await run(this.root, ["merge-base", "--is-ancestor", a, b], { allowFail: true });
     return r.code === 0;
   }
@@ -441,28 +460,17 @@ export class GitRepo {
   }): Promise<string> {
     assertSha(opts.sha);
     return this.serialize(async () => {
-      const resolved = await run(this.root, ["rev-parse", "--verify", "--quiet", `${opts.sha}^{commit}`], {
-        allowFail: true,
-      });
-      const sha = resolved.stdout.trim();
-      if (resolved.code !== 0 || !sha) throw new RevertError("NOT_FOUND", `no commit ${opts.sha}`);
-      const anc = await run(this.root, ["merge-base", "--is-ancestor", sha, "HEAD"], { allowFail: true });
-      if (anc.code !== 0) throw new RevertError("NOT_FOUND", `commit ${opts.sha.slice(0, 7)} is not in this vault's history`);
-
+      const sha = await this.commitInHistory(opts.sha);
       const status = await this.statusIn(sha, opts.path);
       if (!status) throw new RevertError("NOT_CHANGED", `commit ${opts.sha.slice(0, 7)} did not change ${opts.path}`);
       if (status === "renamed") throw new RevertError("UNSUPPORTED", "reverting a rename is not supported, rename the note back instead");
-
-      const dirty = await run(this.root, ["--no-optional-locks", "status", "--porcelain", "--", opts.path], {
-        allowFail: true,
-      });
-      if (dirty.stdout.trim()) {
-        throw new RevertError("PENDING", `${opts.path} has edits that are not in history yet, try again in a few seconds`);
-      }
+      await this.assertClean(opts.path);
 
       const abs = join(this.root, opts.path);
       const live = await lstat(abs).catch(() => null);
       if (live && !live.isFile()) throw new RevertError("UNSUPPORTED", `${opts.path} is not a regular file`);
+      // Bytes, never decoded: a note in any encoding comes back exactly.
+      const current = live ? await readFile(abs) : null;
 
       const parent = await run(this.root, ["rev-parse", "--verify", "--quiet", `${sha}^`], { allowFail: true });
       const parentSha = parent.code === 0 ? parent.stdout.trim() : "";
@@ -470,41 +478,90 @@ export class GitRepo {
       const after = await this.blobAt(sha, opts.path);
       if (before === null) throw new RevertError("CREATED", `${opts.path} did not exist before this change`);
 
-      let next: string;
-      if (after !== null && !live) {
+      let next: Buffer;
+      if (after !== null && !current) {
         // The note was moved or deleted after this change; writing the old
         // path back would leave a second copy beside wherever it went.
         throw new RevertError("CONFLICT", `${opts.path} was moved or deleted later, open it from its new place instead`);
       }
-      if (opts.mode === "restore" || after === null) {
-        // after === null: the change deleted the note; undoing it means
-        // bringing it back, which only works while nothing sits there now.
-        if (opts.mode === "patch" && live) {
-          throw new RevertError("CONFLICT", `a later ${opts.path} exists, so the deleted version cannot come back on its own`);
-        }
+      if (after === null) {
+        // The change deleted the note. Bringing it back only works while
+        // nothing sits at that path now; a note written there since is
+        // someone else's and is not replaced.
+        if (current) throw new RevertError("CONFLICT", `a newer ${opts.path} exists now, so the deleted version cannot come back`);
+        next = before;
+      } else if (opts.mode === "restore") {
         next = before;
       } else {
-        if (!live) throw new RevertError("CONFLICT", `${opts.path} was deleted later, only restoring is possible`);
-        next = await this.mergeOut(await readFile(abs, "utf8"), after, before, opts.path);
+        next = await this.mergeOut(current!, after, before, opts.path);
       }
 
-      const previous = live ? await readFile(abs) : null;
+      // Vault writes do not go through this queue: re-read right before
+      // writing so a save that landed during the merge is never clobbered.
+      const now = await readFile(abs).catch(() => null);
+      if (!sameBytes(now, current)) {
+        throw new RevertError("PENDING", `${opts.path} changed while reverting, try again`);
+      }
       await mkdir(dirname(abs), { recursive: true });
       await writeFile(abs, next);
       try {
         await run(this.root, ["add", "-A", "--", opts.path]);
-        const out = await this.commitStaged(opts.message, opts);
-        if (!out) throw new RevertError("NOT_CHANGED", `reverting left ${opts.path} unchanged`);
+        // --only: commit this path alone, never whatever else sits staged.
+        const args = [...this.buildCommitArgs(opts.message, opts), "--only", "--", opts.path];
+        const r = await run(this.root, args, { allowFail: true });
+        if (r.code !== 0) throw new Error(r.stderr || r.stdout || "commit failed");
+        const out = await this.headSha();
+        if (!out) throw new Error("commit failed");
         return out;
       } catch (e) {
-        // Leave the note as it was rather than half-reverted and dirty,
-        // where the next autocommit would file it under nobody.
-        if (previous) await writeFile(abs, previous);
-        else await rm(abs, { force: true });
+        // Put the note back as it was, unless something wrote to it in the
+        // meantime, in which case that newer text wins.
+        const nowAfter = await readFile(abs).catch(() => null);
+        if (sameBytes(nowAfter, next)) {
+          if (current) await writeFile(abs, current);
+          else await rm(abs, { force: true });
+        }
         await run(this.root, ["reset", "-q", "--", opts.path], { allowFail: true });
         throw e;
       }
     });
+  }
+
+  // Undoing a change that created a note means deleting it, which is only
+  // the same note while every later commit just edited it in place.
+  async assertCreatedHere(sha: string, path: string): Promise<void> {
+    assertSha(sha);
+    await this.serialize(async () => {
+      const full = await this.commitInHistory(sha);
+      if ((await this.statusIn(full, path)) !== "added") {
+        throw new RevertError("NOT_CHANGED", `commit ${sha.slice(0, 7)} did not create ${path}`);
+      }
+      const later = await run(this.root, ["log", "-z", "--format=", "--name-status", "-M", `${full}..HEAD`, "--", path], {
+        allowFail: true,
+      });
+      const codes = later.stdout.split("\0").filter((x) => /^[A-Z][0-9]*$/.test(x));
+      if (codes.some((c) => c !== "M")) {
+        throw new RevertError("CONFLICT", `${path} was moved, deleted or recreated after this change`);
+      }
+      await this.assertClean(path);
+    });
+  }
+
+  private async commitInHistory(sha: string): Promise<string> {
+    const resolved = await run(this.root, ["rev-parse", "--verify", "--quiet", `${sha}^{commit}`], { allowFail: true });
+    const full = resolved.stdout.trim();
+    if (resolved.code !== 0 || !full) throw new RevertError("NOT_FOUND", `no commit ${sha}`);
+    const anc = await run(this.root, ["merge-base", "--is-ancestor", full, "HEAD"], { allowFail: true });
+    if (anc.code !== 0) throw new RevertError("NOT_FOUND", `commit ${sha.slice(0, 7)} is not in this vault's history`);
+    return full;
+  }
+
+  private async assertClean(path: string): Promise<void> {
+    const dirty = await run(this.root, ["--no-optional-locks", "status", "--porcelain", "--", path], { allowFail: true });
+    // A failing status is not proof the file is clean.
+    if (dirty.code !== 0 || dirty.stdout.trim()) {
+      throw new RevertError("PENDING", `${path} has edits that are not in history yet`);
+    }
   }
 
   private async statusIn(sha: string, path: string): Promise<ChangeStatus | null> {
@@ -522,21 +579,26 @@ export class GitRepo {
     return null;
   }
 
-  private async blobAt(sha: string, path: string): Promise<string | null> {
+  private async blobAt(sha: string, path: string): Promise<Buffer | null> {
     const type = await run(this.root, ["cat-file", "-t", `${sha}:${path}`], { allowFail: true });
     if (type.code !== 0) return null;
     if (type.stdout.trim() !== "blob") throw new RevertError("UNSUPPORTED", `${path} is not a file at ${sha.slice(0, 7)}`);
-    return (await run(this.root, ["show", `${sha}:${path}`])).stdout;
+    return runBytes(this.root, ["cat-file", "blob", `${sha}:${path}`]);
   }
 
-  private async mergeOut(current: string, base: string, target: string, path: string): Promise<string> {
+  private async mergeOut(current: Buffer, base: Buffer, target: Buffer, path: string): Promise<Buffer> {
     const dir = await mkdtemp(join(tmpdir(), "brainmd-revert-"));
     try {
       const [c, b, t] = [join(dir, "current"), join(dir, "base"), join(dir, "target")];
       await Promise.all([writeFile(c, current), writeFile(b, base), writeFile(t, target)]);
-      const r = await run(this.root, ["merge-file", "-p", c, b, t], { allowFail: true });
-      if (r.code !== 0) throw new RevertError("CONFLICT", `later edits to ${path} touch the same lines, so this change cannot be undone on its own`);
-      return r.stdout;
+      // merge-file writes the result over its first argument; exit 1..127 is
+      // the number of conflicts, anything else (binary input) is an error.
+      const r = await run(this.root, ["merge-file", c, b, t], { allowFail: true });
+      if (r.code > 0 && r.code < 128) {
+        throw new RevertError("CONFLICT", `later edits to ${path} touch the same lines, so this change cannot be undone on its own`);
+      }
+      if (r.code !== 0) throw new RevertError("UNSUPPORTED", `${path} cannot be merged (${r.stderr.trim() || `exit ${r.code}`})`);
+      return await readFile(c);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
