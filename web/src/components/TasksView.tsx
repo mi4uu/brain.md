@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
+import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
 
 interface TaskItem {
   path: string;
@@ -12,70 +14,75 @@ interface Props {
   onClose: () => void;
 }
 
+type Filter = "open" | "done" | "all";
+
 export function TasksView({ onOpen, onClose }: Props) {
-  const [tasks, setTasks] = useState<TaskItem[]>([]);
-  const [filter, setFilter] = useState<"all" | "open" | "done">("open");
+  const [tasks, setTasks] = useState<TaskItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<Filter>("open");
 
   useEffect(() => {
     void fetch("/api/tasks")
-      .then((r) => r.json() as Promise<TaskItem[]>)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json() as Promise<TaskItem[]>;
+      })
       .then(setTasks)
-      .catch(() => setTasks([]));
+      .catch((e: unknown) => {
+        setTasks([]);
+        setError(e instanceof Error ? e.message : String(e));
+      });
   }, []);
 
-  const visible = tasks.filter((t) =>
-    filter === "all" ? true : filter === "open" ? !t.done : t.done,
-  );
+  const all = tasks ?? [];
+  const openCount = all.filter((t) => !t.done).length;
+  const visible = all.filter((t) => (filter === "all" ? true : filter === "open" ? !t.done : t.done));
 
   return (
-    <>
-      <div className="modal-backdrop" onClick={onClose} />
-      <div className="settings-panel" role="dialog" aria-modal="true" style={{ width: "min(720px, calc(100vw - 32px))" }}>
-        <h2>Tasks</h2>
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <button className={`btn${filter === "open" ? " primary" : ""}`} onClick={() => setFilter("open")}>Open ({tasks.filter((t) => !t.done).length})</button>
-          <button className={`btn${filter === "done" ? " primary" : ""}`} onClick={() => setFilter("done")}>Done ({tasks.filter((t) => t.done).length})</button>
-          <button className={`btn${filter === "all" ? " primary" : ""}`} onClick={() => setFilter("all")}>All ({tasks.length})</button>
-          <span style={{ flex: 1 }} />
-          <button className="btn" onClick={onClose}>Close</button>
-        </div>
-        <div className="scroll" style={{ maxHeight: "60vh" }}>
-          {visible.length === 0 ? (
-            <p className="muted" style={{ textAlign: "center", padding: 24 }}>No tasks.</p>
-          ) : (
-            <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-              {visible.map((t, i) => (
-                <li
-                  key={`${t.path}:${t.lineNo}:${i}`}
-                  onClick={() => onOpen(t.path)}
-                  style={{
-                    padding: "8px 12px",
-                    borderBottom: "1px solid var(--border)",
-                    cursor: "pointer",
-                    display: "flex",
-                    gap: 10,
-                    alignItems: "flex-start",
-                  }}
-                >
-                  <span style={{
-                    width: 16,
-                    height: 16,
-                    borderRadius: 4,
-                    border: "1px solid var(--border-strong)",
-                    background: t.done ? "var(--accent)" : "transparent",
-                    flexShrink: 0,
-                    marginTop: 2,
-                  }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ textDecoration: t.done ? "line-through" : "none", color: t.done ? "var(--text-3)" : "var(--text-1)" }}>{t.text}</div>
-                    <div style={{ fontSize: "var(--text-xs)", color: "var(--text-3)" }}>{t.path} · L{t.lineNo}</div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
-    </>
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Tasks</DialogTitle>
+          <DialogDescription>Checkboxes from every note in the vault.</DialogDescription>
+        </DialogHeader>
+        <Tabs value={filter} onValueChange={(v) => setFilter(v as Filter)}>
+          <TabsList>
+            <TabsTrigger value="open">
+              Open <span className="tasks-count">{openCount}</span>
+            </TabsTrigger>
+            <TabsTrigger value="done">
+              Done <span className="tasks-count">{all.length - openCount}</span>
+            </TabsTrigger>
+            <TabsTrigger value="all">
+              All <span className="tasks-count">{all.length}</span>
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        {error ? <p className="text-sm text-callout-danger">Could not load tasks ({error}).</p> : null}
+        {tasks === null ? (
+          <p className="tasks-empty">Loading tasks</p>
+        ) : visible.length === 0 && !error ? (
+          <p className="tasks-empty">
+            {filter === "open" ? "No open tasks." : filter === "done" ? "No finished tasks yet." : "No tasks in the vault."}
+          </p>
+        ) : (
+          <ul className="tasks-list">
+            {visible.map((t, i) => (
+              <li key={`${t.path}:${t.lineNo}:${i}`}>
+                <button type="button" className="tasks-row" onClick={() => onOpen(t.path)}>
+                  <span className={`tasks-box${t.done ? " is-done" : ""}`} aria-hidden="true" />
+                  <span className="tasks-body">
+                    <span className={`tasks-text${t.done ? " is-done" : ""}`}>{t.text}</span>
+                    <span className="tasks-meta">
+                      {t.path.replace(/\.md$/, "")} · L{t.lineNo}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

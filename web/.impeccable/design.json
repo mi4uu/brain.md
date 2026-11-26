@@ -1,0 +1,293 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-26T00:29:22.144735+00:00",
+  "title": "Design System: brain.md",
+  "extensions": {
+    "colorMeta": {
+      "ink": {
+        "role": "primary",
+        "displayName": "Ink",
+        "canonical": "#2f5bb7",
+        "tonalRamp": [
+          "#0f1f40",
+          "#172f61",
+          "#1f3f82",
+          "#24489a",
+          "#2f5bb7",
+          "#5a80cc",
+          "#8aaef0",
+          "#d6e2fa"
+        ]
+      },
+      "ink-strong": {
+        "role": "primary",
+        "displayName": "Deep Ink",
+        "canonical": "#24489a"
+      },
+      "ink-night": {
+        "role": "primary",
+        "displayName": "Night Ink",
+        "canonical": "#8aaef0"
+      },
+      "ink-night-strong": {
+        "role": "primary",
+        "displayName": "Night Ink Strong",
+        "canonical": "#a9c4f5"
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "#fafaf9",
+        "tonalRamp": [
+          "#1a1a1a",
+          "#404040",
+          "#6b6b6b",
+          "#9a9a9a",
+          "#d4d4d2",
+          "#f4f4f2",
+          "#fafaf9",
+          "#ffffff"
+        ]
+      },
+      "night": {
+        "role": "neutral",
+        "displayName": "Night",
+        "canonical": "#141415",
+        "tonalRamp": [
+          "#141415",
+          "#19191b",
+          "#202022",
+          "#232325",
+          "#5c5f66",
+          "#909296",
+          "#c1c2c5",
+          "#ecedee"
+        ]
+      },
+      "callout-note": {
+        "role": "semantic",
+        "displayName": "Note blue",
+        "canonical": "#3b82f6"
+      },
+      "callout-tip": {
+        "role": "semantic",
+        "displayName": "Tip green",
+        "canonical": "#10b981"
+      },
+      "callout-warn": {
+        "role": "semantic",
+        "displayName": "Warn amber",
+        "canonical": "#f59e0b"
+      },
+      "callout-danger": {
+        "role": "semantic",
+        "displayName": "Danger red",
+        "canonical": "#ef4444"
+      },
+      "callout-info": {
+        "role": "semantic",
+        "displayName": "Info cyan",
+        "canonical": "#06b6d4"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Note H1 in the preview."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Note H2."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Note H3, dialog titles, empty state heading."
+      },
+      "body": {
+        "displayName": "Reading serif",
+        "purpose": "Note paragraphs, max 760px column."
+      },
+      "ui": {
+        "displayName": "Interface",
+        "purpose": "Sidebar, menus, buttons, settings."
+      },
+      "label": {
+        "displayName": "Mono meta",
+        "purpose": "Keycaps, counts, clock, save state, link brackets."
+      }
+    },
+    "shadows": [
+      {
+        "name": "float",
+        "value": "0 8px 24px rgba(0,0,0,0.08)",
+        "purpose": "Dialogs, menus, drawer, palette (light). Dark: 0 12px 32px rgba(0,0,0,0.5)."
+      },
+      {
+        "name": "lift",
+        "value": "0 1px 2px rgba(0,0,0,0.04), 0 2px 6px rgba(0,0,0,0.05)",
+        "purpose": "Small floating chips such as tooltips."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease",
+        "value": "cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Single ease-out for every transition."
+      },
+      {
+        "name": "fast",
+        "value": "120ms",
+        "purpose": "Hover, press and colour changes."
+      },
+      {
+        "name": "base",
+        "value": "200ms",
+        "purpose": "Drawer and things that enter."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "wordmark-hidden",
+        "value": "540px"
+      },
+      {
+        "name": "git-chip-hidden",
+        "value": "720px"
+      },
+      {
+        "name": "mobile",
+        "value": "840px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one main action on a screen, such as New note or Save.",
+      "html": "<button class=\"ds-btn-primary\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><line x1=\"12\" y1=\"5\" x2=\"12\" y2=\"19\"/><line x1=\"5\" y1=\"12\" x2=\"19\" y2=\"12\"/></svg><span>New note</span></button>",
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;gap:8px;min-height:32px;padding:6px 12px;border:none;border-radius:var(--radius-2,6px);background:var(--accent,#2f5bb7);color:var(--on-accent,#fff);font:400 13px/1.3 -apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,sans-serif;cursor:pointer;transition:background 120ms cubic-bezier(0.22,1,0.36,1)}.ds-btn-primary:hover{background:var(--accent-strong,#24489a)}.ds-btn-primary:focus-visible{outline:2px solid var(--accent,#2f5bb7);outline-offset:1px}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Secondary actions in dialogs and toolbars.",
+      "html": "<button class=\"ds-btn-ghost\">Cancel</button>",
+      "css": ".ds-btn-ghost{display:inline-flex;align-items:center;min-height:32px;padding:6px 12px;border:none;border-radius:var(--radius-2,6px);background:transparent;color:var(--text-2,#404040);font:400 13px/1.3 -apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,sans-serif;cursor:pointer;transition:background 120ms cubic-bezier(0.22,1,0.36,1),color 120ms cubic-bezier(0.22,1,0.36,1)}.ds-btn-ghost:hover{background:var(--bg-hover,rgba(0,0,0,0.04));color:var(--text-1,#1a1a1a)}.ds-btn-ghost:focus-visible{outline:2px solid var(--accent,#2f5bb7);outline-offset:1px}"
+    },
+    {
+      "name": "Icon Button",
+      "kind": "button",
+      "refersTo": "button-icon",
+      "description": "Topbar and sidebar actions, 32px on desktop.",
+      "html": "<button class=\"ds-btn-icon\" aria-label=\"Search\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><line x1=\"16.5\" y1=\"16.5\" x2=\"21\" y2=\"21\"/></svg></button>",
+      "css": ".ds-btn-icon{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;border:none;border-radius:var(--radius-2,6px);background:transparent;color:var(--text-2,#404040);cursor:pointer;transition:background 120ms cubic-bezier(0.22,1,0.36,1),color 120ms cubic-bezier(0.22,1,0.36,1)}.ds-btn-icon:hover{background:var(--bg-hover,rgba(0,0,0,0.04));color:var(--text-1,#1a1a1a)}.ds-btn-icon:focus-visible{outline:2px solid var(--accent,#2f5bb7);outline-offset:1px}"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Settings fields and filters.",
+      "html": "<input class=\"ds-input\" placeholder=\"Journal\" />",
+      "css": ".ds-input{width:240px;min-height:36px;padding:8px 12px;border:1px solid var(--border,rgba(0,0,0,0.09));border-radius:var(--radius-2,6px);background:var(--bg-surface,#fff);color:var(--text-1,#1a1a1a);font:400 13px/1.3 -apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,sans-serif;outline:none;transition:border-color 120ms cubic-bezier(0.22,1,0.36,1)}.ds-input:focus{border-color:var(--accent,#2f5bb7);box-shadow:0 0 0 3px var(--accent-soft,rgba(47,91,183,0.12))}"
+    },
+    {
+      "name": "Tree Row",
+      "kind": "nav",
+      "refersTo": "tree-row",
+      "description": "A note in the sidebar vault tree, plain and selected.",
+      "html": "<div class=\"ds-tree\"><div class=\"ds-tree-row\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z\"/><polyline points=\"14 3 14 8 19 8\"/></svg><span>MCP Server</span></div><div class=\"ds-tree-row is-selected\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z\"/><polyline points=\"14 3 14 8 19 8\"/></svg><span>Welcome</span></div></div>",
+      "css": ".ds-tree{width:240px;display:flex;flex-direction:column;gap:2px}.ds-tree-row{display:flex;align-items:center;gap:8px;min-height:32px;padding:4px 8px;border-radius:var(--radius-1,4px);color:var(--text-2,#404040);font:400 13px/1.3 -apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,sans-serif;cursor:pointer;transition:background 120ms cubic-bezier(0.22,1,0.36,1)}.ds-tree-row svg{color:var(--text-3,#6b6b6b)}.ds-tree-row:hover{background:var(--bg-hover,rgba(0,0,0,0.04))}.ds-tree-row.is-selected{background:var(--bg-selected,rgba(47,91,183,0.12));color:var(--text-1,#1a1a1a)}"
+    },
+    {
+      "name": "Tag",
+      "kind": "chip",
+      "refersTo": "tag",
+      "description": "Note tags and counts, quiet neutral tint.",
+      "html": "<span class=\"ds-tag\">onboarding</span>",
+      "css": ".ds-tag{display:inline-flex;align-items:center;padding:1px 6px;border-radius:var(--radius-1,4px);background:var(--tag-bg,rgba(0,0,0,0.05));color:var(--tag-fg,#404040);font:400 12px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,sans-serif}"
+    },
+    {
+      "name": "Wikilink",
+      "kind": "custom",
+      "refersTo": "wikilink",
+      "description": "Signature: link to another note in mono brackets.",
+      "html": "<p class=\"ds-doc\">Open <a class=\"ds-wikilink\" href=\"#\">Callouts</a> next.</p>",
+      "css": ".ds-doc{font:400 17px/1.7 'Iowan Old Style','Source Serif Pro',Georgia,serif;color:var(--text-1,#1a1a1a)}.ds-wikilink{color:var(--link,#24489a);text-decoration:none}.ds-wikilink::before,.ds-wikilink::after{font-family:'JetBrains Mono','SF Mono',Menlo,monospace;font-size:0.75em;color:var(--text-3,#6b6b6b);transition:color 120ms cubic-bezier(0.22,1,0.36,1)}.ds-wikilink::before{content:'[[';margin-right:2px}.ds-wikilink::after{content:']]';margin-left:2px}.ds-wikilink:hover{text-decoration:underline}.ds-wikilink:hover::before,.ds-wikilink:hover::after{color:var(--link,#24489a)}"
+    },
+    {
+      "name": "Keycap",
+      "kind": "custom",
+      "refersTo": "kbd",
+      "description": "Keyboard shortcut hint.",
+      "html": "<span class=\"ds-hint\">Press <kbd class=\"ds-kbd\">⌘O</kbd> to switch</span>",
+      "css": ".ds-hint{font:400 13px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,sans-serif;color:var(--text-3,#6b6b6b)}.ds-kbd{padding:1px 6px;border:1px solid var(--border,rgba(0,0,0,0.09));border-radius:var(--radius-1,4px);background:var(--bg-surface-2,#f4f4f2);color:var(--text-2,#404040);font:400 12px/1.3 'JetBrains Mono','SF Mono',Menlo,monospace;font-variant-numeric:tabular-nums}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Shared Notebook",
+    "overview": "brain.md is a notebook that a person and their agents write in together. The chrome is the binding and the margins of that notebook: graphite neutrals, hairline rules, small sans labels, nothing that glows or asks for attention. The notes are the page: a serif reading column, real headings, callouts in their own colours, and wikilinks set in mono brackets so a link to another note always looks like one.\n\nDensity follows an operating tool, not a landing page. The sidebar, topbar and toolbars are compact (32px rows and icon buttons on a fine pointer) and grow to 44px touch targets on a coarse pointer. The phone is a first-class surface: secondary actions fold into one menu, the editor and preview become tabs, and nothing scrolls sideways.\n\nThe visual anti-references are confirmed: no AI-SaaS slop (violet gradients, glow, emoji labels, uppercase tracked labels, sparkle badges) and no Electron-desktop chrome (heavy title bars, icon ribbons, desktop-only menus that break on a phone).",
+    "keyCharacteristics": [
+      "Neutral graphite chrome in both themes; colour lives in the notes and one accent.",
+      "Serif for reading notes, system sans for interface, mono for meta, shortcuts and `[[links]]`.",
+      "Flat surfaces separated by tone and 1px hairlines; shadow only on things that float.",
+      "One user-selectable accent (Ink by default), always at 4.5:1 or better.",
+      "Sentence case everywhere, weights 400 and 500."
+    ],
+    "rules": [
+      {
+        "name": "The Ink Only Rule",
+        "body": "The accent appears on the primary action, the current selection, focus and links. It never fills a surface, a header or a decorative shape.",
+        "section": "colors"
+      },
+      {
+        "name": "The Neutral Night Rule",
+        "body": "Dark surfaces stay hue-neutral (#141415 to #232325). A dark theme that reads blue, violet or brown has drifted.",
+        "section": "colors"
+      },
+      {
+        "name": "The Derived Tint Rule",
+        "body": "Soft accent tints (selection, selected row, accent-soft) are mixed from the current accent, never hardcoded, so every preset follows the setting.",
+        "section": "colors"
+      },
+      {
+        "name": "The Sentence Case Rule",
+        "body": "No uppercase labels and no tracked-out small text. Section labels read \"Bookmarks\", not \"BOOKMARKS\".",
+        "section": "typography"
+      },
+      {
+        "name": "The Two Weights Rule",
+        "body": "400 and 500 only in the interface; hierarchy comes from size and text role. Bold belongs to note content.",
+        "section": "typography"
+      },
+      {
+        "name": "The No Sideways Scroll Rule",
+        "body": "At 390px wide the topbar and every pane fit the viewport; anything that does not fit moves into a menu.",
+        "section": "layout"
+      },
+      {
+        "name": "The Only What Floats Rule",
+        "body": "A surface that sits in the layout never casts a shadow. If it does not cover other content, separate it with tone or a hairline instead.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep every surface on the graphite ramp and put colour in notes, callouts, the graph and the single accent.",
+      "Do derive tints from the current accent with `color-mix`, so all five presets work.",
+      "Do check 4.5:1 for on-accent text and for links on the page whenever an accent value changes.",
+      "Do size controls 32px on a fine pointer and 44px on a coarse pointer.",
+      "Do move secondary actions into the More menu below 840px instead of letting a bar scroll sideways.",
+      "Do use mono only for meta: shortcuts, counts, time, save state and link brackets."
+    ],
+    "donts": [
+      "Don't use hue gradients, glows, coloured shadows, gradient text, emoji as icons, uppercase tracked labels or sparkle badges (AI-SaaS slop).",
+      "Don't add Electron-style desktop chrome: title bars, icon ribbons, menus that only work with a mouse.",
+      "Don't give icons their own colours or mix icon sizes in one row.",
+      "Don't put a shadow on anything that does not float over content.",
+      "Don't hardcode an accent hex in a component; use the accent tokens.",
+      "Don't use weights above 500 in the interface."
+    ]
+  }
+}

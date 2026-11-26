@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
 
 interface TrashItem {
   path: string;
@@ -12,16 +13,19 @@ interface Props {
 }
 
 export function TrashView({ onClose, onRestored }: Props) {
-  const [items, setItems] = useState<TrashItem[]>([]);
+  const [items, setItems] = useState<TrashItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     try {
       const res = await fetch("/api/trash");
-      if (!res.ok) throw new Error(`${res.status}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setItems((await res.json()) as TrashItem[]);
+      setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setItems((prev) => prev ?? []);
+      setError(`Could not load the trash (${e instanceof Error ? e.message : String(e)}).`);
     }
   }, []);
 
@@ -30,6 +34,7 @@ export function TrashView({ onClose, onRestored }: Props) {
   }, [reload]);
 
   const restore = async (p: string) => {
+    setRestoring(p);
     try {
       const res = await fetch("/api/trash/restore", {
         method: "POST",
@@ -40,50 +45,55 @@ export function TrashView({ onClose, onRestored }: Props) {
       await reload();
       onRestored();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(`Could not restore ${displayPath(p)}: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setRestoring(null);
     }
   };
 
-  const filesOnly = items.filter((i) => !i.isDir);
+  const filesOnly = (items ?? []).filter((i) => !i.isDir);
 
   return (
-    <>
-      <div className="modal-backdrop" onClick={onClose} />
-      <div className="settings-panel" role="dialog" aria-modal="true" style={{ width: "min(720px, calc(100vw - 32px))" }}>
-        <h2>Trash</h2>
-        {error ? <p style={{ color: "var(--callout-danger)" }}>{error}</p> : null}
-        <div className="scroll" style={{ maxHeight: "60vh" }}>
-          {filesOnly.length === 0 ? (
-            <p className="muted" style={{ textAlign: "center", padding: 24 }}>Trash is empty.</p>
-          ) : (
-            <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-              {filesOnly.map((i) => (
-                <li
-                  key={i.path}
-                  style={{
-                    padding: "8px 12px",
-                    borderBottom: "1px solid var(--border)",
-                    display: "flex",
-                    gap: 10,
-                    alignItems: "center",
-                  }}
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Trash</DialogTitle>
+          <DialogDescription>Notes deleted from the vault. Restore puts a note back at its path.</DialogDescription>
+        </DialogHeader>
+        {error ? (
+          <p role="alert" className="text-sm text-callout-danger">
+            {error}
+          </p>
+        ) : null}
+        {items === null ? (
+          <p className="tasks-empty">Loading trash</p>
+        ) : filesOnly.length === 0 ? (
+          <p className="tasks-empty">Trash is empty.</p>
+        ) : (
+          <ul className="trash-list">
+            {filesOnly.map((i) => (
+              <li key={i.path} className="trash-row">
+                <span className="trash-path" title={displayPath(i.path)}>
+                  {displayPath(i.path)}
+                </span>
+                <span className="trash-date">{new Date(i.mtime).toLocaleString()}</span>
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={restoring !== null}
+                  onClick={() => void restore(i.path)}
                 >
-                  <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {i.path.replace(/^\.brain\/trash\/[^/]+\//, "")}
-                  </div>
-                  <span style={{ fontSize: "var(--text-xs)", color: "var(--text-3)" }}>
-                    {new Date(i.mtime).toLocaleString()}
-                  </span>
-                  <button className="btn" onClick={() => restore(i.path)}>Restore</button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
-          <button className="btn primary" onClick={onClose}>Close</button>
-        </div>
-      </div>
-    </>
+                  {restoring === i.path ? "Restoring" : "Restore"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </DialogContent>
+    </Dialog>
   );
+}
+
+function displayPath(p: string): string {
+  return p.replace(/^\.brain\/trash\/[^/]+\//, "");
 }
