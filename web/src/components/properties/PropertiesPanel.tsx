@@ -1,4 +1,4 @@
-import { Component, useCallback, useEffect, useMemo, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import clsx from "clsx";
 import type { PropValue } from "@brainmd/shared/frontmatter";
 import type { PropertyType } from "@brainmd/shared/property-types";
@@ -91,6 +91,9 @@ function Panel({ variant, notePath, content, onEdit, onFixInSource, onNotice }: 
   const bodyRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const pendingFocus = useRef<{ name: string; target: "row" | "value" | "add" } | null>(null);
+  // Inputs are uncontrolled; after a refused edit they would keep showing the
+  // typed value, so the rows are remounted from the file.
+  const [refused, setRefused] = useState(0);
 
   const run = useCallback(
     (edit: (current: string) => string, focus?: { name: string; target: "row" | "value" | "add" }) => {
@@ -99,6 +102,7 @@ function Panel({ variant, notePath, content, onEdit, onFixInSource, onNotice }: 
         onEdit(edit);
       } catch (e) {
         pendingFocus.current = null;
+        setRefused((n) => n + 1);
         onNotice(e instanceof Error ? e.message : String(e));
       }
     },
@@ -202,7 +206,7 @@ function Panel({ variant, notePath, content, onEdit, onFixInSource, onNotice }: 
         <div className="props-body" ref={bodyRef} onKeyDown={onBodyKeyDown}>
           {model.kind === "rows"
             ? model.rows.map((row) => (
-                <div key={row.name} className="prop-row" data-prop-row={row.name} tabIndex={-1} role="group" aria-label={row.name}>
+                <div key={`${row.name}:${refused}`} className="prop-row" data-prop-row={row.name} tabIndex={-1} role="group" aria-label={row.name}>
                   <TypeButton name={row.name} type={row.type} onPick={(t) => void changeType(row.name, t)} />
                   <NameInput
                     name={row.name}
