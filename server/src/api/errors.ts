@@ -5,6 +5,7 @@ export function vaultErrorToStatus(e: VaultError): number {
     case "TRAVERSAL":
     case "INVALID_PATH":
     case "INVALID_NAME":
+    case "INVALID_VALUE":
     case "NOT_MARKDOWN":
       return 400;
     case "NOT_FOUND":

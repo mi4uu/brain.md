@@ -27,6 +27,7 @@ export class VaultError extends Error {
       | "NOT_MARKDOWN"
       | "INVALID_PATH"
       | "INVALID_NAME"
+      | "INVALID_VALUE"
       | "EXISTS"
       | "FORBIDDEN"
       | "IO",
