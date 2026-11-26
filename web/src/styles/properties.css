@@ -110,7 +110,8 @@
 }
 
 .prop-check-hit {
-  display: inline-flex;
+  display: flex;
+  width: fit-content;
 }
 .prop-check {
   width: 16px;
