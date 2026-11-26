@@ -39,20 +39,22 @@ export function ValueEditor({ row, suggestions, onCommit, onLeave, onEditInSourc
 
   if (type === "checkbox") {
     return (
-      <input
-        data-prop-value
-        className="prop-check"
-        type="checkbox"
-        aria-label={row.name}
-        checked={value === true}
-        onChange={(e) => onCommit(e.currentTarget.checked)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            e.preventDefault();
-            onLeave();
-          }
-        }}
-      />
+      <label className="prop-check-hit">
+        <input
+          data-prop-value
+          className="prop-check"
+          type="checkbox"
+          aria-label={row.name}
+          checked={value === true}
+          onChange={(e) => onCommit(e.currentTarget.checked)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              onLeave();
+            }
+          }}
+        />
+      </label>
     );
   }
 

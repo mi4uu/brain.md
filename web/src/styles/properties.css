@@ -109,6 +109,9 @@
   color: var(--text-1);
 }
 
+.prop-check-hit {
+  display: inline-flex;
+}
 .prop-check {
   width: 16px;
   height: 16px;
@@ -327,10 +330,16 @@
     width: 40px;
     height: 40px;
   }
+  .prop-check-hit {
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+    min-height: 40px;
+  }
   .prop-check {
     width: 24px;
     height: 24px;
-    margin: 8px;
+    margin: 0;
   }
   .prop-remove {
     opacity: 1;
