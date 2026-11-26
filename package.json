@@ -30,7 +30,7 @@
     "elysia"
   ],
   "type": "module",
-  "workspaces": ["server", "web"],
+  "workspaces": ["shared", "server", "web"],
   "scripts": {
     "dev": "bun --filter '*' dev",
     "dev:server": "bun run --cwd server dev",

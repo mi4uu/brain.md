@@ -1,0 +1,274 @@
+import { isMap, isScalar, isSeq, parseDocument, stringify, type Document, type Pair, type YAMLMap } from "yaml";
+
+export type PropValue = string | number | boolean | null | PropValue[] | { [k: string]: PropValue };
+
+export interface FrontmatterRead {
+  props: Record<string, PropValue> | null;
+  error: string | null;
+  range: { from: number; to: number } | null;
+}
+
+export class FrontmatterError extends Error {
+  constructor(
+    public code: "INVALID_YAML" | "NOT_A_MAPPING",
+    message?: string,
+  ) {
+    super(message ?? code);
+    this.name = "FrontmatterError";
+  }
+}
+
+const FM_RE = /^(\uFEFF?)---\r?\n([\s\S]*?)\r?\n---/;
+
+interface Located {
+  from: number;
+  to: number;
+  yamlStart: number;
+  raw: string;
+  eol: string;
+}
+
+function locate(content: string): Located | null {
+  const m = FM_RE.exec(content);
+  if (!m) return null;
+  const from = (m[1] ?? "").length;
+  const raw = m[2] ?? "";
+  const eol = content.startsWith("\r\n", from + 3) ? "\r\n" : "\n";
+  const yamlStart = from + 3 + eol.length;
+  return { from, to: m[0].length, yamlStart, raw, eol };
+}
+
+export function toPropValue(v: unknown, depth = 0): PropValue {
+  if (v === null || v === undefined) return null;
+  if (typeof v === "string" || typeof v === "boolean") return v;
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (depth > 12) return null;
+  if (Array.isArray(v)) return v.map((x) => toPropValue(x, depth + 1));
+  if (v instanceof Map) {
+    const out: Record<string, PropValue> = {};
+    for (const [k, x] of v) if (String(k) !== "__proto__") out[String(k)] = toPropValue(x, depth + 1);
+    return out;
+  }
+  if (typeof v === "object") {
+    const out: Record<string, PropValue> = {};
+    for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+      if (k !== "__proto__") out[k] = toPropValue(x, depth + 1);
+    }
+    return out;
+  }
+  return String(v);
+}
+
+function parseBlock(raw: string): Document.Parsed {
+  return parseDocument(raw, { keepSourceTokens: true });
+}
+
+export function readFrontmatter(content: string): FrontmatterRead {
+  const loc = locate(content);
+  if (!loc) return { props: null, error: null, range: null };
+  const range = { from: loc.from, to: loc.to };
+  const doc = parseBlock(loc.raw);
+  if (doc.errors.length > 0) return { props: null, error: doc.errors[0]!.message, range };
+  if (doc.contents === null) return { props: {}, error: null, range };
+  if (!isMap(doc.contents)) return { props: null, error: "frontmatter must be YAML mapping", range };
+  return { props: toPropValue(doc.toJS()) as Record<string, PropValue>, error: null, range };
+}
+
+function renderInlineScalar(v: string | number | boolean | null): string {
+  if (typeof v === "string") {
+    if (v.includes("\n") || v.startsWith("[[")) return JSON.stringify(v);
+    return stringify(v, { lineWidth: 0 }).trimEnd();
+  }
+  if (v === null) return "null";
+  return String(v);
+}
+
+function isScalarValue(v: PropValue): v is string | number | boolean | null {
+  return v === null || typeof v !== "object";
+}
+
+function renderFlow(v: PropValue[]): string {
+  return `[${v.map((x) => (isScalarValue(x) ? renderInlineScalar(x) : JSON.stringify(x))).join(", ")}]`;
+}
+
+// A non-scalar value as block lines, each prefixed with `indent`.
+function renderBlock(v: PropValue, indent: string, eol: string): string {
+  if (Array.isArray(v) && v.length === 0) return "[]";
+  if (!Array.isArray(v) && typeof v === "object" && v !== null && Object.keys(v).length === 0) return "{}";
+  const lines: string[] = [];
+  if (Array.isArray(v) && v.every(isScalarValue)) {
+    for (const x of v) lines.push(`- ${renderInlineScalar(x as string | number | boolean | null)}`);
+  } else {
+    lines.push(...stringify(v, { indent: 2, lineWidth: 0 }).trimEnd().split("\n"));
+  }
+  return lines.map((l) => indent + l).join(eol);
+}
+
+function detectIndent(raw: string): string {
+  const m = /^( +)\S/m.exec(raw);
+  return m ? m[1]! : "  ";
+}
+
+interface Edit {
+  start: number;
+  end: number;
+  text: string;
+}
+
+function lineStartOf(raw: string, pos: number): number {
+  return raw.lastIndexOf("\n", pos - 1) + 1;
+}
+
+function endOfLine(raw: string, pos: number): number {
+  if (pos >= raw.length || raw[pos - 1] === "\n") return Math.min(pos, raw.length);
+  const nl = raw.indexOf("\n", pos);
+  return nl < 0 ? raw.length : nl + 1;
+}
+
+function keyName(p: Pair): string | null {
+  return isScalar(p.key) ? String(p.key.value) : null;
+}
+
+function findPair(map: YAMLMap, name: string): { pair: Pair; index: number } | null {
+  const items = map.items as Pair[];
+  for (let i = 0; i < items.length; i++) {
+    if (keyName(items[i]!) === name) return { pair: items[i]!, index: i };
+  }
+  return null;
+}
+
+function keyRange(p: Pair): [number, number, number] {
+  return (p.key as { range: [number, number, number] }).range;
+}
+
+function openBlock(loc: Located): { doc: Document.Parsed; map: YAMLMap | null } {
+  const doc = parseBlock(loc.raw);
+  if (doc.errors.length > 0) throw new FrontmatterError("INVALID_YAML", doc.errors[0]!.message);
+  if (doc.contents === null) return { doc, map: null };
+  if (!isMap(doc.contents)) throw new FrontmatterError("NOT_A_MAPPING", "frontmatter must be YAML mapping");
+  return { doc, map: doc.contents };
+}
+
+function applyEdits(raw: string, edits: Edit[]): string {
+  let out = raw;
+  for (const e of [...edits].sort((a, b) => b.start - a.start)) {
+    out = out.slice(0, e.start) + e.text + out.slice(e.end);
+  }
+  return out;
+}
+
+function replaceValue(raw: string, pair: Pair, value: PropValue, eol: string, indentUnit: string): Edit {
+  const kr = keyRange(pair);
+  const node = pair.value as { range?: [number, number, number]; flow?: boolean; type?: string } | null;
+  const afterColon = raw.indexOf(":", kr[1]) + 1;
+  const nonScalar = !isScalarValue(value);
+
+  if (!node || !node.range || node.range[0] === node.range[1]) {
+    const gap = /^[ \t]*/.exec(raw.slice(afterColon))![0].length;
+    if (value === null) return { start: afterColon, end: afterColon + gap, text: "" };
+    const body = nonScalar && !(Array.isArray(value) && value.length === 0)
+      ? `${eol}${renderBlock(value, indentUnit, eol)}`
+      : ` ${nonScalar ? renderBlock(value, "", eol) : renderInlineScalar(value)}`;
+    return { start: afterColon, end: afterColon + gap, text: body };
+  }
+
+  const [vStart, vEnd] = node.range;
+  const isBlockSeq = isSeq(pair.value) && !node.flow;
+  const isBlockMap = isMap(pair.value) && !node.flow;
+  const isBlockScalar = isScalar(pair.value) && (node.type === "BLOCK_LITERAL" || node.type === "BLOCK_FOLDED");
+  const oldBlock = isBlockSeq || isBlockMap || isBlockScalar;
+  const oldText = raw.slice(vStart, vEnd);
+  const trailingEol = oldText.endsWith("\n") ? eol : "";
+
+  if (value === null) return { start: afterColon, end: vEnd, text: trailingEol };
+
+  if (isBlockSeq && Array.isArray(value) && value.length > 0 && value.every(isScalarValue)) {
+    const indent = raw.slice(lineStartOf(raw, vStart), vStart);
+    const items = value.map((x, i) => `${i === 0 ? "" : indent}- ${renderInlineScalar(x as string | number | boolean | null)}`);
+    return { start: vStart, end: vEnd, text: items.join(eol) + trailingEol };
+  }
+  if (isSeq(pair.value) && node.flow && Array.isArray(value) && value.every(isScalarValue)) {
+    return { start: vStart, end: vEnd, text: renderFlow(value) };
+  }
+  if (!nonScalar || (Array.isArray(value) && value.length === 0) || (typeof value === "object" && value !== null && !Array.isArray(value) && Object.keys(value).length === 0)) {
+    const inline = nonScalar ? renderBlock(value, "", eol) : renderInlineScalar(value);
+    if (oldBlock) return { start: afterColon, end: vEnd, text: ` ${inline}${trailingEol}` };
+    return { start: vStart, end: vEnd, text: inline };
+  }
+  const block = `${eol}${renderBlock(value, indentUnit, eol)}`;
+  return { start: afterColon, end: vEnd, text: block + trailingEol };
+}
+
+function deletePairEdit(raw: string, map: YAMLMap, index: number, eol: string): Edit {
+  const items = map.items as Pair[];
+  const start = lineStartOf(raw, keyRange(items[index]!)[0]);
+  let end: number;
+  if (index + 1 < items.length) {
+    end = lineStartOf(raw, keyRange(items[index + 1]!)[0]);
+  } else {
+    const v = items[index]!.value as { range?: [number, number, number] } | null;
+    const tail = v?.range ? v.range[2] : keyRange(items[index]!)[2];
+    end = endOfLine(raw, tail);
+  }
+  if (end >= raw.length && start > 0) {
+    return { start: start - (raw[start - 2] === "\r" ? 2 : 1), end: raw.length, text: "" };
+  }
+  return { start, end, text: "" };
+}
+
+function newBlock(content: string, set: Record<string, PropValue>): string {
+  const eol = content.includes("\r\n") ? "\r\n" : "\n";
+  const bom = content.startsWith("\uFEFF") ? "\uFEFF" : "";
+  const rest = bom ? content.slice(1) : content;
+  const lines: string[] = [];
+  for (const [k, v] of Object.entries(set)) lines.push(...appendLines(k, v, "  ", eol));
+  return `${bom}---${eol}${lines.join(eol)}${eol}---${eol}${rest}`;
+}
+
+function appendLines(key: string, v: PropValue, indent: string, eol: string): string[] {
+  const k = renderInlineScalar(key);
+  if (v === null) return [`${k}:`];
+  if (isScalarValue(v)) return [`${k}: ${renderInlineScalar(v)}`];
+  const b = renderBlock(v, indent, eol);
+  return b === "[]" || b === "{}" ? [`${k}: ${b}`] : [`${k}:`, ...b.split(eol)];
+}
+
+export function setProperties(content: string, set: Record<string, PropValue>, unset: string[] = []): string {
+  const loc = locate(content);
+  const setKeys = Object.keys(set);
+  if (!loc) return setKeys.length === 0 ? content : newBlock(content, set);
+  const { map } = openBlock(loc);
+  const indentUnit = detectIndent(loc.raw);
+  const edits: Edit[] = [];
+  const appended: string[] = [];
+
+  for (const name of unset) {
+    if (name in set) continue;
+    const hit = map ? findPair(map, name) : null;
+    if (hit && map) edits.push(deletePairEdit(loc.raw, map, hit.index, loc.eol));
+  }
+  for (const [name, value] of Object.entries(set)) {
+    const hit = map ? findPair(map, name) : null;
+    if (hit) edits.push(replaceValue(loc.raw, hit.pair, value, loc.eol, indentUnit));
+    else appended.push(...appendLines(name, value, indentUnit, loc.eol));
+  }
+  if (appended.length > 0) {
+    const lead = loc.raw === "" ? "" : loc.eol;
+    edits.push({ start: loc.raw.length, end: loc.raw.length, text: lead + appended.join(loc.eol) });
+  }
+  if (edits.length === 0) return content;
+  const nextRaw = applyEdits(loc.raw, edits);
+  return content.slice(0, loc.yamlStart) + nextRaw + content.slice(loc.yamlStart + loc.raw.length);
+}
+
+export function renameProperty(content: string, from: string, to: string): string {
+  const loc = locate(content);
+  if (!loc || from === to) return content;
+  const { map } = openBlock(loc);
+  if (!map) return content;
+  const hit = findPair(map, from);
+  if (!hit || findPair(map, to)) return content;
+  const [ks, ke] = keyRange(hit.pair);
+  const nextRaw = loc.raw.slice(0, ks) + renderInlineScalar(to) + loc.raw.slice(ke);
+  return content.slice(0, loc.yamlStart) + nextRaw + content.slice(loc.yamlStart + loc.raw.length);
+}

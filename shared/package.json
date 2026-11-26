@@ -1,0 +1,11 @@
+{
+  "name": "@brainmd/shared",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "yaml": "^2.6.0"
+  }
+}
