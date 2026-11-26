@@ -402,10 +402,49 @@
   border-bottom: 1px solid var(--border);
   background: var(--bg-surface);
 }
-.pane-head .btn.icon {
-  margin-left: auto;
+.main .pane-head:has(.layout-switch) {
+  padding: 0 var(--space-3) 0 var(--space-2);
+}
+.layout-switch {
+  display: flex;
+  align-items: center;
+  flex: 1;
   min-width: 0;
-  padding: 4px;
+}
+.layout-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--bg-app);
+}
+.layout-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--radius-1);
+  color: var(--text-3);
+  font-size: var(--text-sm);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.layout-opt:hover {
+  color: var(--text-1);
+  background: var(--bg-hover);
+}
+.layout-opt[aria-pressed="true"] {
+  color: var(--text-1);
+  background: var(--bg-active);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.layout-opt:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.layout-key {
+  margin-left: auto;
 }
 
 .drawer-backdrop {

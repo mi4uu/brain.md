@@ -111,11 +111,11 @@ const NEXT_DESKTOP_VIEW: Record<DesktopView, DesktopView> = {
   edit: "preview",
   preview: "split",
 };
-const DESKTOP_VIEW_LABEL: Record<DesktopView, string> = {
-  split: "Layout: editor + preview",
-  edit: "Layout: editor only",
-  preview: "Layout: preview only",
-};
+const LAYOUT_OPTIONS: { view: DesktopView; label: string; icon: React.ReactNode }[] = [
+  { view: "edit", label: "Editor", icon: <PenIcon /> },
+  { view: "preview", label: "Preview", icon: <EyeIcon /> },
+  { view: "split", label: "Both", icon: <ColumnsIcon /> },
+];
 const MOD_KEY = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘" : "Ctrl+";
 
 export function App() {
@@ -151,19 +151,39 @@ export function App() {
   const cycleDesktopView = useCallback(() => {
     setDesktopView(NEXT_DESKTOP_VIEW[desktopView]);
   }, [desktopView, setDesktopView]);
-  // The button remounts in the other pane head on some steps, so keyboard
-  // focus has to be handed over or Enter stops cycling after one press.
-  const refocusLayoutBtn = useRef(false);
-  const onLayoutBtn = useCallback(() => {
-    const active = document.activeElement;
-    refocusLayoutBtn.current = active instanceof HTMLElement && active.closest(".pane-head") !== null;
-    cycleDesktopView();
-  }, [cycleDesktopView]);
-  // Lives in whichever pane head is visible, so it's always in the same corner.
-  const layoutBtn = isMobile ? null : (
-    <IconBtn label={`${DESKTOP_VIEW_LABEL[desktopView]} (${MOD_KEY}\\)`} onClick={onLayoutBtn}>
-      {desktopView === "edit" ? <PenIcon /> : desktopView === "preview" ? <EyeIcon /> : <ColumnsIcon />}
-    </IconBtn>
+  // The switch remounts in the other pane head when preview-only is picked
+  // or left, so keyboard focus has to follow it to the new copy.
+  const refocusLayoutSwitch = useRef(false);
+  const pickDesktopView = useCallback(
+    (view: DesktopView) => {
+      const active = document.activeElement;
+      refocusLayoutSwitch.current = active instanceof HTMLElement && active.closest(".layout-switch") !== null;
+      setDesktopView(view);
+    },
+    [setDesktopView],
+  );
+  // Lives in the first visible pane head: the editor head in split and
+  // editor-only, the preview head in preview-only.
+  const layoutSwitch = isMobile ? null : (
+    <div className="layout-switch">
+      <div className="layout-seg" role="group" aria-label="Layout">
+        {LAYOUT_OPTIONS.map((o) => (
+          <button
+            key={o.view}
+            type="button"
+            className="layout-opt"
+            aria-pressed={desktopView === o.view}
+            onClick={() => pickDesktopView(o.view)}
+          >
+            {o.icon}
+            <span>{o.label}</span>
+          </button>
+        ))}
+      </div>
+      <kbd className="layout-key" title="Cycle layout">
+        {MOD_KEY}\
+      </kbd>
+    </div>
   );
   const [cmd, setCmd] = useState<"search" | "switcher" | null>(null);
   const [settings, setSettings] = useState<AppSettings>({
@@ -973,9 +993,9 @@ export function App() {
   }, [flush, cycleDesktopView, isMobile]);
 
   useEffect(() => {
-    if (!refocusLayoutBtn.current) return;
-    refocusLayoutBtn.current = false;
-    mainRef.current?.querySelector<HTMLButtonElement>(".pane-head .btn.icon")?.focus();
+    if (!refocusLayoutSwitch.current) return;
+    refocusLayoutSwitch.current = false;
+    mainRef.current?.querySelector<HTMLButtonElement>('.layout-switch [aria-pressed="true"]')?.focus();
   }, [desktopView]);
 
   const onFileInputChange = useCallback(
@@ -1376,14 +1396,24 @@ export function App() {
         )}
       >
         <div className="pane-head editor-head">
-          <PenIcon />
-          <span>Editor</span>
-          {desktopView === "edit" ? layoutBtn : null}
+          {layoutSwitch && desktopView !== "preview" ? (
+            layoutSwitch
+          ) : (
+            <>
+              <PenIcon />
+              <span>Editor</span>
+            </>
+          )}
         </div>
         <div className="pane-head preview-head">
-          <EyeIcon />
-          <span>Preview</span>
-          {desktopView !== "edit" ? layoutBtn : null}
+          {desktopView === "preview" && layoutSwitch ? (
+            layoutSwitch
+          ) : (
+            <>
+              <EyeIcon />
+              <span>Preview</span>
+            </>
+          )}
         </div>
         {path ? (
           <div className="toolbar-row">
