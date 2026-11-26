@@ -9,6 +9,7 @@ import type {
   WriteNoteResult,
 } from "./types";
 
+import type { PropertyInfo, PropertyType } from "@brainmd/shared/property-types";
 import type { GraphInput } from "../graph/engine";
 
 const BASE = "";
@@ -119,6 +120,20 @@ export const api = {
   },
   async graph(): Promise<GraphInput> {
     return jsonOrThrow(await fetch(`${BASE}/api/graph`));
+  },
+  async properties(): Promise<PropertyInfo[]> {
+    return jsonOrThrow(await fetch(`${BASE}/api/properties`));
+  },
+  // Owner only. Changes how values of this name are edited vault-wide; no
+  // note is rewritten.
+  async setPropertyType(name: string, type: PropertyType): Promise<void> {
+    await jsonOrThrow<{ ok: true }>(
+      await fetch(`${BASE}/api/properties/types`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name, type }),
+      }),
+    );
   },
   async resolve(name: string): Promise<ResolveResult> {
     return jsonOrThrow(

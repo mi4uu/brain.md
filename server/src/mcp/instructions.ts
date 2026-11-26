@@ -46,6 +46,9 @@ do through this server. Follow them unless the user explicitly overrides them.
   \`list_tags\`) return one page at a time. Narrow first (\`folder\`, \`scope\`, a
   sharper query, \`filter\`); fetch the next page with \`offset\` only when you
   need it. The reply says how many there are and which \`offset\` comes next.
+- To change frontmatter (status, due date, tags, any property) call
+  \`update_properties\` with \`set\` / \`unset\` instead of rewriting the note;
+  \`read_note\` returns the parsed \`properties\`.
 - When you learn something durable — a decision, a fact, a status change, a new
   task — **write it back** with \`write_note\` or \`append_note\` so the vault
   stays the source of truth. Knowledge that only lives in the chat is lost.
@@ -81,7 +84,8 @@ If you genuinely can't tell, ask the owner rather than guessing the folder.
 - Use clear, kebab-case note paths and link related notes with \`[[wikilinks]]\`
   so the graph stays connected (check \`get_backlinks\` / \`find_related\`).
 - Keep edits small and intentional. Don't rewrite a whole note to change one
-  line — \`append_note\` or a targeted \`write_note\` is usually right.
+  line: \`append_note\`, \`update_properties\` for frontmatter, or a targeted
+  \`write_note\` is usually right.
 `;
 
 /**

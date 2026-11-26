@@ -29,7 +29,7 @@
 | **Live editor + preview** | CodeMirror 6 with cursor-anchored scroll sync, autosave, instant tooltips, command palette, quick switcher. Editor, Preview or Both, one click or **⌘\\**. |
 | **Semantic search built in** | Per-vault embedded vector store (pure JS, no external DB). Notes are chunked, embedded and indexed on every save. |
 | **Pluggable embedders** | Default: `bge-small-en-v1.5` running locally via **bundled WASM ONNX**, works in the prebuilt single binary, zero native deps. Or point at **Ollama**, **LM Studio**, or **OpenAI**: anything with `/v1/embeddings`. |
-| **MCP server (streamable HTTP)** | 18 tools and 2 resources mounted on the same port. Claude Desktop, Claude Code, Cursor and any MCP-compliant agent can read, search, query and write your notes. List tools return pages, so a small local model never gets the whole vault in one reply. |
+| **MCP server (streamable HTTP)** | 19 tools and 2 resources mounted on the same port. Claude Desktop, Claude Code, Cursor and any MCP-compliant agent can read, search, query and write your notes. List tools return pages, so a small local model never gets the whole vault in one reply. |
 | **MCP Apps note view** | In hosts that support MCP Apps (tested with OpenClaw), `read_note` opens an interactive view of the note: clickable wikilinks, Back, backlinks, light and dark. Other clients get the same text as before. |
 | **Per-folder agent permissions** | Right-click a folder → set `{read, write}` for the MCP surface. Keep `Journal/Private/` out of agent reach without locking down the vault. |
 | **Optional password auth** | argon2id, bearer tokens, 24-hour TTL, gates both HTTP API and MCP. Off by default, on with one click. |
@@ -77,7 +77,7 @@ files you can open in any editor at any time.
 | License                                 | Proprietary             | AGPL-3.0        | Proprietary        | **AGPL-3.0**           |
 | Local-first vault on disk               | ✓                       | ✓               | ✗ (cloud)          | **✓**                  |
 | Plain `.md` files (no proprietary db)   | ✓                       | ✓ (block model) | ✗                  | **✓**                  |
-| Built-in MCP server                     | ✗ (3rd-party plugin)    | ✗               | ✗                  | **✓ (18 tools)**       |
+| Built-in MCP server                     | ✗ (3rd-party plugin)    | ✗               | ✗                  | **✓ (19 tools)**       |
 | Vector RAG built-in                     | ✗ (paid plugin)         | ✗               | ✓ (cloud only)     | **✓ (embedded, local)** |
 | Per-folder agent permissions            | n/a                     | n/a             | n/a                | **✓**                  |
 | Single binary, no Electron              | ✗ (Electron)            | ✗ (Electron)    | n/a                | **✓ (`bun --compile`)** |
@@ -639,13 +639,13 @@ per tool call. Claude Desktop and LM Studio both do this.
 
 ![MCP Server page in brain.md](docs/img/mcp-server-page.png)
 
-Tools (18):
+Tools (19):
 
 | Tool                  | Folder perm | What it does                                                       |
 |-----------------------|-------------|--------------------------------------------------------------------|
 | `search_notes`        | `read`      | Full-text vault search                                             |
 | `similar_notes`       | `read`      | Semantic RAG (top-k chunks)                                        |
-| `read_note`           | `read`      | Note body + mtime                                                  |
+| `read_note`           | `read`      | Note body, mtime, parsed `properties`                              |
 | `list_notes`          | `read`      | Filtered vault tree, paged                                         |
 | `get_backlinks`       | `read`      | Inbound wikilinks                                                  |
 | `graph_view`          | `read`      | Graph of notes and links (whole vault, a folder, or around a note) |
@@ -653,6 +653,7 @@ Tools (18):
 | `get_tasks`           | `read`      | Aggregate tasks (filter: open/done/all)                            |
 | `write_note`          | `write`     | Create or overwrite a note                                         |
 | `append_note`         | `write`     | Append a paragraph (blank-line separator)                          |
+| `update_properties`   | `write`     | Change frontmatter properties (`set`, `unset`, `base_revision`)    |
 | `find_related`        | `read`      | Notes semantically close to a given path (excludes self)           |
 | `find_similar_tasks`  | `read`      | Semantic search across task lines (filter: open/done/all)          |
 | `semantic_outline`    | `read`      | Cluster a note's chunks into topical groups (cosine ≥ threshold)   |
@@ -664,8 +665,9 @@ Tools (18):
 
 Every tool carries MCP annotations. All of them are `readOnlyHint: true`
 except `write_note` (overwrites: `destructiveHint`; not idempotent, a
-repeat still bumps mtime) and `append_note` (adds: neither destructive
-nor idempotent). Hosts with an approval mode based on annotations can run
+repeat still bumps mtime), `append_note` (adds: neither destructive
+nor idempotent) and `update_properties` (changes only the named
+frontmatter keys; destructive, idempotent). Hosts with an approval mode based on annotations can run
 reads without a prompt and still ask before writes. Annotations are hints
 for the host; folder permissions are what brain.md enforces.
 
@@ -752,7 +754,7 @@ light or dark theme.
   wikilinks in its result `_meta`, filtered by the caller's folder
   permissions, so the view needs no extra tool calls. Hosts that ask you
   to approve every call from a view prompt once per note.
-- **Read-only.** `write_note` and `append_note` are marked model-only
+- **Read-only.** `write_note`, `append_note` and `update_properties` are marked model-only
   (`visibility: ["model"]`), so a spec-following host won't let the view
   call them.
 - Images and other media show a placeholder in the view. Maths uses

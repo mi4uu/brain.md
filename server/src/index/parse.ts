@@ -19,7 +19,7 @@ export interface ParsedNote {
   links: WikilinkRef[];
 }
 
-const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
+const FM_RE = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 
 export function splitFrontmatter(content: string): {
   fm: Record<string, unknown> | null;

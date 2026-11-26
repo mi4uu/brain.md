@@ -24,7 +24,7 @@ It is narrower than Obsidian or Notion on purpose: not a plugin ecosystem, not a
 ## Operating Context
 
 - Vault is a plain folder of `.md` files with YAML frontmatter, Obsidian-compatible (wikilinks, embeds, callouts, math, mermaid, tasks, aliases). Users may open the same folder in Obsidian, VS Code or any editor.
-- Agents connect over MCP (streamable HTTP, 18 tools, MCP Apps views for notes and the graph in hosts that support them). Agent writes carry an `X-Brainmd-Agent` identity and land as attributed git commits.
+- Agents connect over MCP (streamable HTTP, 19 tools, MCP Apps views for notes and the graph in hosts that support them). Agent writes carry an `X-Brainmd-Agent` identity and land as attributed git commits.
 - Human use is mixed: quick capture and lookup on the phone, longer editing and review on desktop.
 - Typical owner workflows: daily journal, tasks across notes, job search and client notes, project state written by agents and reviewed by the owner, history and restore when an agent gets something wrong.
 - Reminders and scheduling are done by an external agent (OpenClaw cron), not by brain.md.

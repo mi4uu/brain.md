@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Properties.** A Properties panel edits typed frontmatter as rows (type
+  icon, name, value) with suggestions from keys used across the vault.
+  Edits touch only the changed lines of the YAML. Types live in
+  `.brain/types.json` (Obsidian's `types.json` shape; `.obsidian/types.json`
+  is read as a fallback).
+- **MCP `update_properties`** and `properties` in `read_note`: agents change
+  a status without rewriting the note. `GET /api/properties`,
+  `PUT /api/properties/types` and `PATCH /api/note-properties/*` back the UI.
+
 ## 0.9.0 - 2026-11-18
 
 A tidier vault, agents that don't overwrite each other, and history that

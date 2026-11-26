@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, type ReactNode } from "react";
 import { renderMarkdown, isMediaName } from "../renderer/render";
 import { api } from "../api/client";
 import { getToken } from "../auth/token";
@@ -42,6 +42,8 @@ async function protectMedia(
 interface PreviewProps {
   content: string;
   notePath: string | null;
+  // Rendered at the top of the document, above the note body.
+  header?: ReactNode;
   resolveByBasename: (name: string, fromPath?: string) => string | null;
   onOpenNote: (path: string) => void;
   // A [[link]] whose target doesn't exist yet.
@@ -57,7 +59,7 @@ export interface PreviewHandle {
 }
 
 export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
-  { content, notePath, resolveByBasename, onOpenNote, onMissingNote, onOpenTag, onScrollLine, onSelectLine },
+  { content, notePath, header, resolveByBasename, onOpenNote, onMissingNote, onOpenTag, onScrollLine, onSelectLine },
   forwardedRef,
 ) {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -67,7 +69,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
   const suppressScrollRef = useRef<number>(0);
   const mediaBlobUrlsRef = useRef<string[]>([]);
 
-  const { html, frontmatter, frontmatterError } = useMemo(() => {
+  const { html } = useMemo(() => {
     const dirOf = notePath ? notePath.replace(/[^/]+$/, "") : "";
     return renderMarkdown(content, {
       resolveWikilink: (target) => resolveByBasename(target),
@@ -194,6 +196,9 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
     const root = ref.current;
     if (!root) return;
     const handler = (e: MouseEvent) => {
+      // The Properties panel is the header. Its clicks are its own: canceling
+      // one would fight its checkboxes, and none of them is a cursor move.
+      if ((e.target as Element).closest?.(".props-panel")) return;
       let el = e.target as HTMLElement | null;
       while (el && el !== root) {
         if (el.tagName === "A") {
@@ -370,12 +375,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
   return (
     <div className="preview scroll" ref={ref}>
       <div className="doc" ref={docRef}>
-        {frontmatterError ? (
-          <div className="frontmatter-error">frontmatter: {frontmatterError}</div>
-        ) : null}
-        {frontmatter && Object.keys(frontmatter).length > 0 ? (
-          <PropsRender data={frontmatter} />
-        ) : null}
+        {header}
         {content.trim() === "" ? (
           notePath ? <p className="muted">Empty note</p> : null
         ) : (
@@ -386,26 +386,6 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
     </div>
   );
 });
-
-function PropsRender({ data }: { data: Record<string, unknown> }) {
-  return (
-    <div className="props">
-      {Object.entries(data).map(([k, v]) => (
-        <div className="props-row" key={k}>
-          <span className="k">{k}</span>
-          <span className="v">{formatValue(v)}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function formatValue(v: unknown): string {
-  if (v === null || v === undefined) return "";
-  if (Array.isArray(v)) return v.map((x) => formatValue(x)).join(", ");
-  if (typeof v === "object") return JSON.stringify(v);
-  return String(v);
-}
 
 function escapeHtml(s: string): string {
   return s

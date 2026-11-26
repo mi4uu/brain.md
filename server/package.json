@@ -25,6 +25,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@brainmd/shared": "workspace:*",
     "@elysiajs/cors": "^1.4.3",
     "@lancedb/lancedb": "^0.20.0",
     "@modelcontextprotocol/ext-apps": "1.7.5",

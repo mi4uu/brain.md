@@ -23,6 +23,7 @@ import { renameRoutes } from "./api/rename";
 import { trashRoutes } from "./api/trash";
 import { tasksRoutes } from "./api/tasks";
 import { tagRoutes } from "./api/tags";
+import { propertyRoutes } from "./api/properties";
 import { gitRoutes } from "./api/git";
 import { metaRoutes } from "./api/meta";
 import { settingsRoutes } from "./api/settings";
@@ -194,6 +195,7 @@ export function createApp(opts: AppOptions = {}) {
     .use(trashRoutes(vault, index))
     .use(tasksRoutes(vault, index))
     .use(tagRoutes(vault, index))
+    .use(propertyRoutes(vault, index))
     .use(gitRoutes(vault, repo, autocommit, settings, (p) => visibility.isHidden(p)))
     .use(metaRoutes(vault))
     .use(settingsRoutes(settings, autocommit, ragPipeline))
