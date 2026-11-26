@@ -16,6 +16,9 @@ import { TasksView } from "./components/TasksView";
 import { GraphView } from "./components/GraphView";
 import { LocalGraph } from "./components/LocalGraph";
 import { TrashView } from "./components/TrashView";
+import { ChangesView } from "./components/ChangesView";
+import { useChanges, UnseenPathsContext } from "./changes/useChanges";
+import { relativeTime } from "./changes/model";
 import { EditorToolbar } from "./components/EditorToolbar";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { IconPicker } from "./components/IconPicker";
@@ -30,6 +33,7 @@ import {
   SearchIcon,
   FileSearchIcon,
   SettingsIcon,
+  ChangesIcon,
   BrandMark,
   LogOutIcon,
   StarIcon,
@@ -102,6 +106,7 @@ import "./styles/panels.css";
 import "./styles/toolbar.css";
 import "./styles/history.css";
 import "./styles/graph.css";
+import "./styles/changes.css";
 import "./styles/hljs.css";
 import "katex/dist/katex.min.css";
 
@@ -214,6 +219,18 @@ export function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showTasks, setShowTasks] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
+  const changes = useChanges();
+  const [showChanges, setShowChanges] = useState(false);
+  // A link to a note or tag wins over the Changes start screen.
+  const deepLinkAtLoad = useRef(
+    window.location.hash.startsWith("#/note/") || window.location.hash.startsWith("#/tag/"),
+  );
+  const startDecided = useRef(false);
+  useEffect(() => {
+    if (startDecided.current || !changes.loaded) return;
+    startDecided.current = true;
+    if (!deepLinkAtLoad.current && changes.unseenCount > 0) setShowChanges(true);
+  }, [changes.loaded, changes.unseenCount]);
   const [showTrash, setShowTrash] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
@@ -549,6 +566,7 @@ export function App() {
         setContent(data.content);
         setTagFilter(null);
         setMobileView("edit");
+        setShowChanges(false);
         const want = `#/note/${encodeURI(p)}${opts?.headingSlug ? `#${opts.headingSlug}` : ""}`;
         if (window.location.hash !== want) window.location.hash = want;
         const bl = await api.backlinks(p);
@@ -1076,7 +1094,20 @@ export function App() {
             brain<span className="brand-ext">.md</span>
           </span>
         </a>
-        <span className="title">{path ? path.replace(/\.md$/, "") : ""}</span>
+        <span className="title">
+          {showChanges ? "Changes" : path ? path.replace(/\.md$/, "") : ""}
+          {!showChanges && path && changes.latestByPath.get(path) ? (
+            <button
+              type="button"
+              className="byline"
+              onClick={() => setShowHistory(true)}
+              title="Open history"
+            >
+              edited by {changes.latestByPath.get(path)!.actor} ·{" "}
+              {relativeTime(changes.latestByPath.get(path)!.ts)}
+            </button>
+          ) : null}
+        </span>
         {gitStatus?.enabled ? (
           <div className="topbar-center">
             <GitStatusChip status={gitStatus} />
@@ -1093,16 +1124,41 @@ export function App() {
                   : "error"
             : ""}
         </span>
+        {changes.available ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className={clsx("btn icon changes-btn", showChanges && "is-active")}
+                aria-label={
+                  changes.unseenCount > 0 ? `Changes, ${changes.unseenCount} new` : "Changes"
+                }
+                aria-pressed={showChanges}
+                onClick={() => setShowChanges((v) => !v)}
+              >
+                <ChangesIcon />
+                {changes.unseenCount > 0 ? (
+                  <span className="changes-badge" aria-hidden="true">
+                    {changes.unseenCount > 99 ? "99+" : changes.unseenCount}
+                  </span>
+                ) : null}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Changes</TooltipContent>
+          </Tooltip>
+        ) : null}
         <IconBtn label="Search (⌘P)" onClick={() => setCmd("search")}>
           <SearchIcon />
         </IconBtn>
-        <IconBtn
-          label={path && bookmarks.includes(path) ? "Remove bookmark" : "Bookmark"}
-          onClick={toggleBookmark}
-          disabled={!path}
-        >
-          <StarIcon filled={path ? bookmarks.includes(path) : false} />
-        </IconBtn>
+        <div className="topbar-wide-only">
+          <IconBtn
+            label={path && bookmarks.includes(path) ? "Remove bookmark" : "Bookmark"}
+            onClick={toggleBookmark}
+            disabled={!path}
+          >
+            <StarIcon filled={path ? bookmarks.includes(path) : false} />
+          </IconBtn>
+        </div>
         <div className="topbar-wide-only">
           <IconBtn label="Daily note" onClick={openDaily}>
             <CalendarIcon />
@@ -1130,6 +1186,10 @@ export function App() {
             <TooltipContent side="bottom">More</TooltipContent>
           </Tooltip>
           <DropdownMenuContent align="end" className="topbar-menu min-w-[220px]">
+            <DropdownMenuItem className="narrow-only" disabled={!path} onSelect={toggleBookmark}>
+              <StarIcon filled={path ? bookmarks.includes(path) : false} />
+              <span>{path && bookmarks.includes(path) ? "Remove bookmark" : "Bookmark"}</span>
+            </DropdownMenuItem>
             <DropdownMenuItem className="narrow-only" onSelect={openDaily}>
               <CalendarIcon />
               <span>Daily note</span>
@@ -1278,6 +1338,7 @@ export function App() {
             <AccordionItem value="vault" className="sidebar-item">
               <AccordionTrigger className="sidebar-trigger">Vault</AccordionTrigger>
               <AccordionContent className="sidebar-body">
+                <UnseenPathsContext.Provider value={changes.unseenPaths}>
                 <FileTree
                   data={tree}
                   activePath={path}
@@ -1306,6 +1367,7 @@ export function App() {
                       .catch((e: unknown) => setToast(`Sort failed: ${e instanceof Error ? e.message : String(e)}`))
                   }
                 />
+                </UnseenPathsContext.Provider>
               </AccordionContent>
             </AccordionItem>
 
@@ -1385,10 +1447,31 @@ export function App() {
 
       {drawerOpen && isMobile ? <div className="drawer-backdrop open" onClick={() => setDrawerOpen(false)} /> : null}
 
+      {showChanges ? (
+        <ChangesView
+          changes={changes}
+          onOpen={(p) => void openNote(p)}
+          onVaultChanged={(p) => {
+            void refreshTree();
+            void refreshGit();
+            if (p === path) {
+              void api
+                .readNote(p)
+                .then((data) => {
+                  noteRevisionRef.current = data.revision;
+                  setContent(data.content);
+                })
+                .catch(() => setPath(null));
+            }
+          }}
+        />
+      ) : null}
+
       <main
         ref={mainRef}
         className={clsx(
           "main",
+          showChanges && "is-covered",
           isMobile && mobileView === "preview" && "show-preview",
           !isMobile && desktopView !== "split" && `view-${desktopView}`,
           path && "has-toolbar",
@@ -1494,7 +1577,7 @@ export function App() {
         ) : null}
       </main>
 
-      {isMobile && path ? (
+      {isMobile && path && !showChanges ? (
         <nav className="mobile-tabs" aria-label="Editor view">
           <Tabs
             value={mobileView}

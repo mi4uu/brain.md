@@ -285,3 +285,15 @@ export function BrandMark(p: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+export function ChangesIcon(p: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...baseProps} {...p}>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 3 14 8 19 8" />
+      <line x1="12" y1="10" x2="12" y2="14" />
+      <line x1="10" y1="12" x2="14" y2="12" />
+      <line x1="10" y1="17" x2="14" y2="17" />
+    </svg>
+  );
+}

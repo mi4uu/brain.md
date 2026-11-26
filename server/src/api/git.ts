@@ -1,5 +1,7 @@
 import { Elysia, t } from "elysia";
-import type { GitRepo } from "../git/git";
+import { PatchConflictError, type GitRepo } from "../git/git";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { Autocommit } from "../git/autocommit";
 import { singleActorCommitOpts } from "../git/autocommit";
 import { currentIdentity } from "../auth/identity";
@@ -34,6 +36,31 @@ async function requireNotePathForAgents(
   if (!st.exists || st.isDir) {
     throw new VaultError(`note not found: ${path}`, "NOT_FOUND");
   }
+}
+
+// The owner's "seen up to here" cursor for the Changes view. One cursor per
+// vault, not per login: every login (password, Google, GitHub) is the same
+// single owner, and phone and desktop must agree on what is new. Lives under
+// .brain/, which the vault's .gitignore keeps out of history.
+interface SeenCursor {
+  sha: string;
+  ts: number;
+}
+
+function seenFile(vault: Vault): string {
+  return join(vault.root, ".brain", "changes-seen.json");
+}
+
+async function readSeen(vault: Vault): Promise<SeenCursor | null> {
+  try {
+    const raw = JSON.parse(await readFile(seenFile(vault), "utf8")) as Partial<SeenCursor>;
+    if (typeof raw.sha === "string" && /^[a-f0-9]{4,64}$/i.test(raw.sha) && typeof raw.ts === "number") {
+      return { sha: raw.sha, ts: raw.ts };
+    }
+  } catch {
+    // missing or unreadable: nothing seen yet
+  }
+  return null;
 }
 
 export function gitRoutes(
@@ -211,6 +238,114 @@ export function gitRoutes(
         }
       },
       { body: t.Object({ message: t.Optional(t.String()) }) },
+    )
+    .get(
+      "/changes",
+      async ({ query, set, request }) => {
+        try {
+          // Lists paths across the whole vault, so it cannot be scoped by
+          // folder permissions: owner only, like the other vault-wide routes.
+          requireOwner(request);
+          if (!(await repo.isEnabled())) return { enabled: false, seen: null, commits: [], hasMore: false };
+          const limit = query.limit ? Math.max(1, Math.min(500, Number(query.limit))) : 200;
+          const commits = await repo.changes({ limit: limit + 1, before: query.before });
+          return {
+            enabled: true,
+            seen: await readSeen(vault),
+            commits: commits.slice(0, limit),
+            hasMore: commits.length > limit,
+          };
+        } catch (e) {
+          const { status, body } = asError(e);
+          set.status = status;
+          return body;
+        }
+      },
+      { query: t.Object({ limit: t.Optional(t.String()), before: t.Optional(t.String()) }) },
+    )
+    .post(
+      "/changes/seen",
+      async ({ body, set, request }) => {
+        try {
+          // Agents never move the owner's cursor; only the owner marks seen.
+          requireOwner(request);
+          if (!/^[a-f0-9]{4,64}$/i.test(body.sha)) throw new VaultError("invalid sha", "INVALID_PATH");
+          const prev = await readSeen(vault);
+          if (prev && prev.ts > body.ts) return prev;
+          const next: SeenCursor = { sha: body.sha, ts: body.ts };
+          await mkdir(join(vault.root, ".brain"), { recursive: true });
+          await writeFile(seenFile(vault), JSON.stringify(next));
+          return next;
+        } catch (e) {
+          const { status, body: err } = asError(e);
+          set.status = status;
+          return err;
+        }
+      },
+      { body: t.Object({ sha: t.String(), ts: t.Number() }) },
+    )
+    .get(
+      "/patch",
+      async ({ query, set, request }) => {
+        try {
+          await requireRead(vault, request, query.path);
+          await requireNotePathForAgents(vault, request, query.path);
+          if (query.oldPath) await requireRead(vault, request, query.oldPath);
+          const patch = await repo.commitPatch(query.sha, query.path, query.oldPath);
+          return { patch };
+        } catch (e) {
+          const { status, body } = asError(e);
+          set.status = status;
+          return body;
+        }
+      },
+      { query: t.Object({ sha: t.String(), path: t.String(), oldPath: t.Optional(t.String()) }) },
+    )
+    .post(
+      "/revert",
+      async ({ body, set, request }) => {
+        try {
+          requireOwner(request);
+          assertSafePath(body.path);
+          assertMarkdown(body.path);
+          await requireWrite(vault, request, body.path);
+          // Edits still waiting for the debounce would otherwise sit under
+          // the revert and land in the same commit as if they were part of it.
+          await autocommit.flush();
+          if (body.mode === "restore") {
+            const parent = await repo.parentOf(body.sha);
+            if (!parent || !(await repo.existsAt(parent, body.path))) {
+              throw new VaultError(`${body.path} did not exist before this change`, "NOT_FOUND");
+            }
+            await assertRestoreTargetIsFile(vault.root, body.path);
+            await repo.restore(body.path, parent);
+          } else {
+            await repo.revertPatch(body.sha, body.path);
+          }
+          await vault.notifyWrite(body.path);
+          const identity = currentIdentity();
+          const sha = await repo.commitAll(
+            `revert ${body.path} (${body.mode === "restore" ? "restore before" : "undo"} ${body.sha.slice(0, 7)})`,
+            { paths: [body.path], ...(identity ? singleActorCommitOpts(identity) : {}) },
+          );
+          return { ok: true, sha };
+        } catch (e) {
+          if (e instanceof PatchConflictError) {
+            set.status = 409;
+            return { error: e.message, code: "PATCH_CONFLICT" };
+          }
+          const { status, body: err } = asError(e);
+          set.status = status;
+          return err;
+        }
+      },
+      {
+        body: t.Object({
+          sha: t.String(),
+          path: t.String(),
+          mode: t.Union([t.Literal("patch"), t.Literal("restore")]),
+        }),
+      },
     )
     .post(
       "/autocommit",

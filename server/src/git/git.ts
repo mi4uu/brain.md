@@ -21,6 +21,24 @@ export interface GitStatus {
   lastCommit: GitCommit | null;
 }
 
+export type ChangeStatus = "added" | "modified" | "deleted" | "renamed";
+export type ActorKind = "human" | "agent" | "unattributed";
+
+export interface ChangedFile {
+  path: string;
+  oldPath?: string;
+  status: ChangeStatus;
+  actor: string;
+  actorKind: ActorKind;
+}
+
+export interface ChangeCommit {
+  sha: string;
+  ts: number;
+  author: string;
+  files: ChangedFile[];
+}
+
 const GITIGNORE = [
   ".brain/",
   "node_modules/",
@@ -349,6 +367,71 @@ export class GitRepo {
     return r.stdout;
   }
 
+  // Vault-wide history with the paths each commit touched and who touched
+  // each one. Autocommit records one actor per commit in an Agent trailer,
+  // or, when a flush mixed actors, one "Changed-by: <path> <actor>" trailer
+  // per path with the human owner as author. -z keeps paths with spaces and
+  // non-ASCII characters unquoted.
+  async changes(opts: { limit?: number; before?: string } = {}): Promise<ChangeCommit[]> {
+    if (opts.before) assertSha(opts.before);
+    const args = [
+      "log",
+      "-z",
+      "--name-status",
+      "-M",
+      `-${opts.limit ?? 200}`,
+      "--pretty=format:%x02%H%x1f%ct%x1f%an%x1f%ae%x1f%(trailers:key=Agent,valueonly,separator=%x1e)%x1f%(trailers:key=Changed-by,valueonly,separator=%x1e)",
+    ];
+    if (opts.before) args.push(`${opts.before}^`);
+    const r = await run(this.root, args, { allowFail: true });
+    if (r.code !== 0 || !r.stdout) return [];
+    return parseChanges(r.stdout);
+  }
+
+  // The patch a commit made to one path, against its parent (a root commit
+  // shows the whole file as added). Unlike diff(), which compares a version
+  // with the working tree.
+  async commitPatch(sha: string, path: string, oldPath?: string): Promise<string> {
+    assertSha(sha);
+    const paths = oldPath && oldPath !== path ? [oldPath, path] : [path];
+    const r = await run(this.root, ["show", "-M", "--format=", "--patch", sha, "--", ...paths], {
+      allowFail: true,
+    });
+    return r.stdout;
+  }
+
+  async existsAt(sha: string, path: string): Promise<boolean> {
+    assertSha(sha);
+    const r = await run(this.root, ["cat-file", "-e", `${sha}:${path}`], { allowFail: true });
+    return r.code === 0;
+  }
+
+  async parentOf(sha: string): Promise<string | null> {
+    assertSha(sha);
+    const r = await run(this.root, ["rev-parse", "--verify", "--quiet", `${sha}^`], { allowFail: true });
+    return r.code === 0 ? r.stdout.trim() || null : null;
+  }
+
+  // Undo one commit's change to one path while keeping later edits: apply
+  // that commit's patch for the path in reverse to the working tree. Throws
+  // PatchConflictError when later edits overlap and the patch no longer fits.
+  async revertPatch(sha: string, path: string): Promise<void> {
+    assertSha(sha);
+    await this.serialize(async () => {
+      const patch = await run(this.root, ["show", "--format=", "--binary", "--no-renames", sha, "--", path]);
+      if (!patch.stdout.trim()) throw new Error(`commit ${sha.slice(0, 7)} did not change ${path}`);
+      // -C1: a later edit right next to this change (an append after an
+      // agent's append) still lets it be undone. The lines being removed or
+      // restored must match exactly either way.
+      const check = await run(this.root, ["apply", "-R", "-C1", "--check", "-"], {
+        input: patch.stdout,
+        allowFail: true,
+      });
+      if (check.code !== 0) throw new PatchConflictError(path, check.stderr.trim());
+      await run(this.root, ["apply", "-R", "-C1", "-"], { input: patch.stdout });
+    });
+  }
+
   // Audit P0: a `git checkout <sha> -- <path>` where `path` names a tree
   // (a directory) at that sha, not a blob, restores every file under it
   // recursively instead of the single file the caller asked for and
@@ -401,4 +484,64 @@ function assertSha(sha: string): void {
   if (!/^[a-f0-9]{4,64}$/i.test(sha)) {
     throw new Error("invalid sha");
   }
+}
+
+export class PatchConflictError extends Error {
+  constructor(
+    public readonly path: string,
+    detail: string,
+  ) {
+    super(`later edits to ${path} overlap this change, so it cannot be undone on its own${detail ? ` (${detail})` : ""}`);
+    this.name = "PatchConflictError";
+  }
+}
+
+const STATUS: Record<string, ChangeStatus> = { A: "added", M: "modified", D: "deleted", R: "renamed", C: "added", T: "modified" };
+
+export function parseChanges(out: string): ChangeCommit[] {
+  const commits: ChangeCommit[] = [];
+  for (const chunk of out.split("\x02")) {
+    if (!chunk) continue;
+    const nl = chunk.indexOf("\n");
+    const header = nl === -1 ? chunk : chunk.slice(0, nl);
+    const body = nl === -1 ? "" : chunk.slice(nl + 1);
+    const [sha = "", ct = "0", author = "", , agentRaw = "", changedByRaw = ""] = header.split("\x1f");
+    const agent = agentRaw.split("\x1e").map((a) => a.trim()).filter(Boolean)[0] ?? "";
+    const changedBy = changedByRaw.split("\x1e").map((v) => v.trim()).filter(Boolean);
+    const tokens = body.split("\0").filter((t) => t !== "");
+    const files: ChangedFile[] = [];
+    for (let i = 0; i < tokens.length; ) {
+      const code = tokens[i++]!;
+      const status = STATUS[code[0] ?? ""] ?? "modified";
+      let oldPath: string | undefined;
+      if (code[0] === "R" || code[0] === "C") oldPath = tokens[i++];
+      const path = tokens[i++];
+      if (!path || path.startsWith(".brain/") || path === ".gitignore") continue;
+      const { actor, actorKind } = actorFor(path, author, agent, changedBy);
+      files.push({ path, ...(code[0] === "R" && oldPath ? { oldPath } : {}), status, actor, actorKind });
+    }
+    if (files.length > 0) commits.push({ sha, ts: Number(ct) * 1000, author, files });
+  }
+  return commits;
+}
+
+// The fallback committer autocommit uses when nobody claimed a path (an
+// edit straight on disk, or a restart that lost the pending set).
+const UNATTRIBUTED_AUTHOR = "brain.md";
+
+function actorFor(
+  path: string,
+  author: string,
+  agent: string,
+  changedBy: string[],
+): { actor: string; actorKind: ActorKind } {
+  const entry = changedBy.find((v) => v.startsWith(`${path} `));
+  if (entry) {
+    const actor = entry.slice(path.length + 1).trim();
+    if (actor === UNATTRIBUTED_AUTHOR) return { actor, actorKind: "unattributed" };
+    return { actor, actorKind: actor === author ? "human" : "agent" };
+  }
+  if (agent) return { actor: agent, actorKind: "agent" };
+  if (author === UNATTRIBUTED_AUTHOR) return { actor: author, actorKind: "unattributed" };
+  return { actor: author, actorKind: "human" };
 }
