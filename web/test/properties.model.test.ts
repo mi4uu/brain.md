@@ -67,3 +67,24 @@ describe("minimalChange", () => {
     expect(before.slice(0, c.from) + c.insert + before.slice(c.to)).toBe(after);
   });
 });
+
+describe("offset follows the line ending", () => {
+  test("CRLF rows", () => {
+    const c = "---\r\ntitle: x\r\n---\r\nbody";
+    const m = buildModel(c, []);
+    expect(m.kind).toBe("rows");
+    expect(c.slice(m.offset)).toStartWith("title");
+  });
+  test("BOM and CRLF rows", () => {
+    const c = "﻿---\r\ntitle: x\r\n---\r\nbody";
+    const m = buildModel(c, []);
+    expect(m.kind).toBe("rows");
+    expect(c.slice(m.offset)).toStartWith("title");
+  });
+  test("CRLF invalid yaml", () => {
+    const c = "---\r\na: [1\r\n---\r\nx";
+    const m = buildModel(c, []);
+    expect(m.kind).toBe("error");
+    expect(c.slice(m.offset)).toStartWith("a:");
+  });
+});

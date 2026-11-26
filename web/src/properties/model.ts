@@ -30,7 +30,7 @@ export function isNested(v: PropValue): boolean {
 // the first line after the opening `---`.
 export function buildModel(content: string, infos: PropertyInfo[]): PanelModel {
   const fm = readFrontmatter(content);
-  const offset = fm.range ? fm.range.from + 4 : 0;
+  const offset = fm.range ? fm.range.from + 3 + (content.startsWith("\r\n", fm.range.from + 3) ? 2 : 1) : 0;
   if (fm.error !== null) return { kind: "error", message: fm.error, offset };
   const known = new Map(infos.map((i) => [i.name, i.type]));
   const rows = Object.entries(fm.props ?? {}).map(([name, value]) => ({
