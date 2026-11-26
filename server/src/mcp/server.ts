@@ -27,6 +27,8 @@ import {
 } from "../api/principal";
 import { principalFor } from "../api/auth-middleware";
 import { loadMcpInstructions } from "./instructions";
+import { readFrontmatter } from "@brainmd/shared/frontmatter";
+import { updateProperties } from "../properties/update";
 import { buildGraph, graphSummary, neighbourhood } from "../index/graph";
 import {
   MODEL_ONLY_META,
@@ -77,6 +79,16 @@ const APPEND_NOTE_ANNOTATIONS = {
   readOnlyHint: false,
   destructiveHint: false,
   idempotentHint: false,
+  openWorldHint: false,
+} as const;
+
+// Same value twice gives the same note, and an unchanged note is not
+// rewritten, so a repeat is idempotent. Overwriting a value is still
+// destructive in MCP's terms.
+const UPDATE_PROPERTIES_ANNOTATIONS = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: true,
   openWorldHint: false,
 } as const;
 
@@ -317,7 +329,9 @@ function registerHandlers(
     "read_note",
     {
       annotations: READ_ONLY_LOCAL,
-      description: "Read a single note. Returns content + mtime.",
+      description:
+        "Read a single note. Returns content, mtime, revision and `properties`: the parsed frontmatter " +
+        "mapping (null when the note has no frontmatter or it is not valid YAML).",
       inputSchema: { path: z.string().min(1) },
       ...noteToolMeta(views),
     },
@@ -326,7 +340,9 @@ function registerHandlers(
         await checkRead(vault, principal, path);
         const note = await vault.readNote(path);
         logCall("read_note", { path }, true);
-        const result = { content: [{ type: "text", text: JSON.stringify(note) }] };
+        const result = {
+          content: [{ type: "text", text: JSON.stringify({ ...note, properties: readFrontmatter(note.content).props }) }],
+        };
         if (!views.note) return result;
         return { ...result, _meta: { [NOTE_VIEW_META_KEY]: noteViewData(index, note.path, await readFilter()) } };
       } catch (err) {
@@ -550,6 +566,44 @@ function registerHandlers(
         return { content: [{ type: "text", text: JSON.stringify({ ok: true, ...r }) }] };
       } catch (err) {
         return toolError("write_note", { path, bytes: content.length }, err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "update_properties",
+    {
+      annotations: UPDATE_PROPERTIES_ANNOTATIONS,
+      description:
+        "Change frontmatter properties of an existing note without rewriting it. `set` maps names to new " +
+        "values (string, number, boolean, null, list or map; a new name is added, an existing one replaced) " +
+        "and `unset` lists names to remove. Only the touched lines change: comments, key order and the " +
+        "other properties stay as they are. Fails with INVALID_YAML if the note's frontmatter does not " +
+        "parse. Pass base_revision (from read_note) to refuse the edit if the note changed since; you " +
+        "then get code CONFLICT with the current revision.",
+      ...MODEL_ONLY_META,
+      inputSchema: {
+        path: z.string().min(1),
+        set: z.record(z.string(), z.unknown()).optional(),
+        unset: z.array(z.string()).optional(),
+        base_revision: z.string().min(1).optional(),
+      },
+    },
+    async ({ path, set, unset, base_revision }) => {
+      try {
+        await checkWrite(vault, principal, path);
+        // A revision, or a YAML error quoting the source, is only for callers who can read the note.
+        if (base_revision !== undefined) await checkRead(vault, principal, path);
+        const canRead = await mayRead(principal, path, await readPerms(vault));
+        const r = await updateProperties(vault, path, { set, unset, baseRevision: base_revision }, canRead);
+        logCall("update_properties", { path, set: Object.keys(set ?? {}), unset }, true);
+        return {
+          content: [
+            { type: "text", text: JSON.stringify({ ok: true, path: r.path, mtime: r.mtime, ...(canRead ? { revision: r.revision } : {}) }) },
+          ],
+        };
+      } catch (err) {
+        return toolError("update_properties", { path }, err);
       }
     },
   );

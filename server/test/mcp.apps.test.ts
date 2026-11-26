@@ -91,18 +91,19 @@ describe("MCP Apps note view", () => {
 });
 
 describe("MCP tool annotations", () => {
-  test("every tool is annotated; only write_note and append_note write", async () => {
+  test("every tool is annotated; only write_note, append_note and update_properties write", async () => {
     const { c } = await client(false);
     const { tools } = await c.listTools();
     expect(tools.length).toBeGreaterThan(0);
     for (const t of tools) {
       expect(t.annotations).toBeDefined();
-      const writes = t.name === "write_note" || t.name === "append_note";
+      const writes = ["write_note", "append_note", "update_properties"].includes(t.name);
       expect(t.annotations?.readOnlyHint).toBe(!writes);
     }
     const byName = Object.fromEntries(tools.map((t) => [t.name, t.annotations]));
     expect(byName.write_note).toMatchObject({ destructiveHint: true, idempotentHint: false });
     expect(byName.append_note).toMatchObject({ destructiveHint: false, idempotentHint: false });
+    expect(byName.update_properties).toMatchObject({ destructiveHint: true, idempotentHint: true });
   });
 });
 

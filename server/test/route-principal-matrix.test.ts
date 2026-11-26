@@ -88,7 +88,7 @@ async function makeFixture(kind: PrincipalKind): Promise<Fixture> {
   openHandles.push(handle);
   await handle.repo.ensure();
 
-  await handle.vault.writeNote("secret/a.md", "top secret body\n- [ ] secret task\n#secrettag\n");
+  await handle.vault.writeNote("secret/a.md", "---\nlevel: secret\n---\ntop secret body\n- [ ] secret task\n#secrettag\n");
   await handle.vault.writeNote("public/b.md", "public body\n- [ ] public task\n");
   await handle.vault.writeMedia("secret/a.md", "pic.png", new Uint8Array([1, 2, 3]));
   await handle.index.updatePath("secret/a.md");
@@ -143,6 +143,7 @@ const ROUTES: RouteRow[] = [
   { name: "GET /api/settings", class: "admin", exec: (f) => call(f.handle, "GET", "/api/settings", undefined, f.bearer) },
   { name: "PATCH /api/settings", class: "admin", exec: (f) => call(f.handle, "PATCH", "/api/settings", {}, f.bearer) },
   { name: "GET /api/folder-mcp-perms", class: "admin", exec: (f) => call(f.handle, "GET", "/api/folder-mcp-perms", undefined, f.bearer) },
+  { name: "PUT /api/properties/types", class: "admin", exec: (f) => call(f.handle, "PUT", "/api/properties/types", { name: "level", type: "text" }, f.bearer) },
   { name: "POST /api/folder-mcp-perms", class: "admin", exec: (f) => call(f.handle, "POST", "/api/folder-mcp-perms", { path: "public", read: true, write: true }, f.bearer) },
   { name: "DELETE /api/folder-mcp-perms/public", class: "admin", exec: (f) => call(f.handle, "DELETE", "/api/folder-mcp-perms/public", undefined, f.bearer) },
   { name: "GET /api/auth/keys", class: "admin", exec: (f) => call(f.handle, "GET", "/api/auth/keys", undefined, f.bearer) },
@@ -178,6 +179,7 @@ const ROUTES: RouteRow[] = [
   { name: "PUT /api/note/secret/a.md", class: "strict", exec: (f) => call(f.handle, "PUT", "/api/note/secret/a.md", { content: "x" }, f.bearer) },
   { name: "DELETE /api/note/secret/a.md", class: "strict", exec: (f) => call(f.handle, "DELETE", "/api/note/secret/a.md", undefined, f.bearer) },
   { name: "GET /api/backlinks/secret/a.md", class: "strict", exec: (f) => call(f.handle, "GET", "/api/backlinks/secret/a.md", undefined, f.bearer) },
+  { name: "PATCH /api/note-properties/secret/a.md", class: "strict", exec: (f) => call(f.handle, "PATCH", "/api/note-properties/secret/a.md", { set: { level: "x" } }, f.bearer) },
   { name: "POST /api/rename", class: "strict", exec: (f) => call(f.handle, "POST", "/api/rename", { from: "secret/a.md", to: "secret/moved.md" }, f.bearer) },
   { name: "POST /api/folder/secret/newsub", class: "strict", exec: (f) => call(f.handle, "POST", "/api/folder/secret/newsub", undefined, f.bearer) },
   { name: "DELETE /api/folder/secret", class: "strict", exec: (f) => call(f.handle, "DELETE", "/api/folder/secret", undefined, f.bearer) },
@@ -197,6 +199,7 @@ const ROUTES: RouteRow[] = [
   { name: "GET /api/tags", class: "filtered", exec: (f) => call(f.handle, "GET", "/api/tags", undefined, f.bearer) },
   { name: "GET /api/tags/notes?tag=secrettag", class: "filtered", exec: (f) => call(f.handle, "GET", "/api/tags/notes?tag=secrettag", undefined, f.bearer) },
   { name: "GET /api/resolve?name=a", class: "filtered", exec: (f) => call(f.handle, "GET", "/api/resolve?name=a", undefined, f.bearer) },
+  { name: "GET /api/properties", class: "filtered", exec: (f) => call(f.handle, "GET", "/api/properties", undefined, f.bearer) },
   { name: "GET /api/tasks", class: "filtered", exec: (f) => call(f.handle, "GET", "/api/tasks", undefined, f.bearer) },
   { name: "GET /api/search?q=secret", class: "filtered", exec: (f) => call(f.handle, "GET", "/api/search?q=secret", undefined, f.bearer) },
   { name: "GET /api/folder-meta", class: "filtered", exec: (f) => call(f.handle, "GET", "/api/folder-meta", undefined, f.bearer) },
@@ -349,6 +352,16 @@ const MCP_ROUTES: McpRouteRow[] = [
     name: "write_note secret/a.md (folder dimension)",
     exec: (c) => callTool(c, "write_note", { path: "secret/a.md", content: "x" }),
     expectError: deniedByFolder,
+  },
+  {
+    name: "update_properties secret/a.md (folder dimension)",
+    exec: (c) => callTool(c, "update_properties", { path: "secret/a.md", set: { level: "x" } }),
+    expectError: deniedByFolder,
+  },
+  {
+    name: "update_properties public/b.md (scope dimension)",
+    exec: (c) => callTool(c, "update_properties", { path: "public/b.md", set: { level: "x" } }),
+    expectError: (kind) => kind === "oauth-read",
   },
   {
     name: "read_note public/b.md (scope dimension)",

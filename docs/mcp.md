@@ -11,13 +11,13 @@ The endpoint shares auth with the rest of the HTTP API: when a password
 or a login provider is configured, every request needs a bearer token
 (session, API key or OAuth access token).
 
-## Tools (18)
+## Tools (19)
 
 | Tool                  | Read-only | Folder perm | What it does                                                       |
 |-----------------------|-----------|-------------|--------------------------------------------------------------------|
 | `search_notes`        | yes       | read        | Full-text vault search, 20 per page (`limit`, `offset`, up to 200), optional folder scope, `include_hidden` |
 | `similar_notes`       | yes       | read        | Semantic RAG search, top-k chunks (needs RAG enabled)              |
-| `read_note`           | yes       | read        | Note body + mtime; links the MCP Apps note view                    |
+| `read_note`           | yes       | read        | Note body, mtime, revision, parsed `properties`; links the MCP Apps note view |
 | `list_notes`          | yes       | read        | Notes and folders, 100 notes per page (`limit`, `offset`, `folder`, `include_hidden`) |
 | `get_backlinks`       | yes       | read        | Inbound wikilinks with line and context, 50 per page               |
 | `graph_view`          | yes       | read        | Notes and wikilinks: vault, `folder`, or `center` + `depth` hops   |
@@ -33,6 +33,7 @@ or a login provider is configured, every request needs a bearer token
 | `compare_notes`       | yes       | read        | Similarity, unified diff and shared headings of two notes          |
 | `write_note`          | no        | write       | Create or overwrite a note (`base_revision`, `create_only`)        |
 | `append_note`         | no        | write       | Append a paragraph; returns only path and mtime (`base_revision`)  |
+| `update_properties`   | no        | write       | Set or remove frontmatter keys without rewriting the note (`set`, `unset`, `base_revision`) |
 
 "Folder perm: read" means results from folders the caller can't read are
 left out, or the call is refused for a single note.
@@ -50,6 +51,8 @@ prompt:
   mtime and notifies watchers).
 - `append_note`: `readOnlyHint: false`, `destructiveHint: false`,
   `idempotentHint: false`.
+- `update_properties`: `readOnlyHint: false`, `destructiveHint: true`,
+  `idempotentHint: true` (an unchanged note is not rewritten).
 
 Annotations are hints for the host. Access is enforced by brain.md: the
 caller's scope (owner, API key, OAuth grant) plus per-folder permissions.
@@ -87,6 +90,23 @@ between:
 - Without these parameters both tools behave as before (last write wins).
 - Revision checks need read access to the note, since a conflict reply
   carries the current revision.
+
+## Changing properties
+
+`read_note` returns `properties`, the parsed frontmatter (`null` when there is
+none or it does not parse). `update_properties` changes keys without sending
+the whole note, and only the touched lines change: comments, key order, list
+style and line endings stay.
+
+```jsonc
+// update_properties:
+{ "path": "work/plan.md", "set": { "status": "done", "due": "2026-12-01" }, "unset": ["draft"], "base_revision": "9f2c..." }
+```
+
+Values are strings, numbers, booleans, null, lists or maps. `base_revision`
+works as for `write_note` (code `CONFLICT` with the current revision). A note
+whose frontmatter does not parse fails with `INVALID_YAML`. A write-only
+folder works but returns no revision.
 
 ## Which agent made a change
 
@@ -149,7 +169,7 @@ and dark from the host.
   read permissions. Backlinks are capped at 100 (contexts at 200
   characters) with `truncated: true` when cut. Per spec, hosts keep `_meta` out of the model's
   context.
-- `write_note` and `append_note` carry `_meta.ui.visibility: ["model"]`,
+- `write_note`, `append_note` and `update_properties` carry `_meta.ui.visibility: ["model"]`,
   so a spec-following host does not let a view call them.
 - If the host mounts the view but never forwards the tool result, the
   view calls `read_note` itself after 6 s (path from the tool input), or
