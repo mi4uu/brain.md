@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useEffect, useId, useRef } from "react";
 import type { PropValue } from "@brainmd/shared/frontmatter";
 import {
   listFor,
@@ -75,29 +75,12 @@ export function ValueEditor({ row, suggestions, onCommit, onLeave, onEditInSourc
     const native = type === "date" ? nativeDate(value) : nativeDateTime(value);
     if (native !== null) {
       return (
-        <input
-          data-prop-value
-          className="prop-input prop-mono"
-          type={type === "date" ? "date" : "datetime-local"}
-          aria-label={row.name}
-          defaultValue={native}
-          key={row.name}
-          onBlur={(e) => {
-            const d = dateCommit(e.currentTarget.value, e.currentTarget.validity.badInput, native);
-            if (d.write) onCommit(d.value);
-            else e.currentTarget.value = native;
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              e.currentTarget.blur();
-              onLeave();
-            } else if (e.key === "Escape") {
-              e.preventDefault();
-              e.currentTarget.value = native;
-              onLeave();
-            }
-          }}
+        <DateInput
+          name={row.name}
+          kind={type === "date" ? "date" : "datetime-local"}
+          native={native}
+          onCommit={onCommit}
+          onLeave={onLeave}
         />
       );
     }
@@ -134,6 +117,55 @@ export function ValueEditor({ row, suggestions, onCommit, onLeave, onEditInSourc
         } else if (e.key === "Escape") {
           e.preventDefault();
           e.currentTarget.value = text;
+          onLeave();
+        }
+      }}
+    />
+  );
+}
+
+function DateInput({
+  name,
+  kind,
+  native,
+  onCommit,
+  onLeave,
+}: {
+  name: string;
+  kind: "date" | "datetime-local";
+  native: string;
+  onCommit: (value: PropValue) => void;
+  onLeave: () => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  // Uncontrolled so a half-typed date survives re-renders, but an edit made
+  // elsewhere (source, undo) must reach the input, or the next blur writes the
+  // stale value back. Remounting on change would drop focus.
+  useEffect(() => {
+    const el = ref.current;
+    if (el && el !== document.activeElement) el.value = native;
+  }, [native]);
+  return (
+    <input
+      ref={ref}
+      data-prop-value
+      className="prop-input prop-mono"
+      type={kind}
+      aria-label={name}
+      defaultValue={native}
+      onBlur={(e) => {
+        const d = dateCommit(e.currentTarget.value, e.currentTarget.validity.badInput, native);
+        if (d.write) onCommit(d.value);
+        else e.currentTarget.value = native;
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.currentTarget.blur();
+          onLeave();
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          e.currentTarget.value = native;
           onLeave();
         }
       }}
