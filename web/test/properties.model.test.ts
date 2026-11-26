@@ -143,6 +143,13 @@ describe("fitsType: a value whose shape does not fit its type is not editable", 
     expect(fitsType("text", 5)).toBe(true);
     expect(fitsType("number", null)).toBe(true);
   });
+  test("scalar types refuse a multi-line string, a single-line input would join its lines", () => {
+    expect(fitsType("text", "line one\nline two\n")).toBe(false);
+    expect(fitsType("number", "1\n2")).toBe(false);
+    expect(fitsType("date", "2026-01-01\n")).toBe(false);
+    expect(fitsType("datetime", "a\nb")).toBe(false);
+    expect(fitsType("text", "one line")).toBe(true);
+  });
   test("checkbox takes only a boolean or nothing", () => {
     expect(fitsType("checkbox", true)).toBe(true);
     expect(fitsType("checkbox", null)).toBe(true);

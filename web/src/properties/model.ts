@@ -85,11 +85,12 @@ export function removeChip(v: PropValue, index: number): PropValue[] {
 // A value the editor for its type cannot show faithfully is shown read-only,
 // so one keystroke or click cannot replace it. A lone string under a list
 // type is fine unless it reads as a legacy comma (or, for tags, space)
-// separated list.
+// separated list. Scalar editors are single-line inputs, so a multi-line
+// string (a `|` block) would lose its newlines on the first blur.
 export function fitsType(type: PropertyType, v: PropValue): boolean {
   if (type === "checkbox") return v === null || typeof v === "boolean";
   if (isListType(type)) return typeof v !== "string" || !(v.includes(",") || (type === "tags" && /\s/.test(v)));
-  return !Array.isArray(v);
+  return !Array.isArray(v) && !(typeof v === "string" && v.includes("\n"));
 }
 
 export function parseNumber(raw: string): number | null {
