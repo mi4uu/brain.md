@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
-import { gitApi, PatchConflict, type ChangeCommit } from "../api/git";
+import { gitApi, RevertFailed, type ChangeCommit } from "../api/git";
 import { api } from "../api/client";
 import { groupByDay, relativeTime, timeOf, type NoteChange, type NoteEdit } from "../changes/model";
 import type { ChangesState } from "../changes/useChanges";
@@ -30,7 +30,13 @@ export function ChangesView({ changes, onOpen, onVaultChanged }: Props) {
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [reverting, setReverting] = useState<{ note: NoteChange; edit: NoteEdit } | null>(null);
 
-  const commits = useMemo(() => [...(page?.commits ?? []), ...older], [page, older]);
+  // The first page refreshes every minute; older pages stay, minus any
+  // commit the refreshed first page now also holds.
+  const commits = useMemo(() => {
+    const first = page?.commits ?? [];
+    const known = new Set(first.map((c) => c.sha));
+    return [...first, ...older.filter((c) => !known.has(c.sha))];
+  }, [page, older]);
   const groups = useMemo(() => groupByDay(commits, unseen, { onlyAgents }), [commits, unseen, onlyAgents]);
   const hasMore = olderHasMore ?? page?.hasMore ?? false;
 
@@ -183,7 +189,7 @@ function NoteRow({
         </span>
         <span className="changes-actors">
           {note.actors.map((a) => (
-            <ActorChip key={a.name} name={a.name} kind={a.kind} />
+            <ActorChip key={`${a.kind}:${a.name}`} name={a.name} kind={a.kind} />
           ))}
         </span>
         <span className="changes-count">{note.edits.length === 1 ? "1 edit" : `${note.edits.length} edits`}</span>
@@ -230,7 +236,13 @@ function EditRow({ path, edit, onRevert }: { path: string; edit: NoteEdit; onRev
           <button type="button" className="btn" aria-expanded={showDiff} onClick={() => setShowDiff((v) => !v)}>
             {showDiff ? "Hide diff" : "Diff"}
           </button>
-          <button type="button" className="btn" onClick={onRevert}>
+          <button
+            type="button"
+            className="btn"
+            onClick={onRevert}
+            disabled={edit.status === "renamed"}
+            title={edit.status === "renamed" ? "Renames cannot be reverted here. Rename the note back from the tree." : undefined}
+          >
             Revert
           </button>
         </span>
@@ -277,9 +289,11 @@ function RevertDialog({
       else await gitApi.revert(edit.sha, note.path, mode);
       onDone();
     } catch (e) {
-      if (e instanceof PatchConflict) {
+      if (e instanceof RevertFailed && e.code === "CONFLICT") {
         setMode("restore");
-        setError("Later edits overlap this change, so it cannot be undone on its own. Restoring the note to before it is still possible.");
+        setError("Later edits touch the same lines, so this change cannot be undone on its own. Restoring the note to before it is still possible.");
+      } else if (e instanceof RevertFailed && e.code === "PENDING") {
+        setError("This note has edits that are not in history yet. Try again in a few seconds.");
       } else {
         setError(e instanceof Error ? e.message : String(e));
       }
@@ -299,9 +313,31 @@ function RevertDialog({
         </DialogHeader>
 
         {created ? (
-          <p className="revert-note">This change created the note. Reverting it moves the note to Trash.</p>
+          <div className="revert-note">
+            <p>This change created the note. Reverting it moves the note to Trash.</p>
+            {laterEdits.length > 0 ? (
+              <>
+                <p>
+                  {laterEdits.length === 1 ? "1 later edit goes" : `${laterEdits.length} later edits go`} with it:
+                </p>
+                <LaterEdits edits={laterEdits} />
+              </>
+            ) : null}
+          </div>
         ) : (
-          <div role="radiogroup" aria-label="What to revert" className="revert-options">
+          <div
+            role="radiogroup"
+            aria-label="What to revert"
+            className="revert-options"
+            onKeyDown={(e) => {
+              if (["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+                e.preventDefault();
+                const next = mode === "patch" ? "restore" : "patch";
+                setMode(next);
+                e.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]')[next === "patch" ? 0 : 1]?.focus();
+              }
+            }}
+          >
             <RevertOption
               checked={mode === "patch"}
               onSelect={() => setMode("patch")}
@@ -318,15 +354,7 @@ function RevertDialog({
                   : "Nothing was changed after it."
               }
             >
-              {laterEdits.length > 0 ? (
-                <ul className="revert-later">
-                  {laterEdits.map((l) => (
-                    <li key={l.sha}>
-                      <ActorChip name={l.actor} kind={l.actorKind} /> <span className="changes-time">{relativeDay(l.ts)} {timeOf(l.ts)}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
+              {laterEdits.length > 0 ? <LaterEdits edits={laterEdits} /> : null}
             </RevertOption>
           </div>
         )}
@@ -350,6 +378,21 @@ function RevertDialog({
   );
 }
 
+function LaterEdits({ edits }: { edits: NoteEdit[] }) {
+  return (
+    <ul className="revert-later">
+      {edits.map((l) => (
+        <li key={l.sha}>
+          <ActorChip name={l.actor} kind={l.actorKind} />{" "}
+          <span className="changes-time">
+            {relativeDay(l.ts)} {timeOf(l.ts)}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function RevertOption({
   checked,
   onSelect,
@@ -367,7 +410,7 @@ function RevertOption({
     <div
       role="radio"
       aria-checked={checked}
-      tabIndex={0}
+      tabIndex={checked ? 0 : -1}
       className={clsx("revert-option", checked && "is-checked")}
       onClick={onSelect}
       onKeyDown={(e) => {

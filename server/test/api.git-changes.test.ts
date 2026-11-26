@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp, type AppHandle } from "../src/app";
@@ -90,14 +90,16 @@ describe("GET /api/git/changes", () => {
 });
 
 describe("POST /api/git/changes/seen", () => {
-  test("stores the cursor untracked and never moves it backwards", async () => {
+  test("stores the cursor untracked, takes time from git and never moves it backwards", async () => {
     await write("a.md", "x", agentKey);
-    const sha = (await changes()).commits[0]!.sha;
-    await call("POST", "/api/git/changes/seen", { sha, ts: 2000 }, owner);
-    await call("POST", "/api/git/changes/seen", { sha, ts: 1000 }, owner);
-    expect((await changes()).seen).toEqual({ sha, ts: 2000 });
+    await write("a.md", "y", agentKey);
+    const [newest, older] = (await changes()).commits;
+    await call("POST", "/api/git/changes/seen", { sha: newest!.sha, ts: 9e15 }, owner);
+    await call("POST", "/api/git/changes/seen", { sha: older!.sha }, owner);
+    expect((await changes()).seen).toEqual({ sha: newest!.sha, ts: newest!.ts });
+    expect((await call("POST", "/api/git/changes/seen", { sha: "abcdef1234" }, owner)).status).toBe(404);
     const stored = JSON.parse(await readFile(join(dir, ".brain", "changes-seen.json"), "utf8"));
-    expect(stored.ts).toBe(2000);
+    expect(stored.sha).toBe(newest!.sha);
     const status = Bun.spawnSync(["git", "-C", dir, "status", "--porcelain"]).stdout.toString();
     expect(status).not.toContain("changes-seen");
   });
@@ -114,15 +116,16 @@ describe("POST /api/git/revert", () => {
     expect(await readFile(join(dir, "n.md"), "utf8")).toBe("a\nb\nc\nd\ne\nF-human\n");
   });
 
-  test("patch mode undoes an append even when a later append sits right after it", async () => {
+  test("patch mode refuses when a later edit sits right next to the change", async () => {
     const body = "# Note\n\nfirst\nsecond\nthird\n";
     await write("n.md", body, owner);
     await write("n.md", `${body}agent added\n`, agentKey);
     const agentSha = (await changes()).commits[0]!.sha;
     await write("n.md", `${body}agent added\nhuman added\n`, owner);
     const r = await call("POST", "/api/git/revert", { sha: agentSha, path: "n.md", mode: "patch" }, owner);
-    expect(r.status).toBe(200);
-    expect(await readFile(join(dir, "n.md"), "utf8")).toBe(`${body}human added\n`);
+    expect(r.status).toBe(409);
+    expect(((await r.json()) as { code: string }).code).toBe("CONFLICT");
+    expect(await readFile(join(dir, "n.md"), "utf8")).toBe(`${body}agent added\nhuman added\n`);
   });
 
   test("patch mode reports a conflict when later edits overlap", async () => {
@@ -132,7 +135,7 @@ describe("POST /api/git/revert", () => {
     await write("n.md", "human rewrote it\n", owner);
     const r = await call("POST", "/api/git/revert", { sha: agentSha, path: "n.md", mode: "patch" }, owner);
     expect(r.status).toBe(409);
-    expect(((await r.json()) as { code: string }).code).toBe("PATCH_CONFLICT");
+    expect(((await r.json()) as { code: string }).code).toBe("CONFLICT");
     expect(await readFile(join(dir, "n.md"), "utf8")).toBe("human rewrote it\n");
   });
 
@@ -152,8 +155,48 @@ describe("POST /api/git/revert", () => {
     await write("new.md", "hi\n", agentKey);
     const sha = (await changes()).commits[0]!.sha;
     const r = await call("POST", "/api/git/revert", { sha, path: "new.md", mode: "restore" }, owner);
-    expect(r.status).toBe(404);
+    expect(r.status).toBe(400);
+    expect(((await r.json()) as { code: string }).code).toBe("CREATED");
     expect(await readFile(join(dir, "new.md"), "utf8")).toBe("hi\n");
+  });
+
+  test("refuses while the note has edits that are not in history", async () => {
+    await write("n.md", "one\n", owner);
+    await write("n.md", "two\n", agentKey);
+    const sha = (await changes()).commits[0]!.sha;
+    h.autocommit.setEnabled(false);
+    await writeFile(join(dir, "n.md"), "typed but not committed\n");
+    const r = await call("POST", "/api/git/revert", { sha, path: "n.md", mode: "restore" }, owner);
+    expect(r.status).toBe(409);
+    expect(((await r.json()) as { code: string }).code).toBe("PENDING");
+    expect(await readFile(join(dir, "n.md"), "utf8")).toBe("typed but not committed\n");
+  });
+
+  test("refuses renames, unknown commits and commits that did not touch the path", async () => {
+    await write("a.md", "a\n", owner);
+    await write("b.md", "b\n", agentKey);
+    const bSha = (await changes()).commits[0]!.sha;
+    expect((await call("POST", "/api/git/revert", { sha: bSha, path: "a.md", mode: "patch" }, owner)).status).toBe(400);
+    expect((await call("POST", "/api/git/revert", { sha: "abcdef1234", path: "a.md", mode: "patch" }, owner)).status).toBe(404);
+    Bun.spawnSync(["git", "-C", dir, "mv", "a.md", "c.md"]);
+    Bun.spawnSync(["git", "-C", dir, "commit", "-qm", "rename", "--author", "codex <agent@brain.local>"]);
+    const renameSha = (await changes()).commits[0]!.sha;
+    const r = await call("POST", "/api/git/revert", { sha: renameSha, path: "c.md", mode: "patch" }, owner);
+    expect(r.status).toBe(400);
+    expect(((await r.json()) as { code: string }).code).toBe("UNSUPPORTED");
+    expect(await readFile(join(dir, "c.md"), "utf8")).toBe("a\n");
+  });
+
+  test("patch mode brings back a note the change deleted", async () => {
+    await write("gone.md", "keep me\n", owner);
+    const del = await call("DELETE", "/api/note/gone.md", undefined, agentKey);
+    expect(del.status).toBeLessThan(300);
+    await h.autocommit.flush();
+    const delSha = (await changes()).commits[0]!.sha;
+    expect((await changes()).commits[0]!.files[0]!.status).toBe("deleted");
+    const r = await call("POST", "/api/git/revert", { sha: delSha, path: "gone.md", mode: "patch" }, owner);
+    expect(r.status).toBe(200);
+    expect(await readFile(join(dir, "gone.md"), "utf8")).toBe("keep me\n");
   });
 
   test("agent credentials cannot revert", async () => {
@@ -176,5 +219,16 @@ describe("parseChanges", () => {
       { path: "loose.md", status: "modified", actor: "brain.md", actorKind: "unattributed" },
     ]);
     expect(disk!.files[0]!.actorKind).toBe("unattributed");
+  });
+
+  test("a Changed-by entry goes to the longest matching path", () => {
+    const out =
+      "\x02ccc3333\x1f100\x1fowner\x1fo@x\x1f\x1fa.md notes.md Bob\x1ea.md Alice\n" +
+      "M\0a.md\0M\0a.md notes.md\0";
+    const [c] = parseChanges(out);
+    expect(c!.files.map((f) => [f.path, f.actor])).toEqual([
+      ["a.md", "Alice"],
+      ["a.md notes.md", "Bob"],
+    ]);
   });
 });

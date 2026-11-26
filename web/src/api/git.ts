@@ -64,12 +64,12 @@ export const gitApi = {
     if (opts.before) params.set("before", opts.before);
     return jsonOrThrow<ChangesPage>(await fetch(`/api/git/changes?${params.toString()}`));
   },
-  async markSeen(sha: string, ts: number): Promise<{ sha: string; ts: number }> {
+  async markSeen(sha: string): Promise<{ sha: string; ts: number }> {
     return jsonOrThrow(
       await fetch("/api/git/changes/seen", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sha, ts }),
+        body: JSON.stringify({ sha }),
       }),
     );
   },
@@ -85,11 +85,11 @@ export const gitApi = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ sha, path, mode }),
     });
-    if (res.status === 409) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new PatchConflict(body.error ?? "Later edits overlap this change.");
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+      throw new RevertFailed(body.code ?? String(res.status), body.error ?? res.statusText);
     }
-    return jsonOrThrow(res);
+    return res.json() as Promise<{ ok: true; sha: string | null }>;
   },
   async status(): Promise<GitStatus> {
     return jsonOrThrow<GitStatus>(await fetch("/api/git/status"));
@@ -148,4 +148,11 @@ export const gitApi = {
   },
 };
 
-export class PatchConflict extends Error {}
+export class RevertFailed extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}

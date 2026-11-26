@@ -230,10 +230,10 @@ export function App() {
   );
   const startDecided = useRef(false);
   useEffect(() => {
-    if (startDecided.current || !changes.loaded) return;
+    if (startDecided.current || !changes.loaded || changes.error) return;
     startDecided.current = true;
     if (!deepLinkAtLoad.current && changes.unseenCount > 0) setShowChanges(true);
-  }, [changes.loaded, changes.unseenCount]);
+  }, [changes.loaded, changes.error, changes.unseenCount]);
   const [showTrash, setShowTrash] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
@@ -525,7 +525,8 @@ export function App() {
       void settingsApi
         .get()
         .then((s) => {
-          if (s.homepage && !window.location.hash) openNote(s.homepage);
+          // The homepage opens behind the Changes start screen, not over it.
+          if (s.homepage && !window.location.hash) openNote(s.homepage, { keepChanges: true });
         })
         .catch(() => {});
     }
@@ -557,7 +558,7 @@ export function App() {
   }, []);
 
   const openNote = useCallback(
-    async (p: string, opts?: { headingSlug?: string }): Promise<boolean> => {
+    async (p: string, opts?: { headingSlug?: string; keepChanges?: boolean }): Promise<boolean> => {
       if (!(await leaveNote())) {
         revertHash();
         return false;
@@ -569,7 +570,7 @@ export function App() {
         setContent(data.content);
         setTagFilter(null);
         setMobileView("edit");
-        setShowChanges(false);
+        if (!opts?.keepChanges) setShowChanges(false);
         const want = `#/note/${encodeURI(p)}${opts?.headingSlug ? `#${opts.headingSlug}` : ""}`;
         if (window.location.hash !== want) window.location.hash = want;
         const bl = await api.backlinks(p);
@@ -1462,9 +1463,16 @@ export function App() {
                 .readNote(p)
                 .then((data) => {
                   noteRevisionRef.current = data.revision;
+                  resetBaselineRef.current(data.content);
                   setContent(data.content);
                 })
-                .catch(() => setPath(null));
+                .catch((e: unknown) => {
+                  const msg = e instanceof Error ? e.message : String(e);
+                  if (/^404|not found/i.test(msg)) {
+                    setPath(null);
+                    setContent("");
+                  } else setToast(`Could not reload ${p}: ${msg}`);
+                });
             }
           }}
         />

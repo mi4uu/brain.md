@@ -23,9 +23,15 @@ export function useChanges(): ChangesState {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
+  const again = useRef(false);
 
-  const reload = useCallback(async () => {
-    if (inFlight.current) return;
+  const reload = useCallback(async (): Promise<void> => {
+    if (inFlight.current) {
+      // A reload asked for mid-flight (right after a revert) must still
+      // see the newest history, so run once more when this one ends.
+      again.current = true;
+      return;
+    }
     inFlight.current = true;
     try {
       const p = await gitApi.changes({ limit: 200 });
@@ -41,6 +47,10 @@ export function useChanges(): ChangesState {
     } finally {
       inFlight.current = false;
       setLoaded(true);
+    }
+    if (again.current) {
+      again.current = false;
+      await reload();
     }
   }, []);
 
@@ -76,7 +86,7 @@ export function useChanges(): ChangesState {
   const markAllSeen = useCallback(async () => {
     const newest = page?.commits[0];
     if (!newest) return;
-    const seen = await gitApi.markSeen(newest.sha, newest.ts);
+    const seen = await gitApi.markSeen(newest.sha);
     setPage((p) => (p ? { ...p, seen } : p));
   }, [page]);
 

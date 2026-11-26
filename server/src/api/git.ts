@@ -1,6 +1,6 @@
 import { Elysia, t } from "elysia";
-import { PatchConflictError, type GitRepo } from "../git/git";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { RevertError, type GitRepo } from "../git/git";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Autocommit } from "../git/autocommit";
 import { singleActorCommitOpts } from "../git/autocommit";
@@ -46,6 +46,15 @@ interface SeenCursor {
   sha: string;
   ts: number;
 }
+
+const REVERT_STATUS: Record<RevertError["code"], number> = {
+  NOT_FOUND: 404,
+  NOT_CHANGED: 400,
+  UNSUPPORTED: 400,
+  CREATED: 400,
+  PENDING: 409,
+  CONFLICT: 409,
+};
 
 function seenFile(vault: Vault): string {
   return join(vault.root, ".brain", "changes-seen.json");
@@ -247,7 +256,8 @@ export function gitRoutes(
           // folder permissions: owner only, like the other vault-wide routes.
           requireOwner(request);
           if (!(await repo.isEnabled())) return { enabled: false, seen: null, commits: [], hasMore: false };
-          const limit = query.limit ? Math.max(1, Math.min(500, Number(query.limit))) : 200;
+          const asked = Number(query.limit);
+          const limit = Number.isFinite(asked) && asked > 0 ? Math.min(500, Math.floor(asked)) : 200;
           const commits = await repo.changes({ limit: limit + 1, before: query.before });
           return {
             enabled: true,
@@ -270,11 +280,18 @@ export function gitRoutes(
           // Agents never move the owner's cursor; only the owner marks seen.
           requireOwner(request);
           if (!/^[a-f0-9]{4,64}$/i.test(body.sha)) throw new VaultError("invalid sha", "INVALID_PATH");
+          // Time and identity come from git, not the client, and the cursor
+          // only ever moves forward along history.
+          const next = await repo.commitTime(body.sha);
+          if (!next) throw new VaultError(`no commit ${body.sha}`, "NOT_FOUND");
           const prev = await readSeen(vault);
-          if (prev && prev.ts > body.ts) return prev;
-          const next: SeenCursor = { sha: body.sha, ts: body.ts };
+          if (prev && prev.sha !== next.sha && (await repo.isAncestor(next.sha, prev.sha).catch(() => false))) {
+            return prev;
+          }
           await mkdir(join(vault.root, ".brain"), { recursive: true });
-          await writeFile(seenFile(vault), JSON.stringify(next));
+          const tmp = `${seenFile(vault)}.${process.pid}.${Date.now()}.tmp`;
+          await writeFile(tmp, JSON.stringify(next));
+          await rename(tmp, seenFile(vault));
           return next;
         } catch (e) {
           const { status, body: err } = asError(e);
@@ -282,7 +299,7 @@ export function gitRoutes(
           return err;
         }
       },
-      { body: t.Object({ sha: t.String(), ts: t.Number() }) },
+      { body: t.Object({ sha: t.String(), ts: t.Optional(t.Number()) }) },
     )
     .get(
       "/patch",
@@ -308,31 +325,25 @@ export function gitRoutes(
           requireOwner(request);
           assertSafePath(body.path);
           assertMarkdown(body.path);
+          await assertRestoreTargetIsFile(vault.root, body.path);
           await requireWrite(vault, request, body.path);
-          // Edits still waiting for the debounce would otherwise sit under
-          // the revert and land in the same commit as if they were part of it.
+          // Gives edits still waiting for the debounce a chance to land as
+          // their own commit; revertChange refuses if the note is still dirty.
           await autocommit.flush();
-          if (body.mode === "restore") {
-            const parent = await repo.parentOf(body.sha);
-            if (!parent || !(await repo.existsAt(parent, body.path))) {
-              throw new VaultError(`${body.path} did not exist before this change`, "NOT_FOUND");
-            }
-            await assertRestoreTargetIsFile(vault.root, body.path);
-            await repo.restore(body.path, parent);
-          } else {
-            await repo.revertPatch(body.sha, body.path);
-          }
-          await vault.notifyWrite(body.path);
           const identity = currentIdentity();
-          const sha = await repo.commitAll(
-            `revert ${body.path} (${body.mode === "restore" ? "restore before" : "undo"} ${body.sha.slice(0, 7)})`,
-            { paths: [body.path], ...(identity ? singleActorCommitOpts(identity) : {}) },
-          );
+          const sha = await repo.revertChange({
+            sha: body.sha,
+            path: body.path,
+            mode: body.mode,
+            message: `revert ${body.path} (${body.mode === "restore" ? "restore before" : "undo"} ${body.sha.slice(0, 7)})`,
+            ...(identity ? singleActorCommitOpts(identity) : {}),
+          });
+          await vault.notifyWrite(body.path);
           return { ok: true, sha };
         } catch (e) {
-          if (e instanceof PatchConflictError) {
-            set.status = 409;
-            return { error: e.message, code: "PATCH_CONFLICT" };
+          if (e instanceof RevertError) {
+            set.status = REVERT_STATUS[e.code];
+            return { error: e.message, code: e.code };
           }
           const { status, body: err } = asError(e);
           set.status = status;

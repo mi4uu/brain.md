@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 export interface GitCommit {
@@ -400,36 +401,128 @@ export class GitRepo {
     return r.stdout;
   }
 
-  async existsAt(sha: string, path: string): Promise<boolean> {
+  // The commit's own time, or null when the sha is not a commit in this
+  // repo's history.
+  async commitTime(sha: string): Promise<{ sha: string; ts: number } | null> {
     assertSha(sha);
-    const r = await run(this.root, ["cat-file", "-e", `${sha}:${path}`], { allowFail: true });
+    const r = await run(this.root, ["log", "-1", "--format=%H%x1f%ct", `${sha}^{commit}`, "--"], { allowFail: true });
+    if (r.code !== 0 || !r.stdout.trim()) return null;
+    const [full = "", ct = "0"] = r.stdout.trim().split("\x1f");
+    return { sha: full, ts: Number(ct) * 1000 };
+  }
+
+  async isAncestor(a: string, b: string): Promise<boolean> {
+    assertSha(a);
+    assertSha(b);
+    const r = await run(this.root, ["merge-base", "--is-ancestor", a, b], { allowFail: true });
     return r.code === 0;
   }
 
-  async parentOf(sha: string): Promise<string | null> {
-    assertSha(sha);
-    const r = await run(this.root, ["rev-parse", "--verify", "--quiet", `${sha}^`], { allowFail: true });
-    return r.code === 0 ? r.stdout.trim() || null : null;
-  }
-
-  // Undo one commit's change to one path while keeping later edits: apply
-  // that commit's patch for the path in reverse to the working tree. Throws
-  // PatchConflictError when later edits overlap and the patch no longer fits.
-  async revertPatch(sha: string, path: string): Promise<void> {
-    assertSha(sha);
-    await this.serialize(async () => {
-      const patch = await run(this.root, ["show", "--format=", "--binary", "--no-renames", sha, "--", path]);
-      if (!patch.stdout.trim()) throw new Error(`commit ${sha.slice(0, 7)} did not change ${path}`);
-      // -C1: a later edit right next to this change (an append after an
-      // agent's append) still lets it be undone. The lines being removed or
-      // restored must match exactly either way.
-      const check = await run(this.root, ["apply", "-R", "-C1", "--check", "-"], {
-        input: patch.stdout,
+  // Reverts one commit's change to one path and commits the result, all in
+  // one serialize() block so no autocommit flush can interleave and sweep
+  // the half-done state up under another actor.
+  //
+  // "patch" undoes only that change: a three-way merge of the current file
+  // with the version before the change, using the changed version as the
+  // base, so later edits stay and anything that overlaps them (even an
+  // adjacent line) is refused as a conflict instead of guessed at.
+  // "restore" puts the file back exactly as it was before the change.
+  //
+  // Refuses when the file has edits not yet committed, so neither mode can
+  // overwrite or swallow work that is not in history.
+  async revertChange(opts: {
+    sha: string;
+    path: string;
+    mode: "patch" | "restore";
+    message: string;
+    author?: { name: string; email: string };
+    trailers?: CommitTrailer[];
+  }): Promise<string> {
+    assertSha(opts.sha);
+    return this.serialize(async () => {
+      const resolved = await run(this.root, ["rev-parse", "--verify", "--quiet", `${opts.sha}^{commit}`], {
         allowFail: true,
       });
-      if (check.code !== 0) throw new PatchConflictError(path, check.stderr.trim());
-      await run(this.root, ["apply", "-R", "-C1", "-"], { input: patch.stdout });
+      const sha = resolved.stdout.trim();
+      if (resolved.code !== 0 || !sha) throw new RevertError("NOT_FOUND", `no commit ${opts.sha}`);
+      const anc = await run(this.root, ["merge-base", "--is-ancestor", sha, "HEAD"], { allowFail: true });
+      if (anc.code !== 0) throw new RevertError("NOT_FOUND", `commit ${opts.sha.slice(0, 7)} is not in this vault's history`);
+
+      const status = await this.statusIn(sha, opts.path);
+      if (!status) throw new RevertError("NOT_CHANGED", `commit ${opts.sha.slice(0, 7)} did not change ${opts.path}`);
+      if (status === "renamed") throw new RevertError("UNSUPPORTED", "reverting a rename is not supported, rename the note back instead");
+
+      const dirty = await run(this.root, ["--no-optional-locks", "status", "--porcelain", "--", opts.path], {
+        allowFail: true,
+      });
+      if (dirty.stdout.trim()) {
+        throw new RevertError("PENDING", `${opts.path} has edits that are not in history yet, try again in a few seconds`);
+      }
+
+      const abs = join(this.root, opts.path);
+      const live = await lstat(abs).catch(() => null);
+      if (live && !live.isFile()) throw new RevertError("UNSUPPORTED", `${opts.path} is not a regular file`);
+
+      const parent = await run(this.root, ["rev-parse", "--verify", "--quiet", `${sha}^`], { allowFail: true });
+      const parentSha = parent.code === 0 ? parent.stdout.trim() : "";
+      const before = parentSha ? await this.blobAt(parentSha, opts.path) : null;
+      const after = await this.blobAt(sha, opts.path);
+      if (before === null) throw new RevertError("CREATED", `${opts.path} did not exist before this change`);
+
+      let next: string;
+      if (opts.mode === "restore" || after === null) {
+        // after === null: the change deleted the note; undoing it means
+        // bringing it back, which only works while nothing sits there now.
+        if (opts.mode === "patch" && live) {
+          throw new RevertError("CONFLICT", `a later ${opts.path} exists, so the deleted version cannot come back on its own`);
+        }
+        next = before;
+      } else {
+        if (!live) throw new RevertError("CONFLICT", `${opts.path} was deleted later, only restoring is possible`);
+        next = await this.mergeOut(await readFile(abs, "utf8"), after, before, opts.path);
+      }
+
+      await writeFile(abs, next);
+      await run(this.root, ["add", "-A", "--", opts.path]);
+      const out = await this.commitStaged(opts.message, opts);
+      if (!out) throw new RevertError("NOT_CHANGED", `reverting left ${opts.path} unchanged`);
+      return out;
     });
+  }
+
+  private async statusIn(sha: string, path: string): Promise<ChangeStatus | null> {
+    const r = await run(this.root, ["diff-tree", "--root", "--no-commit-id", "-r", "-M", "-z", "--name-status", sha], {
+      allowFail: true,
+    });
+    const t = r.stdout.split("\0").filter((x) => x !== "");
+    for (let i = 0; i < t.length; ) {
+      const code = t[i++]!;
+      const two = code[0] === "R" || code[0] === "C";
+      const a = t[i++];
+      const b = two ? t[i++] : undefined;
+      if ((b ?? a) === path || (two && a === path)) return STATUS[code[0] ?? ""] ?? "modified";
+    }
+    return null;
+  }
+
+  private async blobAt(sha: string, path: string): Promise<string | null> {
+    const type = await run(this.root, ["cat-file", "-t", `${sha}:${path}`], { allowFail: true });
+    if (type.code !== 0) return null;
+    if (type.stdout.trim() !== "blob") throw new RevertError("UNSUPPORTED", `${path} is not a file at ${sha.slice(0, 7)}`);
+    return (await run(this.root, ["show", `${sha}:${path}`])).stdout;
+  }
+
+  private async mergeOut(current: string, base: string, target: string, path: string): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), "brainmd-revert-"));
+    try {
+      const [c, b, t] = [join(dir, "current"), join(dir, "base"), join(dir, "target")];
+      await Promise.all([writeFile(c, current), writeFile(b, base), writeFile(t, target)]);
+      const r = await run(this.root, ["merge-file", "-p", c, b, t], { allowFail: true });
+      if (r.code !== 0) throw new RevertError("CONFLICT", `later edits to ${path} touch the same lines, so this change cannot be undone on its own`);
+      return r.stdout;
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   }
 
   // Audit P0: a `git checkout <sha> -- <path>` where `path` names a tree
@@ -486,13 +579,15 @@ function assertSha(sha: string): void {
   }
 }
 
-export class PatchConflictError extends Error {
+export type RevertErrorCode = "NOT_FOUND" | "NOT_CHANGED" | "UNSUPPORTED" | "PENDING" | "CREATED" | "CONFLICT";
+
+export class RevertError extends Error {
   constructor(
-    public readonly path: string,
-    detail: string,
+    public readonly code: RevertErrorCode,
+    message: string,
   ) {
-    super(`later edits to ${path} overlap this change, so it cannot be undone on its own${detail ? ` (${detail})` : ""}`);
-    this.name = "PatchConflictError";
+    super(message);
+    this.name = "RevertError";
   }
 }
 
@@ -517,9 +612,10 @@ export function parseChanges(out: string): ChangeCommit[] {
       if (code[0] === "R" || code[0] === "C") oldPath = tokens[i++];
       const path = tokens[i++];
       if (!path || path.startsWith(".brain/") || path === ".gitignore") continue;
-      const { actor, actorKind } = actorFor(path, author, agent, changedBy);
-      files.push({ path, ...(code[0] === "R" && oldPath ? { oldPath } : {}), status, actor, actorKind });
+      files.push({ path, ...(code[0] === "R" && oldPath ? { oldPath } : {}), status, actor: "", actorKind: "human" });
     }
+    const byPath = matchChangedBy(changedBy, files.map((f) => f.path));
+    for (const f of files) Object.assign(f, actorFor(byPath.get(f.path), author, agent));
     if (files.length > 0) commits.push({ sha, ts: Number(ct) * 1000, author, files });
   }
   return commits;
@@ -529,17 +625,23 @@ export function parseChanges(out: string): ChangeCommit[] {
 // edit straight on disk, or a restart that lost the pending set).
 const UNATTRIBUTED_AUTHOR = "brain.md";
 
-function actorFor(
-  path: string,
-  author: string,
-  agent: string,
-  changedBy: string[],
-): { actor: string; actorKind: ActorKind } {
-  const entry = changedBy.find((v) => v.startsWith(`${path} `));
-  if (entry) {
-    const actor = entry.slice(path.length + 1).trim();
-    if (actor === UNATTRIBUTED_AUTHOR) return { actor, actorKind: "unattributed" };
-    return { actor, actorKind: actor === author ? "human" : "agent" };
+// "Changed-by: <path> <actor>": both halves can contain spaces, so each
+// entry goes to the longest path of this commit it starts with. Trailer
+// values were sanitized when written, so compare against the same form.
+function matchChangedBy(entries: string[], paths: string[]): Map<string, string> {
+  const out = new Map<string, string>();
+  const keyed = paths.map((p) => ({ p, k: sanitizeAuthorPart(p) })).sort((a, b) => b.k.length - a.k.length);
+  for (const e of entries) {
+    const hit = keyed.find(({ k }) => e.startsWith(`${k} `));
+    if (hit && !out.has(hit.p)) out.set(hit.p, e.slice(hit.k.length + 1).trim());
+  }
+  return out;
+}
+
+function actorFor(changedBy: string | undefined, author: string, agent: string): { actor: string; actorKind: ActorKind } {
+  if (changedBy !== undefined) {
+    if (changedBy === UNATTRIBUTED_AUTHOR) return { actor: changedBy, actorKind: "unattributed" };
+    return { actor: changedBy, actorKind: changedBy === author ? "human" : "agent" };
   }
   if (agent) return { actor: agent, actorKind: "agent" };
   if (author === UNATTRIBUTED_AUTHOR) return { actor: author, actorKind: "unattributed" };
