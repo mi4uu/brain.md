@@ -185,14 +185,21 @@
   font-size: 0.9em;
 }
 
+/* The code scrolls sideways, not the pre, so the active-block line drawn
+   from the pre can run out to the divider instead of being clipped. */
 .preview .doc pre {
+  position: relative;
   background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-2);
   padding: var(--space-3);
-  overflow: auto;
+  overflow: visible;
   font-size: var(--text-sm);
   line-height: 1.55;
+}
+.preview .doc pre > code {
+  display: block;
+  overflow-x: auto;
 }
 .preview .doc pre code {
   font-family: var(--font-mono);
@@ -394,9 +401,15 @@
   border-radius: var(--radius-2);
   padding: var(--space-3);
   margin: var(--space-3) 0;
-  overflow: auto;
+  /* A wide diagram scales to the column instead of scrolling, so the
+     block can carry the active-block line out to the divider. */
+  overflow: visible;
   display: flex;
   justify-content: center;
+}
+.preview .doc .mermaid-block > svg {
+  max-width: 100%;
+  height: auto;
 }
 .preview .doc .mermaid-error {
   color: var(--callout-danger);
@@ -435,6 +448,34 @@
   position: relative;
   scroll-margin-top: 32px;
 }
+/* The block under the editor cursor gets a straight 1px line along its
+   bottom that runs left to the divider with the editor, tying the two
+   panes together. It overflows only to the left, which the preview's
+   scroll box clips at its edge without adding a horizontal scrollbar. */
+.preview .doc [data-source-line].active-block::after {
+  content: "";
+  position: absolute;
+  left: -100vw;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.preview .doc pre > [data-source-line].active-block::after {
+  display: none;
+}
+.preview .doc pre:has(> [data-source-line].active-block)::after {
+  content: "";
+  position: absolute;
+  left: -100vw;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
 .props {
   border: 1px solid var(--border);
   background: var(--bg-surface);

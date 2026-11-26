@@ -53,13 +53,8 @@ export function SyncConnector({ mainRef, editorViewRef, trigger, hidden }: Props
         setData(null);
         return;
       }
-      // Three straight runs: under the cursor's line in the editor out to
-      // the divider, down (or up) the divider, then under the matching
-      // preview block. Half-pixel offsets keep the 1px strokes crisp.
-      const contentRect = v.contentDOM.getBoundingClientRect();
-      const lineX = Math.round(contentRect.left - mainRect.left) + 0.5;
-      const ay = Math.round(c.bottom - mainRect.top) + 0.5;
-      const ax = Math.round(previewRect.left - mainRect.left) + 0.5;
+      const ay = (c.top + c.bottom) / 2 - mainRect.top;
+      const ax = editorRect.right - mainRect.left;
 
       const active = mainEl.querySelector<HTMLElement>(".preview .doc .active-block");
       if (!active) {
@@ -67,9 +62,8 @@ export function SyncConnector({ mainRef, editorViewRef, trigger, hidden }: Props
         return;
       }
       const blockRect = active.getBoundingClientRect();
-      const by = Math.round(blockRect.bottom - mainRect.top) + 0.5;
-      const bx = ax;
-      const blockRight = Math.round(blockRect.right - mainRect.left) + 0.5;
+      const by = (blockRect.top + blockRect.bottom) / 2 - mainRect.top;
+      const bx = previewRect.left - mainRect.left;
 
       // off-pane visibility check
       const aVisible =
@@ -83,7 +77,10 @@ export function SyncConnector({ mainRef, editorViewRef, trigger, hidden }: Props
         return;
       }
 
-      const d = `M ${lineX} ${ay} H ${ax} V ${by} H ${blockRight}`;
+      const gap = Math.max(bx - ax, 1);
+      const cx1 = ax + gap / 2;
+      const cx2 = bx - gap / 2;
+      const d = `M ${ax} ${ay} C ${cx1} ${ay}, ${cx2} ${by}, ${bx} ${by}`;
       setData({
         d,
         ax,
@@ -130,8 +127,8 @@ export function SyncConnector({ mainRef, editorViewRef, trigger, hidden }: Props
       aria-hidden="true"
     >
       <path d={data.d} />
-      <circle cx={data.ax} cy={data.ay} r={2.5} />
-      <circle cx={data.bx} cy={data.by} r={2.5} />
+      <circle cx={data.ax} cy={data.ay} r={3} />
+      <circle cx={data.bx} cy={data.by} r={3} />
     </svg>
   );
 }
