@@ -1,14 +1,17 @@
 import { useEffect, useId, useRef } from "react";
 import type { PropValue } from "@brainmd/shared/frontmatter";
 import {
-  listFor,
+  addChip,
+  chipsOf,
+  fitsType,
+  isListType,
   nativeDate,
   nativeDateTime,
   parseNumber,
   dateCommit,
   numberCommit,
+  removeChip,
   textOf,
-  toList,
   type PropRow,
 } from "../../properties/model";
 import { CloseIcon } from "../Icons";
@@ -26,7 +29,7 @@ interface Props {
 export function ValueEditor({ row, suggestions, onCommit, onLeave, onEditInSource }: Props) {
   const { type, value } = row;
 
-  if (row.nested) {
+  if (row.nested || !fitsType(type, value)) {
     return (
       <div className="prop-nested">
         <code className="prop-nested-value">{JSON.stringify(value)}</code>
@@ -58,12 +61,12 @@ export function ValueEditor({ row, suggestions, onCommit, onLeave, onEditInSourc
     );
   }
 
-  if (type === "multitext" || type === "tags" || type === "aliases") {
+  if (isListType(type)) {
     return (
       <Chips
         name={row.name}
         type={type}
-        items={toList(value)}
+        value={value}
         suggestions={suggestions}
         onCommit={onCommit}
         onLeave={onLeave}
@@ -176,39 +179,41 @@ function DateInput({
 function Chips({
   name,
   type,
-  items,
+  value,
   suggestions,
   onCommit,
   onLeave,
 }: {
   name: string;
   type: PropRow["type"];
-  items: string[];
+  value: PropValue;
   suggestions: PropValue[];
   onCommit: (value: PropValue) => void;
   onLeave: () => void;
 }) {
   const listId = useId();
+  const chips = chipsOf(value);
+  const labels = chips.map((c) => c.label);
   const suggested = suggestions
-    .filter((s): s is string => typeof s === "string" && !items.includes(s))
+    .filter((s): s is string => typeof s === "string" && !labels.includes(s))
     .slice(0, 20);
 
   const add = (input: HTMLInputElement) => {
-    const next = listFor(type, [...items, input.value]);
+    const next = addChip(type, value, input.value);
     input.value = "";
-    if (next.length !== items.length) onCommit(next);
+    if (next) onCommit(next);
   };
 
   return (
     <div className="prop-chips">
-      {items.map((item) => (
-        <span className="prop-chip" key={item}>
-          {item}
+      {chips.map(({ label, index }) => (
+        <span className="prop-chip" key={index}>
+          {label}
           <button
             type="button"
             className="prop-chip-x"
-            aria-label={`Remove ${item}`}
-            onClick={() => onCommit(listFor(type, items.filter((x) => x !== item)))}
+            aria-label={`Remove ${label}`}
+            onClick={() => onCommit(removeChip(value, index))}
           >
             <CloseIcon width={10} height={10} />
           </button>
@@ -219,14 +224,14 @@ function Chips({
         className="prop-chip-input"
         list={listId}
         aria-label={`Add to ${name}`}
-        placeholder={items.length === 0 ? "Add" : ""}
+        placeholder={chips.length === 0 ? "Add" : ""}
         spellCheck={false}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === ",") {
             e.preventDefault();
             add(e.currentTarget);
-          } else if (e.key === "Backspace" && e.currentTarget.value === "" && items.length > 0) {
-            onCommit(listFor(type, items.slice(0, -1)));
+          } else if (e.key === "Backspace" && !e.repeat && e.currentTarget.value === "" && chips.length > 0) {
+            onCommit(removeChip(value, chips[chips.length - 1]!.index));
           } else if (e.key === "Escape") {
             e.preventDefault();
             e.currentTarget.value = "";

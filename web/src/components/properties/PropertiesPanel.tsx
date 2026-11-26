@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, type KeyboardEvent } from "react";
+import { Component, useCallback, useEffect, useMemo, useRef, type KeyboardEvent, type ReactNode } from "react";
 import clsx from "clsx";
 import type { PropValue } from "@brainmd/shared/frontmatter";
 import type { PropertyType } from "@brainmd/shared/property-types";
@@ -28,7 +28,57 @@ function rowEl(root: HTMLElement | null, name: string): HTMLElement | null {
   return Array.from(root.querySelectorAll<HTMLElement>("[data-prop-row]")).find((el) => el.dataset.propRow === name) ?? null;
 }
 
-export function PropertiesPanel({ variant, notePath, content, onEdit, onFixInSource, onNotice }: Props) {
+export function PropertiesPanel(props: Props) {
+  return (
+    <PanelBoundary {...props}>
+      <Panel {...props} />
+    </PanelBoundary>
+  );
+}
+
+interface BoundaryState {
+  failed: string | null;
+  failedOn: string | null;
+}
+
+// A render error in the panel shows the error bar instead of unmounting the
+// whole app. The next content change retries.
+class PanelBoundary extends Component<Props & { children: ReactNode }, BoundaryState> {
+  state: BoundaryState = { failed: null, failedOn: null };
+
+  static getDerivedStateFromError(e: unknown): Partial<BoundaryState> {
+    return { failed: e instanceof Error ? e.message : String(e) };
+  }
+
+  static getDerivedStateFromProps(props: Props, state: BoundaryState): Partial<BoundaryState> | null {
+    if (state.failedOn !== null && props.content !== state.failedOn) return { failed: null, failedOn: null };
+    return null;
+  }
+
+  componentDidCatch() {
+    this.setState({ failedOn: this.props.content });
+  }
+
+  render() {
+    const { failed } = this.state;
+    if (failed === null) return this.props.children;
+    const { variant, content, onFixInSource } = this.props;
+    return (
+      <section className={clsx("props-panel", variant === "editor" && "in-editor")} aria-label="Properties">
+        <div className="props-error" role="alert">
+          <span className="props-error-text" title={failed}>
+            {`Properties could not be shown: ${failed.split("\n")[0]}`}
+          </span>
+          <button type="button" className="btn" onClick={() => onFixInSource(content.indexOf("\n") + 1)}>
+            Fix in source
+          </button>
+        </div>
+      </section>
+    );
+  }
+}
+
+function Panel({ variant, notePath, content, onEdit, onFixInSource, onNotice }: Props) {
   const [openPreview, setOpenPreview] = useLocal("brain.props.open.preview", true);
   const [openEditor, setOpenEditor] = useLocal("brain.props.open.editor", false);
   const open = variant === "preview" ? openPreview : openEditor;

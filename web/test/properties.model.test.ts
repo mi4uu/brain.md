@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildModel, cleanItem, editRename, editSet, editUnset, initialValue, listFor, minimalChange, nativeDate, nativeDateTime, parseNumber, toList } from "../src/properties/model";
+import { addChip, buildModel, chipsOf, cleanItem, editRename, editSet, editUnset, fitsType, initialValue, minimalChange, nativeDate, nativeDateTime, parseNumber, removeChip } from "../src/properties/model";
 
 const note = "---\ntitle: Hello\ntags: [a, b]\nstatus: todo\ndue: 2026-12-01\nnested:\n  k: 1\n---\n\n# Body\n";
 
@@ -37,12 +37,12 @@ describe("edits", () => {
 });
 
 describe("value helpers", () => {
-  test("lists", () => {
-    expect(toList(null)).toEqual([]);
-    expect(toList("x")).toEqual(["x"]);
-    expect(toList(["a", 1, null, { k: 1 }])).toEqual(["a", "1"]);
+  test("chips: scalar items keep their index, null and maps are not chips", () => {
+    expect(chipsOf(null)).toEqual([]);
+    expect(chipsOf("")).toEqual([]);
+    expect(chipsOf("x")).toEqual([{ label: "x", index: 0 }]);
+    expect(chipsOf(["a", 1, null, true])).toEqual([{ label: "a", index: 0 }, { label: "1", index: 1 }, { label: "true", index: 3 }]);
     expect(cleanItem("tags", " #my tag ")).toBe("my-tag");
-    expect(listFor("tags", ["#a", "a", " ", "b"])).toEqual(["a", "b"]);
   });
   test("numbers and native dates", () => {
     expect(parseNumber("")).toBeNull();
@@ -104,4 +104,60 @@ describe("dateCommit", () => {
   test("partial entry reverts", () => expect(dateCommit("", true, "2026-01-02")).toEqual({ write: false }));
   test("cleared writes null", () => expect(dateCommit("", false, "2026-01-02")).toEqual({ write: true, value: null }));
   test("new value writes", () => expect(dateCommit("2026-02-03", false, "2026-01-02")).toEqual({ write: true, value: "2026-02-03" }));
+});
+
+describe("chip edits keep the other items verbatim", () => {
+  test("adding keeps numbers, nulls and odd tags as they are", () => {
+    expect(addChip("multitext", [2024, 2025], "x")).toEqual([2024, 2025, "x"]);
+    expect(addChip("multitext", ["a", null, "b"], "c")).toEqual(["a", null, "b", "c"]);
+    expect(addChip("tags", ["my tag", "#area"], " #new one ")).toEqual(["my tag", "#area", "new-one"]);
+    expect(addChip("tags", null, "a")).toEqual(["a"]);
+    expect(addChip("aliases", "Old name", "New")).toEqual(["Old name", "New"]);
+  });
+  test("adding nothing new gives null", () => {
+    expect(addChip("tags", ["a"], " ")).toBeNull();
+    expect(addChip("tags", ["a"], "#a")).toBeNull();
+    expect(addChip("multitext", [2024], "2024")).toBeNull();
+  });
+  test("removing drops only that index", () => {
+    expect(removeChip(["Area/Sub", "my tag", "x"], 2)).toEqual(["Area/Sub", "my tag"]);
+    expect(removeChip([2024, "2024", 2025], 1)).toEqual([2024, 2025]);
+    expect(removeChip(["a", null, "b"], 2)).toEqual(["a", null]);
+    expect(removeChip("solo", 0)).toEqual([]);
+  });
+  test("a round trip through setProperties keeps the file's items", () => {
+    const src = "---\nyears: [2024, 2025]\ntags:\n  - my tag\n  - '#area'\n---\n";
+    const out = editSet("years", addChip("multitext", [2024, 2025], "x")!)(src);
+    expect(out).toBe("---\nyears: [2024, 2025, x]\ntags:\n  - my tag\n  - '#area'\n---\n");
+    const out2 = editSet("tags", removeChip(["my tag", "#area"], 0))(src);
+    expect(out2).toBe("---\nyears: [2024, 2025]\ntags:\n  - \"#area\"\n---\n");
+  });
+});
+
+describe("fitsType: a value whose shape does not fit its type is not editable", () => {
+  test("scalar types refuse a list", () => {
+    expect(fitsType("text", ["a", "b"])).toBe(false);
+    expect(fitsType("number", [1])).toBe(false);
+    expect(fitsType("date", ["2026-01-01"])).toBe(false);
+    expect(fitsType("text", "x")).toBe(true);
+    expect(fitsType("text", 5)).toBe(true);
+    expect(fitsType("number", null)).toBe(true);
+  });
+  test("checkbox takes only a boolean or nothing", () => {
+    expect(fitsType("checkbox", true)).toBe(true);
+    expect(fitsType("checkbox", null)).toBe(true);
+    expect(fitsType("checkbox", "yes please")).toBe(false);
+    expect(fitsType("checkbox", 1)).toBe(false);
+    expect(fitsType("checkbox", [true])).toBe(false);
+  });
+  test("list types take a list, nothing, or one scalar that would not be split", () => {
+    expect(fitsType("tags", ["a"])).toBe(true);
+    expect(fitsType("tags", null)).toBe(true);
+    expect(fitsType("tags", "work")).toBe(true);
+    expect(fitsType("multitext", 2024)).toBe(true);
+    expect(fitsType("tags", "work, project")).toBe(false);
+    expect(fitsType("tags", "work project")).toBe(false);
+    expect(fitsType("aliases", "Old, name")).toBe(false);
+    expect(fitsType("aliases", "Old name")).toBe(true);
+  });
 });

@@ -47,17 +47,24 @@ export const editUnset = (name: string) => (c: string) => setProperties(c, {}, [
 export const editRename = (from: string, to: string) => (c: string) => renameProperty(c, from, to);
 
 export function initialValue(type: PropertyType): PropValue {
-  if (type === "multitext" || type === "tags" || type === "aliases") return [];
+  if (isListType(type)) return [];
   if (type === "checkbox") return false;
   return null;
 }
 
-export function toList(v: PropValue): string[] {
-  if (v === null) return [];
-  if (Array.isArray(v)) return v.filter((x) => x !== null && typeof x !== "object").map((x) => String(x));
-  if (typeof v === "object") return [];
-  const s = String(v);
-  return s === "" ? [] : [s];
+export function isListType(type: PropertyType): boolean {
+  return type === "multitext" || type === "tags" || type === "aliases";
+}
+
+function itemsOf(v: PropValue): PropValue[] {
+  if (v === null || v === "") return [];
+  return Array.isArray(v) ? v : [v];
+}
+
+// `index` points into the stored list, so an edit can keep every other item
+// (numbers, nulls, odd spellings) exactly as the file has it.
+export function chipsOf(v: PropValue): { label: string; index: number }[] {
+  return itemsOf(v).flatMap((x, index) => (x === null || typeof x === "object" ? [] : [{ label: String(x), index }]));
 }
 
 export function cleanItem(type: PropertyType, raw: string): string {
@@ -65,13 +72,24 @@ export function cleanItem(type: PropertyType, raw: string): string {
   return type === "tags" ? t.replace(/^#+/, "").replace(/\s+/g, "-") : t;
 }
 
-export function listFor(type: PropertyType, items: string[]): string[] {
-  const out: string[] = [];
-  for (const it of items) {
-    const c = cleanItem(type, it);
-    if (c !== "" && !out.includes(c)) out.push(c);
-  }
-  return out;
+export function addChip(type: PropertyType, v: PropValue, raw: string): PropValue[] | null {
+  const c = cleanItem(type, raw);
+  if (c === "" || chipsOf(v).some((x) => x.label === c)) return null;
+  return [...itemsOf(v), c];
+}
+
+export function removeChip(v: PropValue, index: number): PropValue[] {
+  return itemsOf(v).filter((_, i) => i !== index);
+}
+
+// A value the editor for its type cannot show faithfully is shown read-only,
+// so one keystroke or click cannot replace it. A lone string under a list
+// type is fine unless it reads as a legacy comma (or, for tags, space)
+// separated list.
+export function fitsType(type: PropertyType, v: PropValue): boolean {
+  if (type === "checkbox") return v === null || typeof v === "boolean";
+  if (isListType(type)) return typeof v !== "string" || !(v.includes(",") || (type === "tags" && /\s/.test(v)));
+  return !Array.isArray(v);
 }
 
 export function parseNumber(raw: string): number | null {

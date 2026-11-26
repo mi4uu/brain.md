@@ -196,6 +196,9 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
     const root = ref.current;
     if (!root) return;
     const handler = (e: MouseEvent) => {
+      // The Properties panel is the header. Its clicks are its own: canceling
+      // one would fight its checkboxes, and none of them is a cursor move.
+      if ((e.target as Element).closest?.(".props-panel")) return;
       let el = e.target as HTMLElement | null;
       while (el && el !== root) {
         if (el.tagName === "A") {
