@@ -161,11 +161,12 @@ export function App() {
   const refocusLayoutSwitch = useRef(false);
   const pickDesktopView = useCallback(
     (view: DesktopView) => {
+      if (view === desktopView) return;
       const active = document.activeElement;
       refocusLayoutSwitch.current = active instanceof HTMLElement && active.closest(".layout-switch") !== null;
       setDesktopView(view);
     },
-    [setDesktopView],
+    [desktopView, setDesktopView],
   );
   // Lives in the first visible pane head: the editor head in split and
   // editor-only, the preview head in preview-only.
@@ -178,10 +179,12 @@ export function App() {
             type="button"
             className="layout-opt"
             aria-pressed={desktopView === o.view}
+            aria-label={o.label}
+            title={o.label}
             onClick={() => pickDesktopView(o.view)}
           >
             {o.icon}
-            <span>{o.label}</span>
+            <span className="layout-opt-label">{o.label}</span>
           </button>
         ))}
       </div>
