@@ -355,25 +355,34 @@ export function gitRoutes(
           await autocommit.flush();
           const identity = currentIdentity();
           const commitOpts = identity ? singleActorCommitOpts(identity) : {};
-          if (body.mode === "trash") {
-            // The change created the note: undoing it moves the note to
-            // Trash, through the vault like any delete, then records it.
-            await repo.assertCreatedHere(body.sha, body.path);
-            await vault.deleteNote(body.path);
-            const sha = await repo.commitAll(`revert ${body.path} (trash, created in ${body.sha.slice(0, 7)})`, {
-              paths: [body.path],
+          // The note's vault lock is held from the checks to the commit, so
+          // no save or agent write can land in between and be overwritten.
+          const sha = await vault.withNotesLocked([body.path], async () => {
+            if (body.mode === "trash") {
+              // The change created the note: undoing it moves the note to
+              // Trash like any delete, then records exactly that.
+              await repo.assertCreatedHere(body.sha, body.path);
+              const trashed = await vault.deleteNoteLocked(body.path);
+              try {
+                return await repo.commitPath(
+                  body.path,
+                  `revert ${body.path} (trash, created in ${body.sha.slice(0, 7)})`,
+                  commitOpts,
+                );
+              } catch (e) {
+                await vault.restoreFromTrashLocked(trashed);
+                throw e;
+              }
+            }
+            return repo.revertChange({
+              sha: body.sha,
+              path: body.path,
+              mode: body.mode,
+              message: `revert ${body.path} (${body.mode === "restore" ? "restore before" : "undo"} ${body.sha.slice(0, 7)})`,
               ...commitOpts,
             });
-            return { ok: true, sha };
-          }
-          const sha = await repo.revertChange({
-            sha: body.sha,
-            path: body.path,
-            mode: body.mode,
-            message: `revert ${body.path} (${body.mode === "restore" ? "restore before" : "undo"} ${body.sha.slice(0, 7)})`,
-            ...commitOpts,
           });
-          await vault.notifyWrite(body.path);
+          if (body.mode !== "trash") await vault.notifyWrite(body.path);
           return { ok: true, sha };
         } catch (e) {
           if (e instanceof RevertError) {

@@ -425,6 +425,27 @@ export class Vault {
     }
   }
 
+  // For a caller that already holds the note's lock (withNotesLocked) and
+  // must trash it as one step of a larger check-then-act.
+  async deleteNoteLocked(rel: string): Promise<string> {
+    assertMarkdown(rel);
+    assertSafePath(rel);
+    const path = normalizeRel(rel);
+    const trashed = await this.trashPath(rel, false);
+    await this.notify("delete", path, trashed);
+    return trashed;
+  }
+
+  // Undoes deleteNoteLocked() under the same held lock.
+  async restoreFromTrashLocked(trashRel: string): Promise<string> {
+    const norm = normalizeRel(trashRel);
+    if (!norm.startsWith(`${TRASH_REL}/`)) throw new VaultError("not a trash path", "INVALID_PATH");
+    const tail = norm.slice(TRASH_REL.length + 1);
+    const slash = tail.indexOf("/");
+    if (slash < 0) throw new VaultError("trash path missing stamp", "INVALID_PATH");
+    return this.restoreFromTrashInner(norm, tail.slice(slash + 1));
+  }
+
   async restoreFromTrash(trashRel: string): Promise<string> {
     const norm = normalizeRel(trashRel);
     if (!norm.startsWith(`${TRASH_REL}/`)) {
@@ -434,10 +455,10 @@ export class Vault {
     const slash = tail.indexOf("/");
     if (slash < 0) throw new VaultError("trash path missing stamp", "INVALID_PATH");
     const original = tail.slice(slash + 1);
-    return this.withPathLock([norm, original], () => this.restoreFromTrashLocked(norm, original));
+    return this.withPathLock([norm, original], () => this.restoreFromTrashInner(norm, original));
   }
 
-  private async restoreFromTrashLocked(norm: string, original: string): Promise<string> {
+  private async restoreFromTrashInner(norm: string, original: string): Promise<string> {
     const srcAbs = this.abs(norm);
     const destAbs = this.abs(original);
     await assertRealContainment(this.root, srcAbs);

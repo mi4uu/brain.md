@@ -464,6 +464,7 @@ export class GitRepo {
       const status = await this.statusIn(sha, opts.path);
       if (!status) throw new RevertError("NOT_CHANGED", `commit ${opts.sha.slice(0, 7)} did not change ${opts.path}`);
       if (status === "renamed") throw new RevertError("UNSUPPORTED", "reverting a rename is not supported, rename the note back instead");
+      await this.assertOnlyEditedSince(sha, opts.path);
       await this.assertClean(opts.path);
 
       const abs = join(this.root, opts.path);
@@ -536,14 +537,41 @@ export class GitRepo {
       if ((await this.statusIn(full, path)) !== "added") {
         throw new RevertError("NOT_CHANGED", `commit ${sha.slice(0, 7)} did not create ${path}`);
       }
-      const later = await run(this.root, ["log", "-z", "--format=", "--name-status", "-M", `${full}..HEAD`, "--", path], {
-        allowFail: true,
-      });
-      const codes = later.stdout.split("\0").filter((x) => /^[A-Z][0-9]*$/.test(x));
-      if (codes.some((c) => c !== "M")) {
-        throw new RevertError("CONFLICT", `${path} was moved, deleted or recreated after this change`);
-      }
+      await this.assertOnlyEditedSince(full, path);
       await this.assertClean(path);
+    });
+  }
+
+  // Everything after `sha` that touched `path` edited it in place. A delete,
+  // a move away or a new note at the same path means what sits there now is
+  // not the note this change belonged to, so no revert may write over it.
+  private async assertOnlyEditedSince(sha: string, path: string): Promise<void> {
+    const later = await run(this.root, ["log", "-z", "--format=", "--name-status", "-M", `${sha}..HEAD`, "--", path], {
+      allowFail: true,
+    });
+    if (later.code !== 0) throw new RevertError("UNSUPPORTED", `cannot read the history of ${path}`);
+    const codes = later.stdout.split("\0").filter((x) => /^[A-Z][0-9]*$/.test(x));
+    if (codes.some((c) => c !== "M")) {
+      throw new RevertError("CONFLICT", `${path} was moved, deleted or recreated after this change`);
+    }
+  }
+
+  // Commits one path alone (--only), whatever else is staged stays out.
+  async commitPath(
+    path: string,
+    message: string,
+    opts: { author?: { name: string; email: string }; trailers?: CommitTrailer[] } = {},
+  ): Promise<string> {
+    return this.serialize(async () => {
+      await run(this.root, ["add", "-A", "--", path]);
+      const r = await run(this.root, [...this.buildCommitArgs(message, opts), "--only", "--", path], { allowFail: true });
+      if (r.code !== 0) {
+        await run(this.root, ["reset", "-q", "--", path], { allowFail: true });
+        throw new Error(r.stderr || r.stdout || "commit failed");
+      }
+      const out = await this.headSha();
+      if (!out) throw new Error("commit failed");
+      return out;
     });
   }
 

@@ -296,6 +296,33 @@ describe("POST /api/git/revert", () => {
     expect(await readFile(join(dir, "moved.md"), "utf8")).toBe("someone else's new note\n");
   });
 
+  test("refuses to restore over a different note recreated at the same path", async () => {
+    await write("re.md", "original\n", owner);
+    await write("re.md", "agent edit\n", agentKey);
+    const sha = (await changes()).commits[0]!.sha;
+    expect((await call("DELETE", "/api/note/re.md", undefined, owner)).status).toBeLessThan(300);
+    await h.autocommit.flush();
+    await write("re.md", "a brand new note\n", owner);
+    for (const mode of ["restore", "patch"]) {
+      const r = await call("POST", "/api/git/revert", { sha, path: "re.md", mode }, owner);
+      expect(r.status).toBe(409);
+    }
+    expect(await readFile(join(dir, "re.md"), "utf8")).toBe("a brand new note\n");
+  });
+
+  test("trash mode commits only that note", async () => {
+    await write("t.md", "by agent\n", agentKey);
+    const sha = (await changes()).commits[0]!.sha;
+    h.autocommit.setEnabled(false);
+    await writeFile(join(dir, "other.md"), "staged elsewhere\n");
+    Bun.spawnSync(["git", "-C", dir, "add", "other.md"]);
+    const r = await call("POST", "/api/git/revert", { sha, path: "t.md", mode: "trash" }, owner);
+    expect(r.status).toBe(200);
+    const files = Bun.spawnSync(["git", "-C", dir, "show", "--name-only", "--format=", "HEAD"]).stdout.toString().trim();
+    expect(files).toBe("t.md");
+    expect(Bun.spawnSync(["git", "-C", dir, "diff", "--cached", "--name-only"]).stdout.toString().trim()).toBe("other.md");
+  });
+
   test("agent credentials cannot revert", async () => {
     await write("n.md", "x\n", owner);
     const sha = (await changes()).commits[0]!.sha;
