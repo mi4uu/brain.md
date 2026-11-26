@@ -83,6 +83,7 @@ import { CreateNoteDialog } from "./components/CreateNoteDialog";
 import { FolderPermsDialog } from "./components/FolderPermsDialog";
 import { AboutDialog } from "./components/AboutDialog";
 import {
+  Cross2Icon,
   DotsHorizontalIcon,
   HeartFilledIcon,
   InfoCircledIcon,
@@ -1353,7 +1354,7 @@ export function App() {
                             void updateSettings({ bookmarks: bookmarks.filter((x) => x !== b) });
                           }}
                         >
-                          ×
+                          <Cross2Icon />
                         </button>
                       </div>
                     );

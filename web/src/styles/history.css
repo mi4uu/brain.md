@@ -1,6 +1,5 @@
 /* HistoryPanel shell migrated to Radix Dialog + ScrollArea (T80, T88).
- * Only .diff* (used by DiffView) and .history-status-bar (GitStatusChip)
- * remain here. */
+ * Only .diff* (used by DiffView) remains here. */
 
 .diff {
   flex: 1;
@@ -38,20 +37,3 @@
   color: var(--text-2);
 }
 
-.history-status-bar {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--text-xs);
-  color: var(--text-3);
-  padding: 0 8px;
-}
-.history-status-bar .dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--text-4);
-}
-.history-status-bar.dirty .dot { background: var(--callout-warn); }
-.history-status-bar.clean .dot { background: var(--callout-tip); }
-.history-status-bar.off .dot   { background: var(--text-4); }

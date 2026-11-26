@@ -109,7 +109,7 @@ components:
   kbd:
     backgroundColor: "{colors.paper-shade}"
     textColor: "{colors.graphite-text-2}"
-    typography: "{typography.label}"
+    typography: "{typography.ui}"
     rounded: "{rounded.sm}"
     padding: "1px 6px"
 ---
@@ -128,7 +128,7 @@ The visual anti-references are confirmed: no AI-SaaS slop (violet gradients, glo
 
 **Key Characteristics:**
 - Neutral graphite chrome in both themes; colour lives in the notes and one accent.
-- Serif for reading notes, system sans for interface, mono for meta, shortcuts and `[[links]]`.
+- Serif for reading notes, system sans for interface and keycaps, mono for meta and `[[links]]`.
 - Flat surfaces separated by tone and 1px hairlines; shadow only on things that float.
 - One user-selectable accent (Ink by default), always at 4.5:1 or better.
 - Sentence case everywhere, weights 400 and 500.
@@ -166,7 +166,7 @@ Graphite neutrals carry every surface; a single ink accent marks the action, the
 **Body Font:** Iowan Old Style (with Source Serif Pro, Georgia)
 **Label/Mono Font:** JetBrains Mono (with SF Mono, Menlo, Consolas)
 
-**Character:** A reading serif for what the person and agents wrote, set against plain system sans for everything that operates on it; mono marks machine-ish things: shortcuts, counts, timestamps, save state, link brackets.
+**Character:** A reading serif for what the person and agents wrote, set against plain system sans for everything that operates on it; mono marks machine-ish things: counts, timestamps, commit and path meta, link brackets.
 
 ### Hierarchy
 - **Display** (400, 32px, 1.3, -0.01em): note H1 in the preview, with a hairline under it.
@@ -174,7 +174,7 @@ Graphite neutrals carry every surface; a single ink accent marks the action, the
 - **Title** (500, 20px, 1.3): note H3 (in secondary text colour), dialog titles, empty state heading.
 - **Body** (400, 17px serif, 1.7): note paragraphs in a column of at most 760px.
 - **UI** (400 or 500, 13px sans): sidebar rows, toolbar labels, menus, buttons, settings.
-- **Label** (400, 12px mono, tabular figures): keycaps, counts, clock, saved status, frontmatter keys, `[[ ]]` brackets at 0.75em.
+- **Label** (400, 12px mono, tabular figures): counts, times, commit and path meta, `[[ ]]` brackets at 0.75em. Keycaps use the sans at 12px, because shortcuts are mostly letters and mono fallbacks blur O and 0.
 
 ### Named Rules
 **The Sentence Case Rule.** No uppercase labels and no tracked-out small text. Section labels read "Bookmarks", not "BOOKMARKS".
@@ -254,7 +254,7 @@ Settings > Editor shows the five accent presets as a radiogroup of bordered swat
 - **Do** check 4.5:1 for on-accent text and for links on the page whenever an accent value changes.
 - **Do** size controls 32px on a fine pointer and 44px on a coarse pointer.
 - **Do** move secondary actions into the More menu below 840px instead of letting a bar scroll sideways.
-- **Do** use mono only for meta: shortcuts, counts, time, save state and link brackets.
+- **Do** use mono only for meta: counts, times, commit and path meta, and link brackets.
 
 ### Don't:
 - **Don't** use hue gradients, glows, coloured shadows, gradient text, emoji as icons, uppercase tracked labels or sparkle badges (AI-SaaS slop).
