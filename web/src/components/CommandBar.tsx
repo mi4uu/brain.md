@@ -93,7 +93,7 @@ export function CommandBar({ mode, onClose, onOpenNote, tree }: Props) {
                   <SwitcherItem key={p} path={p} onSelect={select} />
                 ))
               : hits.map((h) => (
-                  <SearchItem key={h.path} hit={h} onSelect={select} />
+                  <SearchItem key={h.path} hit={h} query={q} onSelect={select} />
                 ))}
           </Command.List>
         </Command>
@@ -124,9 +124,11 @@ function SwitcherItem({
 
 function SearchItem({
   hit,
+  query,
   onSelect,
 }: {
   hit: SearchHit;
+  query: string;
   onSelect: (p: string) => void;
 }) {
   return (
@@ -138,8 +140,51 @@ function SearchItem({
       <span className="font-medium">{hit.title}</span>
       <span className="text-xs text-fg-3">{hit.path}</span>
       {hit.snippet ? (
-        <span className="line-clamp-2 text-xs text-fg-2">{hit.snippet}</span>
+        <span className="line-clamp-2 text-xs text-fg-2">
+          <Highlighted text={plainSnippet(hit.snippet)} query={query} />
+        </span>
       ) : null}
     </Command.Item>
+  );
+}
+
+// Snippets come straight from the note source; show them as reading text,
+// not markdown syntax.
+function plainSnippet(s: string): string {
+  return s
+    .replace(/```[a-z]*\n?|```/g, " ")
+    .replace(/\[![a-z]+\][+-]?/gi, "")
+    .replace(/!?\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]+))?\]\]/g, (_, target: string, alias?: string) => alias ?? target)
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}(#{1,6}|>|[-*+]\s+\[[ xX]\]|[-*+]|\d+\.)\s+/gm, "")
+    // The server flattens snippets to one line, so block markers can sit mid-text.
+    .replace(/(^|\s)(#{1,6}|>|[-*+]\s+\[[ xX]\])\s+/g, "$1")
+    .replace(/(`|==|~~)(.+?)\1/g, "$2")
+    // * and _ only as emphasis around words, so snake_case names survive.
+    .replace(/(?<!\w)(\*\*|__|\*|_)(?=\S)(.+?)(?<=\S)\1(?!\w)/g, "$2")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function Highlighted({ text, query }: { text: string; query: string }) {
+  const words = query
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length > 1)
+    .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  if (words.length === 0) return <>{text}</>;
+  const parts = text.split(new RegExp(`(${words.join("|")})`, "gi"));
+  return (
+    <>
+      {parts.map((part, i) =>
+        i % 2 === 1 ? (
+          <mark key={i} className="search-hit">
+            {part}
+          </mark>
+        ) : (
+          part
+        ),
+      )}
+    </>
   );
 }

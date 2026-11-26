@@ -57,7 +57,9 @@ kbd {
   border: 1px solid var(--border);
   border-radius: var(--radius-1);
   padding: 1px 6px;
-  font-family: var(--font-mono);
+  /* Sans, not mono: in the fallback mono faces O and 0 look alike, and
+     shortcuts are mostly letters (⌘O read as ⌘0). */
+  font-family: var(--font-sans);
   font-size: var(--text-xs);
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
@@ -192,4 +194,10 @@ kbd {
   :root:not([data-theme]) .accent-swatch-dot {
     background: var(--sw-dark);
   }
+}
+
+.search-hit {
+  background: var(--accent-soft);
+  color: var(--text-1);
+  border-radius: 2px;
 }

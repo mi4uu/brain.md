@@ -223,7 +223,7 @@
       "refersTo": "kbd",
       "description": "Keyboard shortcut hint.",
       "html": "<span class=\"ds-hint\">Press <kbd class=\"ds-kbd\">⌘O</kbd> to switch</span>",
-      "css": ".ds-hint{font:400 13px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,sans-serif;color:var(--text-3,#6b6b6b)}.ds-kbd{padding:1px 6px;border:1px solid var(--border,rgba(0,0,0,0.09));border-radius:var(--radius-1,4px);background:var(--bg-surface-2,#f4f4f2);color:var(--text-2,#404040);font:400 12px/1.3 'JetBrains Mono','SF Mono',Menlo,monospace;font-variant-numeric:tabular-nums}"
+      "css": ".ds-hint{font:400 13px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,sans-serif;color:var(--text-3,#6b6b6b)}.ds-kbd{padding:1px 6px;border:1px solid var(--border,rgba(0,0,0,0.09));border-radius:var(--radius-1,4px);background:var(--bg-surface-2,#f4f4f2);color:var(--text-2,#404040);font:400 12px/1.3 -apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,sans-serif;font-variant-numeric:tabular-nums}"
     }
   ],
   "narrative": {
@@ -231,7 +231,7 @@
     "overview": "brain.md is a notebook that a person and their agents write in together. The chrome is the binding and the margins of that notebook: graphite neutrals, hairline rules, small sans labels, nothing that glows or asks for attention. The notes are the page: a serif reading column, real headings, callouts in their own colours, and wikilinks set in mono brackets so a link to another note always looks like one.\n\nDensity follows an operating tool, not a landing page. The sidebar, topbar and toolbars are compact (32px rows and icon buttons on a fine pointer) and grow to 44px touch targets on a coarse pointer. The phone is a first-class surface: secondary actions fold into one menu, the editor and preview become tabs, and nothing scrolls sideways.\n\nThe visual anti-references are confirmed: no AI-SaaS slop (violet gradients, glow, emoji labels, uppercase tracked labels, sparkle badges) and no Electron-desktop chrome (heavy title bars, icon ribbons, desktop-only menus that break on a phone).",
     "keyCharacteristics": [
       "Neutral graphite chrome in both themes; colour lives in the notes and one accent.",
-      "Serif for reading notes, system sans for interface, mono for meta, shortcuts and `[[links]]`.",
+      "Serif for reading notes, system sans for interface and keycaps, mono for meta and `[[links]]`.",
       "Flat surfaces separated by tone and 1px hairlines; shadow only on things that float.",
       "One user-selectable accent (Ink by default), always at 4.5:1 or better.",
       "Sentence case everywhere, weights 400 and 500."
@@ -279,7 +279,7 @@
       "Do check 4.5:1 for on-accent text and for links on the page whenever an accent value changes.",
       "Do size controls 32px on a fine pointer and 44px on a coarse pointer.",
       "Do move secondary actions into the More menu below 840px instead of letting a bar scroll sideways.",
-      "Do use mono only for meta: shortcuts, counts, time, save state and link brackets."
+      "Do use mono only for meta: counts, times, commit and path meta, and link brackets."
     ],
     "donts": [
       "Don't use hue gradients, glows, coloured shadows, gradient text, emoji as icons, uppercase tracked labels or sparkle badges (AI-SaaS slop).",

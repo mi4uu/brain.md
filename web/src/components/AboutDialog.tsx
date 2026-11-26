@@ -32,7 +32,7 @@ export function AboutDialog({ open, onOpenChange }: Props) {
           />
           <DialogTitle className="text-lg">brain.md</DialogTitle>
           <DialogDescription>
-            A local-first second brain for you — and for your AI agents.
+            A local-first second brain for you and your AI agents.
             <br />
             <span className="text-xs text-fg-4">
               v{VERSION} · AGPL-3.0-or-later

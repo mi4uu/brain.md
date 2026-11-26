@@ -89,7 +89,9 @@ export function Settings({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-2xl">
+      {/* Fixed height: tabs of different length would otherwise resize the
+          centred dialog and move the tab bar under the pointer. */}
+      <DialogContent className="h-[min(640px,calc(100dvh-2rem))] max-w-2xl content-start">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
@@ -381,7 +383,7 @@ function RagPanel() {
         }),
       });
       const j = await r.json();
-      setMsg(j.ok ? `OK — dim=${j.dim}` : `Failed — ${j.error ?? "unknown"}`);
+      setMsg(j.ok ? `Works, ${j.dim} dimensions` : `Failed: ${j.error ?? "unknown error"}`);
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
     } finally {
@@ -398,7 +400,7 @@ function RagPanel() {
       setMsg(
         j.ok
           ? `Indexed ${j.indexed} notes (${j.skipped} skipped) in ${j.durationMs}ms`
-          : `Failed — ${j.error ?? "unknown"}`,
+          : `Failed: ${j.error ?? "unknown error"}`,
       );
       await refresh();
     } catch (e) {
@@ -888,8 +890,8 @@ function APIKeysPanel() {
       {justCreated ? (
         <div className="space-y-2 rounded-1 border border-accent/40 bg-accent/10 p-3">
           <p className="text-xs font-medium text-fg-1">
-            Key <strong>{justCreated.name}</strong> created. Copy it now — the full
-            token is shown ONCE and never again.
+            Key <strong>{justCreated.name}</strong> created. Copy it now: the full
+            token is shown only this once.
           </p>
           <code className="block w-full select-all break-all rounded-1 bg-app px-2 py-1 font-mono text-xs">
             {justCreated.token}

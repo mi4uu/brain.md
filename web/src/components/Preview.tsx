@@ -401,7 +401,7 @@ function PropsRender({ data }: { data: Record<string, unknown> }) {
 }
 
 function formatValue(v: unknown): string {
-  if (v === null || v === undefined) return "—";
+  if (v === null || v === undefined) return "";
   if (Array.isArray(v)) return v.map((x) => formatValue(x)).join(", ");
   if (typeof v === "object") return JSON.stringify(v);
   return String(v);
