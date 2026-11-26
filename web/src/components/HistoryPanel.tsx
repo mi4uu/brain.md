@@ -85,7 +85,7 @@ export function HistoryPanel({ path, onClose, onRestored }: Props) {
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="grid h-[80vh] max-w-5xl grid-rows-[auto_auto_1fr] gap-0 p-0">
         <DialogHeader className="flex flex-row items-center gap-3 border-b border-border px-4 py-3">
-          <DialogTitle className="text-md font-semibold">History</DialogTitle>
+          <DialogTitle className="text-md font-medium">History</DialogTitle>
           {path ? (
             <div className="inline-flex items-center gap-0.5 rounded-2 border border-border bg-surface-alt p-0.5 text-sm">
               <button
@@ -168,7 +168,7 @@ export function HistoryPanel({ path, onClose, onRestored }: Props) {
                     </span>
                     <span className="flex min-w-0 items-center gap-1 text-xs text-fg-2">
                       <span
-                        className={`shrink-0 rounded-1 px-1 text-[10px] uppercase tracking-wide ${
+                        className={`shrink-0 rounded-1 px-1 text-xs ${
                           c.agent ? "bg-surface-alt text-accent" : "bg-surface-alt text-fg-3"
                         }`}
                       >
@@ -202,7 +202,7 @@ export function HistoryPanel({ path, onClose, onRestored }: Props) {
                     <button
                       type="button"
                       onClick={restore}
-                      className="shrink-0 rounded-1 bg-accent px-3 py-1 text-sm font-medium text-white hover:bg-accent-strong"
+                      className="shrink-0 rounded-1 bg-accent px-3 py-1 text-sm font-medium text-accent-on hover:bg-accent-strong"
                     >
                       Restore this version
                     </button>

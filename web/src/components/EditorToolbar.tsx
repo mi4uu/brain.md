@@ -248,17 +248,17 @@ export function EditorToolbar({ getView, onUploadClick }: Props) {
       <ToolbarPrimitive.Separator className="tb-sep" />
       <div className="tb-group">
         {btn(
-          <InfoCircledIcon className="text-callout-note" />,
+          <InfoCircledIcon />,
           "Callout: note",
           apply((v) => callout(v, "note")),
         )}
         {btn(
-          <LightningBoltIcon className="text-callout-tip" />,
+          <LightningBoltIcon />,
           "Callout: tip",
           apply((v) => callout(v, "tip")),
         )}
         {btn(
-          <ExclamationTriangleIcon className="text-callout-warn" />,
+          <ExclamationTriangleIcon />,
           "Callout: warn",
           apply((v) => callout(v, "warning")),
         )}

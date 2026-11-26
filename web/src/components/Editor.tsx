@@ -23,7 +23,7 @@ function wikilinkFor(name: string): string {
 // editor follows the active theme (dark/light). The vars themselves
 // resolve to #ffcc00 for links/url/atoms in dark mode, see tokens.css.
 const brainHighlightStyle = HighlightStyle.define([
-  { tag: tags.heading, color: "var(--cm-heading)", fontWeight: "bold", textDecoration: "underline" },
+  { tag: tags.heading, color: "var(--cm-heading)", fontWeight: "600" },
   { tag: tags.emphasis, fontStyle: "italic" },
   { tag: tags.strong, fontWeight: "bold" },
   { tag: tags.strikethrough, textDecoration: "line-through" },

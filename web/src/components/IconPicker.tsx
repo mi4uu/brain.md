@@ -62,7 +62,7 @@ export function IconPicker({
         </ScrollArea>
 
         <fieldset className="rounded-2 border border-border px-3 py-2">
-          <legend className="px-1 text-xs uppercase tracking-wide text-fg-3">
+          <legend className="px-1 text-xs text-fg-3">
             Custom emoji
           </legend>
           <div className="flex items-center gap-2">
@@ -76,7 +76,7 @@ export function IconPicker({
             />
             <button
               type="button"
-              className="rounded-1 bg-accent px-3 py-1 text-sm font-medium text-white hover:bg-accent-strong disabled:opacity-50"
+              className="rounded-1 bg-accent px-3 py-1 text-sm font-medium text-accent-on hover:bg-accent-strong disabled:opacity-50"
               disabled={emoji.trim() === ""}
               onClick={() => onSave(`emoji:${emoji.trim()}`)}
             >

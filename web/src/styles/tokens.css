@@ -34,7 +34,7 @@
   /* timing */
   --dur-fast: 120ms;
   --dur-base: 200ms;
-  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
 
   /* z layers */
   --z-drawer: 30;
@@ -43,6 +43,50 @@
 
   /* tap target */
   --tap: 44px;
+}
+
+/* Accent presets, picked in Settings > Editor (useAccent sets data-accent).
+   Each pair is checked for 4.5:1: on-accent on accent, strong on the page. */
+:root,
+:root[data-accent="ink"] {
+  --ac-light: #2f5bb7;
+  --ac-light-strong: #24489a;
+  --ac-light-on: #ffffff;
+  --ac-dark: #8aaef0;
+  --ac-dark-strong: #a9c4f5;
+  --ac-dark-on: #141415;
+}
+:root[data-accent="violet"] {
+  --ac-light: #6e56cf;
+  --ac-light-strong: #5b46b8;
+  --ac-light-on: #ffffff;
+  --ac-dark: #9b87f5;
+  --ac-dark-strong: #b6a4ff;
+  --ac-dark-on: #141415;
+}
+:root[data-accent="teal"] {
+  --ac-light: #0f766e;
+  --ac-light-strong: #0b5c56;
+  --ac-light-on: #ffffff;
+  --ac-dark: #4fb8ac;
+  --ac-dark-strong: #7fd0c6;
+  --ac-dark-on: #141415;
+}
+:root[data-accent="rust"] {
+  --ac-light: #b4531f;
+  --ac-light-strong: #943f12;
+  --ac-light-on: #ffffff;
+  --ac-dark: #e39a67;
+  --ac-dark-strong: #efb68c;
+  --ac-dark-on: #141415;
+}
+:root[data-accent="graphite"] {
+  --ac-light: #3a3a3f;
+  --ac-light-strong: #1f1f22;
+  --ac-light-on: #ffffff;
+  --ac-dark: #d6d6d9;
+  --ac-dark-strong: #ececee;
+  --ac-dark-on: #141415;
 }
 
 /* light (default) */
@@ -55,22 +99,23 @@
   --bg-elev: #ffffff;
   --bg-hover: rgba(0, 0, 0, 0.04);
   --bg-active: rgba(0, 0, 0, 0.08);
-  --bg-selected: rgba(110, 86, 207, 0.12);
+  --bg-selected: color-mix(in srgb, var(--accent) 12%, transparent);
   --border: rgba(0, 0, 0, 0.09);
   --border-strong: rgba(0, 0, 0, 0.15);
   --text-1: #1a1a1a;
   --text-2: #404040;
   --text-3: #6b6b6b;
   --text-4: #9a9a9a;
-  --accent: #6e56cf;
-  --accent-strong: #5b46b8;
-  --accent-soft: rgba(110, 86, 207, 0.12);
-  --link: #4f46e5;
+  --accent: var(--ac-light);
+  --accent-strong: var(--ac-light-strong);
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+  --on-accent: var(--ac-light-on);
+  --link: var(--ac-light-strong);
   --link-broken: #d97706;
   --code-bg: #f3f3f1;
-  --selection: rgba(110, 86, 207, 0.25);
-  --tag-bg: #eef0ff;
-  --tag-fg: #4338ca;
+  --selection: color-mix(in srgb, var(--accent) 25%, transparent);
+  --tag-bg: rgba(0, 0, 0, 0.05);
+  --tag-fg: var(--text-2);
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 6px rgba(0, 0, 0, 0.05);
   --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.08);
   --callout-note: #3b82f6;
@@ -96,11 +141,11 @@
   --cm-invalid: #dc2626;
   --graph-bg: var(--bg-surface);
   --graph-edge: rgba(60, 60, 80, 0.16);
-  --graph-edge-hi: rgba(110, 86, 207, 0.85);
+  --graph-edge-hi: var(--accent);
   --graph-text: #2a2a2e;
   --graph-text-dim: rgba(60, 60, 70, 0.45);
-  --graph-focus: #6e56cf;
-  --graph-1: #6e56cf;
+  --graph-focus: var(--accent);
+  --graph-1: var(--accent);
   --graph-2: #0d9488;
   --graph-3: #d97706;
   --graph-4: #e11d48;
@@ -112,28 +157,29 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg-app: #16161a;
-  --bg-surface: #1c1c20;
-  --bg-surface-2: #232328;
-  --bg-elev: #26262c;
+  --bg-app: #141415;
+  --bg-surface: #19191b;
+  --bg-surface-2: #202022;
+  --bg-elev: #232325;
   --bg-hover: rgba(255, 255, 255, 0.05);
   --bg-active: rgba(255, 255, 255, 0.09);
-  --bg-selected: rgba(155, 135, 245, 0.16);
+  --bg-selected: color-mix(in srgb, var(--accent) 16%, transparent);
   --border: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.16);
   --text-1: #ecedee;
   --text-2: #c1c2c5;
   --text-3: #909296;
   --text-4: #5c5f66;
-  --accent: #9b87f5;
-  --accent-strong: #b6a4ff;
-  --accent-soft: rgba(155, 135, 245, 0.16);
-  --link: #a78bfa;
+  --accent: var(--ac-dark);
+  --accent-strong: var(--ac-dark-strong);
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+  --on-accent: var(--ac-dark-on);
+  --link: var(--ac-dark-strong);
   --link-broken: #f59e0b;
-  --code-bg: #232328;
-  --selection: rgba(155, 135, 245, 0.32);
-  --tag-bg: rgba(155, 135, 245, 0.16);
-  --tag-fg: #c4b5fd;
+  --code-bg: #202022;
+  --selection: color-mix(in srgb, var(--accent) 32%, transparent);
+  --tag-bg: rgba(255, 255, 255, 0.06);
+  --tag-fg: var(--text-2);
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.32);
   --shadow-2: 0 12px 32px rgba(0, 0, 0, 0.5);
   --callout-note: #60a5fa;
@@ -161,11 +207,11 @@
   --callout-quote: #94a3b8;
   --graph-bg: var(--bg-surface);
   --graph-edge: rgba(200, 200, 230, 0.13);
-  --graph-edge-hi: rgba(167, 139, 250, 0.9);
+  --graph-edge-hi: var(--accent);
   --graph-text: #e6e6ea;
   --graph-text-dim: rgba(200, 200, 210, 0.4);
-  --graph-focus: #c4b5fd;
-  --graph-1: #a78bfa;
+  --graph-focus: var(--accent-strong);
+  --graph-1: var(--accent);
   --graph-2: #2dd4bf;
   --graph-3: #fbbf24;
   --graph-4: #fb7185;
@@ -178,28 +224,29 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     color-scheme: dark;
-    --bg-app: #16161a;
-    --bg-surface: #1c1c20;
-    --bg-surface-2: #232328;
-    --bg-elev: #26262c;
+    --bg-app: #141415;
+    --bg-surface: #19191b;
+    --bg-surface-2: #202022;
+    --bg-elev: #232325;
     --bg-hover: rgba(255, 255, 255, 0.05);
     --bg-active: rgba(255, 255, 255, 0.09);
-    --bg-selected: rgba(155, 135, 245, 0.16);
+    --bg-selected: color-mix(in srgb, var(--accent) 16%, transparent);
     --border: rgba(255, 255, 255, 0.08);
     --border-strong: rgba(255, 255, 255, 0.16);
     --text-1: #ecedee;
     --text-2: #c1c2c5;
     --text-3: #909296;
     --text-4: #5c5f66;
-    --accent: #9b87f5;
-    --accent-strong: #b6a4ff;
-    --accent-soft: rgba(155, 135, 245, 0.16);
-    --link: #a78bfa;
+    --accent: var(--ac-dark);
+    --accent-strong: var(--ac-dark-strong);
+    --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+    --on-accent: var(--ac-dark-on);
+    --link: var(--ac-dark-strong);
     --link-broken: #f59e0b;
-    --code-bg: #232328;
-    --selection: rgba(155, 135, 245, 0.32);
-    --tag-bg: rgba(155, 135, 245, 0.16);
-    --tag-fg: #c4b5fd;
+    --code-bg: #202022;
+    --selection: color-mix(in srgb, var(--accent) 32%, transparent);
+    --tag-bg: rgba(255, 255, 255, 0.06);
+    --tag-fg: var(--text-2);
     --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.32);
     --shadow-2: 0 12px 32px rgba(0, 0, 0, 0.5);
     --callout-note: #60a5fa;
@@ -225,11 +272,11 @@
     --cm-invalid: #f87171;
     --graph-bg: var(--bg-surface);
     --graph-edge: rgba(200, 200, 230, 0.13);
-    --graph-edge-hi: rgba(167, 139, 250, 0.9);
+    --graph-edge-hi: var(--accent);
     --graph-text: #e6e6ea;
     --graph-text-dim: rgba(200, 200, 210, 0.4);
-    --graph-focus: #c4b5fd;
-    --graph-1: #a78bfa;
+    --graph-focus: var(--accent-strong);
+    --graph-1: var(--accent);
     --graph-2: #2dd4bf;
     --graph-3: #fbbf24;
     --graph-4: #fb7185;

@@ -62,20 +62,32 @@
 
 .preview .doc a.wikilink {
   color: var(--link);
-  background: var(--accent-soft);
-  padding: 1px 6px;
-  border-radius: var(--radius-1);
   text-decoration: none;
-  font-family: var(--font-sans);
-  font-size: 0.95em;
+}
+.preview .doc a.wikilink::before,
+.preview .doc a.wikilink::after {
+  font-family: var(--font-mono);
+  font-size: 0.75em;
+  color: var(--text-3);
+  transition: color var(--dur-fast) var(--ease);
+}
+.preview .doc a.wikilink::before {
+  content: "[[";
+  margin-right: 2px;
+}
+.preview .doc a.wikilink::after {
+  content: "]]";
+  margin-left: 2px;
 }
 .preview .doc a.wikilink:hover {
-  background: var(--accent);
-  color: white;
+  text-decoration: underline;
+}
+.preview .doc a.wikilink:hover::before,
+.preview .doc a.wikilink:hover::after {
+  color: var(--link);
 }
 .preview .doc a.wikilink.broken {
   color: var(--link-broken);
-  background: rgba(217, 119, 6, 0.12);
   text-decoration: underline wavy var(--link-broken);
 }
 
@@ -93,7 +105,7 @@
   font-family: var(--font-sans);
   font-size: 0.92em;
   max-width: 320px;
-  transition: border-color 120ms ease, background 120ms ease;
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
 }
 .preview .doc a.attachment:hover {
   border-color: var(--link);
@@ -132,34 +144,28 @@
 
 .preview .doc a.attachment-link {
   color: var(--link);
-  background: var(--accent-soft);
-  padding: 1px 6px;
-  border-radius: var(--radius-1);
   text-decoration: underline dotted;
   text-underline-offset: 2px;
-  font-family: var(--font-sans);
-  font-size: 0.95em;
 }
 .preview .doc a.attachment-link:hover {
-  background: var(--accent);
-  color: white;
-  text-decoration: none;
+  text-decoration: underline;
 }
 
 .preview .doc .tag {
   display: inline-block;
-  padding: 1px 8px;
-  font-size: 0.85em;
+  padding: 0 6px;
+  font-size: 0.8em;
   background: var(--tag-bg);
   color: var(--tag-fg);
-  border-radius: 999px;
+  border-radius: var(--radius-1);
   text-decoration: none;
-  font-family: var(--font-sans);
-  margin: 0 1px;
+  font-family: var(--font-mono);
+  margin: 0 2px;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 .preview .doc .tag:hover {
-  background: var(--accent);
-  color: white;
+  background: var(--bg-active);
+  color: var(--text-1);
 }
 
 .preview .doc code:not(pre code) {
@@ -241,7 +247,7 @@
 }
 .preview .doc th {
   background: var(--bg-surface-2);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .preview .doc img,
@@ -263,13 +269,11 @@
   font-family: var(--font-serif);
 }
 .preview .doc .embed-note header {
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   color: var(--text-3);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
   margin-bottom: var(--space-2);
   display: flex;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
   font-family: var(--font-sans);
 }
@@ -329,7 +333,7 @@
 }
 
 .preview .doc .callout {
-  border-left: 4px solid var(--callout-note);
+  border-left: 2px solid var(--callout-note);
   background: var(--bg-surface);
   border-radius: var(--radius-2);
   padding: var(--space-3) var(--space-4);
@@ -337,12 +341,11 @@
   font-family: var(--font-sans);
 }
 .preview .doc .callout > .callout-title {
-  font-weight: 600;
+  font-weight: 500;
   display: flex;
   align-items: center;
   gap: 8px;
   color: var(--callout-note);
-  text-transform: capitalize;
   margin-bottom: var(--space-2);
 }
 .preview .doc .callout.note { border-left-color: var(--callout-note); }

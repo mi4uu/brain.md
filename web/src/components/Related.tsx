@@ -15,7 +15,7 @@ interface Props {
 // RAG isn't on.
 export function Related({ state, onOpen }: Props) {
   if (state.kind === "idle")
-    return <p className="sidebar-empty">Open a note to see related ones.</p>;
+    return <p className="sidebar-empty">Open a note to see related ones</p>;
   if (state.kind === "loading")
     return <p className="sidebar-empty">Finding related notes…</p>;
   if (state.kind === "disabled")
@@ -27,7 +27,7 @@ export function Related({ state, onOpen }: Props) {
   if (state.kind === "error")
     return <p className="sidebar-empty">Related unavailable: {state.message}</p>;
   if (state.hits.length === 0)
-    return <p className="sidebar-empty">No related notes found.</p>;
+    return <p className="sidebar-empty">No related notes found</p>;
   return (
     <ul className="related-list">
       {state.hits.map((h) => (

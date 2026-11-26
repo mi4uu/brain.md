@@ -377,7 +377,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
           <PropsRender data={frontmatter} />
         ) : null}
         {content.trim() === "" ? (
-          <p className="muted">empty note</p>
+          notePath ? <p className="muted">Empty note</p> : null
         ) : (
           // biome-ignore lint/security/noDangerouslySetInnerHtml: renderMarkdown runs hast-util-sanitize with previewSchema
           <div dangerouslySetInnerHTML={{ __html: html }} />

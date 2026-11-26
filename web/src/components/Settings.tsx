@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Theme } from "../hooks/useTheme";
+import { ACCENTS, useAccent } from "../hooks/useAccent";
 import { gitApi } from "../api/git";
 import {
   Dialog,
@@ -177,7 +178,7 @@ export function Settings({
           </TabsContent>
 
           <TabsContent value="editor" className="space-y-4 pt-2">
-            <p className="text-sm text-fg-3">No editor preferences yet.</p>
+            <AccentPicker />
           </TabsContent>
         </Tabs>
       </DialogContent>
@@ -185,10 +186,65 @@ export function Settings({
   );
 }
 
+function AccentPicker() {
+  const { accent, setAccent } = useAccent();
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const i = ACCENTS.findIndex((a) => a.id === accent);
+    const last = ACCENTS.length - 1;
+    const next =
+      e.key === "ArrowRight" || e.key === "ArrowDown"
+        ? (i + 1) % ACCENTS.length
+        : e.key === "ArrowLeft" || e.key === "ArrowUp"
+          ? (i - 1 + ACCENTS.length) % ACCENTS.length
+          : e.key === "Home"
+            ? 0
+            : e.key === "End"
+              ? last
+              : -1;
+    if (next < 0) return;
+    e.preventDefault();
+    setAccent(ACCENTS[next]!.id);
+    e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]')[next]?.focus();
+  };
+  return (
+    <div className="space-y-2">
+      <span className="block text-xs text-fg-3" id="accent-label">
+        Accent
+      </span>
+      <div
+        role="radiogroup"
+        aria-labelledby="accent-label"
+        className="flex flex-wrap gap-2"
+        onKeyDown={onKeyDown}
+      >
+        {ACCENTS.map((a) => (
+          <button
+            key={a.id}
+            type="button"
+            role="radio"
+            aria-checked={accent === a.id}
+            tabIndex={accent === a.id ? 0 : -1}
+            onClick={() => setAccent(a.id)}
+            className={`accent-swatch${accent === a.id ? " is-active" : ""}`}
+          >
+            <span
+              className="accent-swatch-dot"
+              style={{ "--sw-light": a.light, "--sw-dark": a.dark } as React.CSSProperties}
+              aria-hidden="true"
+            />
+            {a.label}
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-fg-3">Buttons, selection, links and the graph focus use it.</p>
+    </div>
+  );
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block space-y-1">
-      <span className="text-xs uppercase tracking-wide text-fg-3">{label}</span>
+      <span className="text-xs text-fg-3">{label}</span>
       {children}
     </label>
   );
@@ -215,7 +271,7 @@ function buildSearchQuery(err: string): string {
 function FailedNotes({ notes }: { notes: NonNullable<RagStatusUI["failedNotes"]> }) {
   return (
     <div role="status" className="rounded-2 border border-callout-warn/40 bg-callout-warn/10 p-3 text-sm text-fg-1">
-      <div className="font-semibold">
+      <div className="font-medium">
         {notes.length === 1 ? "1 note is" : `${notes.length} notes are`} left out of semantic search
       </div>
       <p className="mt-1 text-xs text-fg-3">
@@ -242,7 +298,7 @@ function RagErrorBanner({ error }: { error: string }) {
       role="alert"
       className="rounded-2 border border-callout-danger/40 bg-callout-danger/10 p-3 text-sm text-fg-1"
     >
-      <div className="font-semibold text-callout-danger">RAG not working</div>
+      <div className="font-medium text-callout-danger">RAG not working</div>
       <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-xs text-fg-2">
         {error}
       </pre>
@@ -542,7 +598,7 @@ function RagPanel() {
           type="button"
           disabled={busy || !cfg.enabled}
           onClick={reindex}
-          className="rounded-1 bg-accent px-3 py-1 text-sm font-medium text-white hover:bg-accent-strong disabled:opacity-50"
+          className="rounded-1 bg-accent px-3 py-1 text-sm font-medium text-accent-on hover:bg-accent-strong disabled:opacity-50"
         >
           Reindex vault
         </button>
@@ -696,7 +752,7 @@ function SecurityPanel() {
           <button
             type="submit"
             disabled={!next}
-            className="rounded-1 bg-accent px-3 py-1 text-sm font-medium text-white hover:bg-accent-strong disabled:opacity-50"
+            className="rounded-1 bg-accent px-3 py-1 text-sm font-medium text-accent-on hover:bg-accent-strong disabled:opacity-50"
           >
             {auth.configured ? "Change password" : "Set password"}
           </button>
@@ -790,7 +846,7 @@ function APIKeysPanel() {
   return (
     <div className="mt-6 space-y-3 border-t border-divider pt-4">
       <div>
-        <h3 className="text-sm font-semibold">API Keys</h3>
+        <h3 className="text-sm font-medium">API Keys</h3>
         <p className="mt-1 text-xs text-fg-3">
           Long-lived bearer tokens for MCP clients (Claude Code, Cursor, curl scripts).
           Each key has a name and can be revoked individually. Tokens survive server restarts.
@@ -823,7 +879,7 @@ function APIKeysPanel() {
         <button
           type="submit"
           disabled={!name}
-          className="rounded-1 bg-accent px-3 py-1 text-sm font-medium text-white hover:bg-accent-strong disabled:opacity-50"
+          className="rounded-1 bg-accent px-3 py-1 text-sm font-medium text-accent-on hover:bg-accent-strong disabled:opacity-50"
         >
           Generate
         </button>

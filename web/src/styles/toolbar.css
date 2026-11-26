@@ -2,8 +2,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 8px;
-  padding: 8px 10px;
+  gap: 8px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-surface);
   min-height: 44px;
@@ -18,7 +18,7 @@
 
 .editor-toolbar .tb-sep {
   width: 1px;
-  height: 22px;
+  height: 20px;
   background: var(--border);
   margin: 0 4px;
   flex-shrink: 0;

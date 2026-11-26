@@ -35,7 +35,7 @@ export function CreateNoteDialog({ path, onCreate, onClose }: Props) {
               setBusy(true);
               void onCreate().finally(() => setBusy(false));
             }}
-            className="rounded-1 bg-accent px-3 py-1 text-sm font-medium text-white hover:bg-accent-strong disabled:opacity-50"
+            className="rounded-1 bg-accent px-3 py-1 text-sm font-medium text-accent-on hover:bg-accent-strong disabled:opacity-50"
           >
             Create
           </button>

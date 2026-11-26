@@ -51,7 +51,7 @@ export function CommandBar({ mode, onClose, onOpenNote, tree }: Props) {
 
   const open = mode !== null;
   const placeholder =
-    mode === "switcher" ? "Quick switch…" : "Search vault…";
+    mode === "switcher" ? "Jump to note" : "Search vault";
 
   const select = (path: string) => {
     onOpenNote(path);
@@ -86,7 +86,7 @@ export function CommandBar({ mode, onClose, onOpenNote, tree }: Props) {
           />
           <Command.List className="max-h-[60vh] overflow-y-auto p-1">
             <Command.Empty className="p-4 text-center text-sm text-fg-3">
-              {q.trim() === "" ? "Type to begin…" : "No matches."}
+              {q.trim() === "" ? "Type a note name or phrase" : "No matches"}
             </Command.Empty>
             {mode === "switcher"
               ? noteList.map((p) => (
