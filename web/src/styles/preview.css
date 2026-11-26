@@ -437,9 +437,15 @@
   transition: background var(--dur-fast) var(--ease);
   border-radius: var(--radius-1);
 }
+/* A tint only: an inset underline on a rounded block curls up into small
+   hooks at both corners. */
 .preview .doc [data-source-line].active-block {
   background: var(--bg-hover);
-  box-shadow: inset 0 -1px 0 var(--accent);
+}
+/* Paragraphs get room inside the tint without moving their text. */
+.preview .doc p[data-source-line] {
+  margin-inline: calc(-1 * var(--space-2));
+  padding-inline: var(--space-2);
 }
 
 .props {
