@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import { gitApi, RevertFailed, type ChangeCommit } from "../api/git";
-import { groupByDay, relativeTime, timeOf, type NoteChange, type NoteEdit } from "../changes/model";
-import type { ChangesState } from "../changes/useChanges";
+import { groupByDay, relativeTime, timeOf, unseenShas, type NoteChange, type NoteEdit } from "../changes/model";
+import { withoutHidden, type ChangesState } from "../changes/useChanges";
 import { DiffView } from "./DiffView";
 import { ChevRightIcon } from "./Icons";
 import {
@@ -22,7 +22,7 @@ interface Props {
 }
 
 export function ChangesView({ changes, onOpen, beforeRevert, onVaultChanged }: Props) {
-  const { page, unseen, unseenCount } = changes;
+  const { page, unseenCount } = changes;
   const [older, setOlder] = useState<ChangeCommit[]>([]);
   const [olderHasMore, setOlderHasMore] = useState<boolean | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -37,16 +37,26 @@ export function ChangesView({ changes, onOpen, beforeRevert, onVaultChanged }: P
     const known = new Set(first.map((c) => c.sha));
     return [...first, ...older.filter((c) => !known.has(c.sha))];
   }, [page, older]);
+  const unseen = useMemo(() => unseenShas(commits, page?.seen ?? null), [commits, page]);
   const groups = useMemo(() => groupByDay(commits, unseen, { onlyAgents }), [commits, unseen, onlyAgents]);
   const hasMore = olderHasMore ?? page?.hasMore ?? false;
 
+  // Paging follows the raw history, so commits the hidden filter dropped
+  // are not fetched again.
+  const [olderBefore, setOlderBefore] = useState<string | null>(null);
   const loadOlder = async () => {
-    const last = commits[commits.length - 1];
-    if (!last) return;
+    const before = olderBefore ?? page?.commits[page.commits.length - 1]?.sha;
+    if (!before) return;
     setLoadingOlder(true);
     try {
-      const next = await gitApi.changes({ limit: 200, before: last.sha });
-      setOlder((o) => [...o, ...next.commits]);
+      const res = await gitApi.changes({ limit: 200, before });
+      const last = res.commits[res.commits.length - 1];
+      if (last) setOlderBefore(last.sha);
+      const next = withoutHidden(res, changes.showHidden);
+      setOlder((o) => {
+        const have = new Set(o.map((c) => c.sha));
+        return [...o, ...next.commits.filter((c) => !have.has(c.sha))];
+      });
       setOlderHasMore(next.hasMore);
     } finally {
       setLoadingOlder(false);
@@ -113,7 +123,14 @@ export function ChangesView({ changes, onOpen, beforeRevert, onVaultChanged }: P
           Git history is off for this vault. Start the server with <code>GIT_AUTOCOMMIT=1</code> to record changes.
         </p>
       ) : changes.loaded && groups.length === 0 && !changes.error ? (
-        <p className="changes-empty">{onlyAgents ? "No agent changes in this period." : "No changes recorded yet."}</p>
+        <>
+          <p className="changes-empty">{onlyAgents ? "No agent changes in this period." : "No changes recorded yet."}</p>
+          {hasMore ? (
+            <button type="button" className="btn changes-more" disabled={loadingOlder} onClick={() => void loadOlder()}>
+              {loadingOlder ? "Loading" : "Load older"}
+            </button>
+          ) : null}
+        </>
       ) : (
         <div className="changes-days">
           {groups.map((g) => (

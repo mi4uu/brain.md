@@ -31,21 +31,13 @@ export interface DayGroup {
 // agent work counts as new, so the first open is not a wall of history.
 const FIRST_VISIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-// Commits arrive newest first. Everything above the commit the owner last
-// marked seen is new; when that commit is not in the loaded window (older
-// than the page, or history was rewritten) fall back to its timestamp.
+// The server marks each commit that comes after the seen cursor in history
+// (afterSeen). With no cursor yet, the last day counts as new.
 export function unseenShas(commits: ChangeCommit[], seen: ChangesPage["seen"], now = Date.now()): Set<string> {
   const out = new Set<string>();
-  if (!seen) {
-    for (const c of commits) if (c.ts > now - FIRST_VISIT_WINDOW_MS) out.add(c.sha);
-    return out;
+  for (const c of commits) {
+    if (seen ? c.afterSeen === true : c.ts > now - FIRST_VISIT_WINDOW_MS) out.add(c.sha);
   }
-  const idx = commits.findIndex((c) => c.sha === seen.sha);
-  if (idx >= 0) {
-    for (const c of commits.slice(0, idx)) out.add(c.sha);
-    return out;
-  }
-  for (const c of commits) if (c.ts > seen.ts) out.add(c.sha);
   return out;
 }
 

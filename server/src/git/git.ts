@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -39,6 +39,9 @@ export interface ChangeCommit {
   ts: number;
   author: string;
   files: ChangedFile[];
+  // Set by the /changes route: the commit comes after the owner's seen
+  // cursor in history (ancestry, not time).
+  afterSeen?: boolean;
 }
 
 const GITIGNORE = [
@@ -393,20 +396,39 @@ export class GitRepo {
   // or, when a flush mixed actors, one "Changed-by: <path> <actor>" trailer
   // per path with the human owner as author. -z keeps paths with spaces and
   // non-ASCII characters unquoted.
-  async changes(opts: { limit?: number; before?: string } = {}): Promise<ChangeCommit[]> {
+  async changes(opts: { limit?: number; before?: string } = {}): Promise<{ commits: ChangeCommit[]; more: boolean }> {
     if (opts.before) assertSha(opts.before);
+    const limit = opts.limit ?? 200;
     const args = [
       "log",
       "-z",
       "--name-status",
       "-M",
-      `-${opts.limit ?? 200}`,
+      `-${limit + 1}`,
       "--pretty=format:%x02%H%x1f%ct%x1f%an%x1f%ae%x1f%(trailers:key=Agent,valueonly,separator=%x1e)%x1f%(trailers:key=Changed-by,valueonly,separator=%x1e)",
     ];
     if (opts.before) args.push(`${opts.before}^`);
     const r = await run(this.root, args, { allowFail: true });
-    if (r.code !== 0 || !r.stdout) return [];
-    return parseChanges(r.stdout);
+    if (r.code !== 0) {
+      // A repo with no commits yet has no history; anything else is a real
+      // failure the caller must see, not an empty feed.
+      if (/does not have any commits|unknown revision|bad revision/.test(r.stderr)) return { commits: [], more: false };
+      throw new Error(`git log failed: ${r.stderr.trim()}`);
+    }
+    // Paging counts raw commits, so a window of commits that only touch
+    // filtered paths never ends the feed early.
+    const chunks = r.stdout.split("\x02").filter(Boolean);
+    return { commits: parseChanges(chunks.slice(0, limit).map((c) => `\x02${c}`).join("")), more: chunks.length > limit };
+  }
+
+  // Commits after `sha` up to HEAD, by ancestry. Null when `sha` is not in
+  // HEAD's history any more (rewritten), so the caller can fall back.
+  async commitsAfter(sha: string, cap = 20_000): Promise<Set<string> | null> {
+    assertSha(sha);
+    const anc = await run(this.root, ["merge-base", "--is-ancestor", sha, "HEAD"], { allowFail: true });
+    if (anc.code !== 0) return null;
+    const r = await run(this.root, ["rev-list", `--max-count=${cap}`, `${sha}..HEAD`]);
+    return new Set(r.stdout.split("\n").filter(Boolean));
   }
 
   // The patch a commit made to one path, against its parent (a root commit
@@ -415,9 +437,7 @@ export class GitRepo {
   async commitPatch(sha: string, path: string, oldPath?: string): Promise<string> {
     assertSha(sha);
     const paths = oldPath && oldPath !== path ? [oldPath, path] : [path];
-    const r = await run(this.root, ["show", "-M", "--format=", "--patch", sha, "--", ...paths], {
-      allowFail: true,
-    });
+    const r = await run(this.root, ["show", "-M", "--format=", "--patch", sha, "--", ...paths]);
     return r.stdout;
   }
 
@@ -504,17 +524,30 @@ export class GitRepo {
         throw new RevertError("PENDING", `${opts.path} changed while reverting, try again`);
       }
       await mkdir(dirname(abs), { recursive: true });
-      await writeFile(abs, next);
+      // Temp file plus rename: a failed write never leaves half a note.
+      const tmp = join(dirname(abs), `.${Date.now()}-${process.pid}.revert-tmp`);
+      try {
+        await writeFile(tmp, next);
+        await rename(tmp, abs);
+      } catch (e) {
+        await rm(tmp, { force: true });
+        throw e;
+      }
+      let committed = false;
       try {
         await run(this.root, ["add", "-A", "--", opts.path]);
         // --only: commit this path alone, never whatever else sits staged.
         const args = [...this.buildCommitArgs(opts.message, opts), "--only", "--", opts.path];
         const r = await run(this.root, args, { allowFail: true });
         if (r.code !== 0) throw new Error(r.stderr || r.stdout || "commit failed");
+        committed = true;
         const out = await this.headSha();
-        if (!out) throw new Error("commit failed");
+        if (!out) throw new Error("revert committed but HEAD could not be read");
         return out;
       } catch (e) {
+        // Once git has the commit, the file on disk matches history; never
+        // roll it back then.
+        if (committed) throw e;
         // Put the note back as it was, unless something wrote to it in the
         // meantime, in which case that newer text wins.
         const nowAfter = await readFile(abs).catch(() => null);

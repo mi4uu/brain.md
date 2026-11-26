@@ -44,7 +44,7 @@ async function write(path: string, content: string, bearer: string) {
 interface Changes {
   enabled: boolean;
   seen: { sha: string; ts: number } | null;
-  commits: Array<{ sha: string; ts: number; files: Array<{ path: string; status: string; actor: string; actorKind: string; oldPath?: string; hidden?: boolean }> }>;
+  commits: Array<{ sha: string; ts: number; afterSeen?: boolean; files: Array<{ path: string; status: string; actor: string; actorKind: string; oldPath?: string; hidden?: boolean }> }>;
   hasMore: boolean;
 }
 
@@ -128,6 +128,27 @@ describe("POST /api/git/changes/seen", () => {
     expect(stored.sha).toBe(newest!.sha);
     const status = Bun.spawnSync(["git", "-C", dir, "status", "--porcelain"]).stdout.toString();
     expect(status).not.toContain("changes-seen");
+  });
+});
+
+describe("unseen by ancestry and patch guards", () => {
+  test("afterSeen follows history, not the clock", async () => {
+    await write("s.md", "1", agentKey);
+    const first = (await changes()).commits[0]!.sha;
+    await call("POST", "/api/git/changes/seen", { sha: first }, owner);
+    await write("s.md", "2", agentKey);
+    await write("s.md", "3", agentKey);
+    const c = await changes();
+    expect(c.commits.slice(0, 2).every((x) => x.afterSeen === true)).toBe(true);
+    expect(c.commits.find((x) => x.sha === first)!.afterSeen).toBe(false);
+  });
+
+  test("/patch refuses a directory or a reserved path on either side", async () => {
+    await write("d/x.md", "x", owner);
+    const sha = (await changes()).commits[0]!.sha;
+    expect((await call("GET", `/api/git/patch?sha=${sha}&path=d/x.md&oldPath=d`, undefined, owner)).status).toBeGreaterThanOrEqual(400);
+    expect((await call("GET", `/api/git/patch?sha=${sha}&path=.brain/x.md`, undefined, owner)).status).toBeGreaterThanOrEqual(400);
+    expect((await call("GET", `/api/git/patch?sha=${sha}&path=d/x.md`, undefined, owner)).status).toBe(200);
   });
 });
 

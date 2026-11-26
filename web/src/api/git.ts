@@ -34,6 +34,7 @@ export interface ChangeCommit {
   ts: number;
   author: string;
   files: ChangedFile[];
+  afterSeen?: boolean;
 }
 
 export interface ChangesPage {

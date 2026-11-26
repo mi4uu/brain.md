@@ -268,16 +268,22 @@ export function gitRoutes(
           if (!(await repo.isEnabled())) return { enabled: false, seen: null, commits: [], hasMore: false };
           const asked = Number(query.limit);
           const limit = Number.isFinite(asked) && asked > 0 ? Math.min(500, Math.floor(asked)) : 200;
-          const commits = await repo.changes({ limit: limit + 1, before: query.before });
+          const { commits, more } = await repo.changes({ limit, before: query.before });
           // Agents' working files are often hidden notes; the UI leaves them
-          // out unless "show hidden" is on, so it needs to know which.
-          for (const c of commits) for (const f of c.files) if (isHidden(f.path)) f.hidden = true;
-          return {
-            enabled: true,
-            seen: await readSeen(vault),
-            commits: commits.slice(0, limit),
-            hasMore: commits.length > limit,
-          };
+          // out unless "show hidden" is on, so it needs to know which. A rename
+          // counts as hidden when either side is.
+          for (const c of commits) {
+            for (const f of c.files) {
+              if (isHidden(f.path) || (f.oldPath !== undefined && isHidden(f.oldPath))) f.hidden = true;
+            }
+          }
+          const seen = await readSeen(vault);
+          if (seen) {
+            // New means after the cursor in history, not later on the clock.
+            const after = await repo.commitsAfter(seen.sha);
+            for (const c of commits) c.afterSeen = after ? after.has(c.sha) : c.ts > seen.ts;
+          }
+          return { enabled: true, seen, commits, hasMore: more };
         } catch (e) {
           const { status, body } = asError(e);
           set.status = status;
@@ -301,8 +307,11 @@ export function gitRoutes(
           }
           return await oneAtATime(async () => {
             const prev = await readSeen(vault);
-            if (prev && prev.sha !== next.sha && (await repo.isAncestor(next.sha, prev.sha).catch(() => false))) {
-              return prev;
+            // Only forward: keep the old cursor unless it is behind the new
+            // one in history (or no longer in history at all).
+            if (prev && prev.sha !== next.sha) {
+              const prevInHistory = await repo.isAncestor(prev.sha, "HEAD").catch(() => false);
+              if (prevInHistory && !(await repo.isAncestor(prev.sha, next.sha).catch(() => false))) return prev;
             }
             await mkdir(join(vault.root, ".brain"), { recursive: true });
             const tmp = `${seenFile(vault)}.${process.pid}.${Date.now()}.tmp`;
@@ -327,9 +336,14 @@ export function gitRoutes(
       "/patch",
       async ({ query, set, request }) => {
         try {
-          await requireRead(vault, request, query.path);
+          // Both sides must be single notes outside reserved folders: git
+          // would otherwise return every file under a directory pathspec.
+          for (const p of query.oldPath ? [query.path, query.oldPath] : [query.path]) {
+            assertSafePath(p);
+            assertMarkdown(p);
+            await requireRead(vault, request, p);
+          }
           await requireNotePathForAgents(vault, request, query.path);
-          if (query.oldPath) await requireRead(vault, request, query.oldPath);
           const patch = await repo.commitPatch(query.sha, query.path, query.oldPath);
           return { patch };
         } catch (e) {
