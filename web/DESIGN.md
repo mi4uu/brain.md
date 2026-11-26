@@ -231,10 +231,11 @@ Small, nested radii: 4px for rows, keycaps, code and chips; 6px for buttons, inp
 - **Error:** danger-coloured text below the field; banners use the semantic colour at 10% fill with a 40% border.
 
 ### Navigation
-- **Topbar:** 48px, sheet background, hairline below. Left: menu button (mobile), flat `[[•]]` mark and wordmark `brain` with a muted `.md`, current note path. Right: mono clock and save state, Search, Bookmark, then Daily, Tasks, Graph, a hairline separator, Settings, and More (`...`).
+- **Topbar:** 48px, sheet background, hairline below. Left: menu button (mobile), flat `[[•]]` mark and wordmark `brain` with a muted `.md`, the note's folder (muted) and name, "edited by" byline. Right: the status chip, Changes with its count, Search, Bookmark, then Daily, Tasks, Graph, a hairline separator, Settings, and More (`...`). Search lives only here, not in the sidebar.
+- **Status chip:** one answer to "is my work safe": an 8px dot (green saved and in history, grey saving, amber unsaved or not in history yet, red not saved) and a short label, with a tooltip saying what it means. A click does the useful thing: retry a failed save, record pending history now, or open History. Below 540px only the dot shows, except a failed save, which keeps its words.
 - **Layout switch:** on desktop the first visible pane head holds a segmented control (Editor, Preview, Both) with 16px icons, the pressed option on the active surface step with a strong hairline, and a `⌘\` keycap at the far right. It moves to the preview head in preview-only mode so it is never hidden.
 - **Sidebar tree:** 32px rows, 4px radius, 16px line icons in muted text, indent guides as hairlines. Selected row: accent-soft tint with primary text; hover: neutral tint.
-- **Mobile:** drawer sidebar with Float shadow; bottom Edit / Preview tabs only when a note is open.
+- **Mobile:** drawer sidebar with Float shadow; bottom Edit / Preview tabs (44px) only when a note is open. A note opens in Preview for reading; new, daily and link-created notes open in Edit. The formatting toolbar shows only in Edit. The title shows the note name without its folder, and below 420px the mark gives way to it.
 
 ### Wikilink (signature)
 Links between notes render as link-coloured text wrapped in mono `[[` `]]` brackets at 0.75em in muted text; on hover the brackets take the link colour and the text underlines. Broken links use the warn colour with a wavy underline. This is the one detail only brain.md has; do not reuse the bracket treatment for anything that is not a note link.

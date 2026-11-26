@@ -493,6 +493,14 @@
   align-items: stretch;
 }
 /* mobile-tabs inner controls are now Radix Tabs (see ui/tabs.tsx) */
+.mobile-tabs [role="tablist"] {
+  height: 100%;
+  align-items: stretch;
+  padding: 4px;
+}
+.mobile-tabs [role="tab"] {
+  min-height: 44px;
+}
 
 @media (max-width: 840px) {
   .shell {
@@ -543,11 +551,15 @@
       "phead"
       "preview";
   }
+  /* The formatting toolbar drives the editor, which is not on screen. */
   .main.show-preview.has-toolbar {
+    grid-template-rows: auto 1fr;
     grid-template-areas:
       "phead"
-      "tools"
       "preview";
+  }
+  .main.show-preview .toolbar-row {
+    display: none;
   }
   .main:not(.show-preview) .pane.preview-pane,
   .main:not(.show-preview) .pane-head.preview-head {
@@ -585,4 +597,63 @@
 }
 .main.is-empty {
   padding-bottom: 0;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-2);
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+button.status-chip:hover {
+  background: var(--bg-hover);
+  color: var(--text-1);
+}
+.status-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--callout-tip);
+}
+.status-chip.is-wait .status-dot {
+  background: var(--text-4);
+}
+.status-chip.is-warn .status-dot {
+  background: var(--callout-warn);
+}
+.status-chip.is-error .status-dot {
+  background: var(--callout-danger);
+}
+.status-chip.is-error {
+  color: var(--callout-danger);
+}
+.topbar .title-dir {
+  color: var(--text-3);
+  font-weight: 400;
+}
+@media (max-width: 540px) {
+  /* A phone shows the note's own name; the folder is in the title tooltip
+     and the drawer. The status keeps its dot (tap acts on it) and spells
+     out only a failed save. */
+  .topbar .title-dir,
+  .status-chip:not(.is-error) .status-label {
+    display: none;
+  }
+}
+@media (max-width: 420px) {
+  /* On the narrowest phones the note's name matters more than the mark. */
+  .topbar .brand {
+    display: none;
+  }
 }
