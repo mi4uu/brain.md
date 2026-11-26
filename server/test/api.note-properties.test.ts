@@ -75,6 +75,21 @@ describe("PATCH /api/note-properties/*", () => {
     expect(await read("bad.md")).toBe(before);
   });
 
+  test("an unresolved alias or a flow-style mapping is 422 INVALID_YAML and the note is untouched", async () => {
+    const notes = {
+      "alias.md": "---\nnote: *important*\n---\nbody\n",
+      "flow.md": "---\n{a: 1, b: 2}\n---\nbody\n",
+      "anchor.md": "---\nbase: &b hi\ncopy: *b\n---\nbody\n",
+    };
+    for (const [p, c] of Object.entries(notes)) await h.vault.writeNote(p, c);
+    for (const [p, body] of [["alias.md", { set: { z: 1 } }], ["flow.md", { unset: ["a"] }], ["anchor.md", { unset: ["base"] }]] as const) {
+      const r = await call("PATCH", `/api/note-properties/${p}`, body);
+      expect(r.status).toBe(422);
+      expect(r.json.code).toBe("INVALID_YAML");
+      expect(await read(p)).toBe(notes[p]);
+    }
+  });
+
   test("a frontmatter that is a list is 422 NOT_A_MAPPING", async () => {
     await h.vault.writeNote("list.md", "---\n- a\n- b\n---\nbody\n");
     const r = await call("PATCH", "/api/note-properties/list.md", { set: { a: 1 } });

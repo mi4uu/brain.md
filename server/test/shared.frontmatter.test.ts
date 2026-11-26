@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { readFrontmatter, setProperties, renameProperty, FrontmatterError } from "@brainmd/shared/frontmatter";
 
 const wrap = (y: string, eol = "\n") => `---${eol}${y}${eol}---${eol}body${eol}`;
@@ -125,4 +125,71 @@ test("unset several trailing keys leaves no blank line", () => {
 
 test("unset removes keys named like Object.prototype members", () => {
   expect(setProperties(wrap("constructor: x\ntoString: y\na: 1"), {}, ["constructor", "toString"])).toBe(wrap("a: 1"));
+});
+
+const aliasBomb = (() => {
+  let y = "a: &a [x,x,x,x,x,x,x,x,x,x]\n";
+  for (let i = 0; i < 12; i++) y += `b${i}: &b${i} [${Array(10).fill(i === 0 ? "*a" : `*b${i - 1}`).join(",")}]\n`;
+  return wrap(y.trimEnd());
+})();
+
+describe("aliases that do not resolve", () => {
+  test("readFrontmatter reports them instead of throwing", () => {
+    for (const src of [wrap("note: *important*"), wrap("status: draft\nnext: *todo"), aliasBomb]) {
+      const r = readFrontmatter(src);
+      expect(r.props).toBeNull();
+      expect(r.error).toBeString();
+      expect(r.range).not.toBeNull();
+    }
+  });
+  test("setProperties and renameProperty refuse them as INVALID_YAML", () => {
+    for (const src of [wrap("note: *important*"), aliasBomb]) {
+      for (const f of [() => setProperties(src, { z: 1 }), () => renameProperty(src, "note", "n")]) {
+        expect(f).toThrow(FrontmatterError);
+        try { f(); } catch (e) { expect((e as FrontmatterError).code).toBe("INVALID_YAML"); }
+      }
+    }
+  });
+});
+
+const code = (f: () => unknown): string | null => {
+  try { f(); return null; } catch (e) { return e instanceof FrontmatterError ? e.code : `not a FrontmatterError: ${String(e)}`; }
+};
+
+describe("edits that would lose or corrupt other properties are refused", () => {
+  const flow = wrap("{a: 1, b: 2}");
+  test("a flow-style root mapping", () => {
+    expect(readFrontmatter(flow).props).toEqual({ a: 1, b: 2 });
+    expect(code(() => setProperties(flow, {}, ["a"]))).toBe("INVALID_YAML");
+    expect(code(() => setProperties(flow, { c: 3 }))).toBe("INVALID_YAML");
+    expect(code(() => setProperties(flow, { a: ["x", "y"] }))).toBe("INVALID_YAML");
+    expect(code(() => setProperties(wrap("{}"), { a: 1 }))).toBe("INVALID_YAML");
+  });
+  test("unset or null of an anchored key that another key aliases", () => {
+    const src = wrap("base: &b hello\ncopy: *b\nz: 1");
+    expect(code(() => setProperties(src, {}, ["base"]))).toBe("INVALID_YAML");
+    expect(code(() => setProperties(src, { base: null }))).toBe("INVALID_YAML");
+  });
+  test("a set that would change an aliasing key", () => {
+    expect(code(() => setProperties(wrap("base: &b hello\ncopy: *b"), { base: "bye" }))).toBe("INVALID_YAML");
+  });
+  test("edits that leave every other key alone still go through", () => {
+    const src = wrap("base: &b hello\ncopy: *b\nz: 1");
+    expect(setProperties(src, { z: 2 })).toBe(wrap("base: &b hello\ncopy: *b\nz: 2"));
+    expect(setProperties(src, { base: "bye", copy: "bye" })).toBe(wrap("base: &b bye\ncopy: bye\nz: 1"));
+    expect(setProperties(src, {}, ["copy"])).toBe(wrap("base: &b hello\nz: 1"));
+  });
+  test("the error tells the caller to edit in source", () => {
+    expect(() => setProperties(flow, { c: 3 })).toThrow(/edit in source/);
+  });
+});
+
+test("flow list items with flow indicators are quoted", () => {
+  const out = setProperties(wrap("tags: [x]"), { tags: ["x", "a, b", "c]", "{d}"] });
+  expect(readFrontmatter(out).props).toEqual({ tags: ["x", "a, b", "c]", "{d}"] });
+});
+
+test("a property named error is an ordinary property", () => {
+  expect(readFrontmatter(wrap("error: x"))).toMatchObject({ props: { error: "x" }, error: null });
+  expect(setProperties(wrap("error: x"), { error: "y" })).toBe(wrap("error: y"));
 });

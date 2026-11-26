@@ -48,6 +48,19 @@ describe("read_note properties", () => {
     expect(r.body.revision).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  test("null, not a tool error, for an unresolved alias or an alias bomb", async () => {
+    let bomb = "---\na: &a [x,x,x,x,x,x,x,x,x,x]\n";
+    for (let i = 0; i < 12; i++) bomb += `b${i}: &b${i} [${Array(10).fill(i === 0 ? "*a" : `*b${i - 1}`).join(",")}]\n`;
+    await h.vault.writeNote("alias.md", "---\nnote: *important*\n---\nbody\n");
+    await h.vault.writeNote("bomb.md", `${bomb}---\nbody\n`);
+    for (const path of ["alias.md", "bomb.md"]) {
+      const r = await call(client, "read_note", { path });
+      expect(r.isError).toBe(false);
+      expect(r.body.properties).toBeNull();
+      expect(r.body.content).toContain("body");
+    }
+  });
+
   test("null without frontmatter and for invalid YAML", async () => {
     expect((await call(client, "read_note", { path: "plain.md" })).body.properties).toBeNull();
     expect((await call(client, "read_note", { path: "bad.md" })).body.properties).toBeNull();

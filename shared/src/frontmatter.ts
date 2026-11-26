@@ -63,15 +63,29 @@ function parseBlock(raw: string): Document.Parsed {
   return parseDocument(raw, { keepSourceTokens: true });
 }
 
+type Parsed = { props: Record<string, PropValue>; map: YAMLMap | null } | { props: null; error: string; code: FrontmatterError["code"] };
+
+function parseProps(raw: string): Parsed {
+  const doc = parseBlock(raw);
+  if (doc.errors.length > 0) return { props: null, error: doc.errors[0]!.message, code: "INVALID_YAML" };
+  if (doc.contents === null) return { props: {}, map: null };
+  if (!isMap(doc.contents)) return { props: null, error: "frontmatter must be YAML mapping", code: "NOT_A_MAPPING" };
+  // parseDocument does not report an unresolved alias or an alias bomb;
+  // toJS throws on them instead.
+  try {
+    return { props: toPropValue(doc.toJS()) as Record<string, PropValue>, map: doc.contents };
+  } catch (e) {
+    return { props: null, error: e instanceof Error ? e.message : String(e), code: "INVALID_YAML" };
+  }
+}
+
 export function readFrontmatter(content: string): FrontmatterRead {
   const loc = locate(content);
   if (!loc) return { props: null, error: null, range: null };
   const range = { from: loc.from, to: loc.to };
-  const doc = parseBlock(loc.raw);
-  if (doc.errors.length > 0) return { props: null, error: doc.errors[0]!.message, range };
-  if (doc.contents === null) return { props: {}, error: null, range };
-  if (!isMap(doc.contents)) return { props: null, error: "frontmatter must be YAML mapping", range };
-  return { props: toPropValue(doc.toJS()) as Record<string, PropValue>, error: null, range };
+  const p = parseProps(loc.raw);
+  if (p.props === null) return { props: null, error: p.error, range };
+  return { props: p.props, error: null, range };
 }
 
 function renderInlineScalar(v: string | number | boolean | null): string {
@@ -87,8 +101,13 @@ function isScalarValue(v: PropValue): v is string | number | boolean | null {
   return v === null || typeof v !== "object";
 }
 
+function renderFlowItem(x: PropValue): string {
+  if (!isScalarValue(x) || (typeof x === "string" && /[,[\]{}]/.test(x))) return JSON.stringify(x);
+  return renderInlineScalar(x);
+}
+
 function renderFlow(v: PropValue[]): string {
-  return `[${v.map((x) => (isScalarValue(x) ? renderInlineScalar(x) : JSON.stringify(x))).join(", ")}]`;
+  return `[${v.map(renderFlowItem).join(", ")}]`;
 }
 
 // A non-scalar value as block lines, each prefixed with `indent`.
@@ -141,12 +160,28 @@ function keyRange(p: Pair): [number, number, number] {
   return (p.key as { range: [number, number, number] }).range;
 }
 
-function openBlock(loc: Located): { doc: Document.Parsed; map: YAMLMap | null } {
-  const doc = parseBlock(loc.raw);
-  if (doc.errors.length > 0) throw new FrontmatterError("INVALID_YAML", doc.errors[0]!.message);
-  if (doc.contents === null) return { doc, map: null };
-  if (!isMap(doc.contents)) throw new FrontmatterError("NOT_A_MAPPING", "frontmatter must be YAML mapping");
-  return { doc, map: doc.contents };
+const BREAKS = "edit would break the frontmatter; edit in source";
+
+function openBlock(loc: Located): { props: Record<string, PropValue>; map: YAMLMap | null } {
+  const p = parseProps(loc.raw);
+  if (p.props === null) throw new FrontmatterError(p.code, p.error);
+  // Edits splice block-style lines; inside `{a: 1, b: 2}` they would drop
+  // or corrupt the other keys.
+  if (p.map?.flow) throw new FrontmatterError("INVALID_YAML", "frontmatter is a flow mapping; edit in source");
+  return p;
+}
+
+// The spliced block must parse to exactly `expected`: an anchor, an alias or
+// odd layout can make a textual edit change keys it never touched.
+function verified(loc: Located, content: string, nextRaw: string, expected: Record<string, PropValue>): string {
+  const p = parseProps(nextRaw);
+  if (p.props === null) throw new FrontmatterError("INVALID_YAML", BREAKS);
+  const keys = new Set([...Object.keys(expected), ...Object.keys(p.props)]);
+  for (const k of keys) {
+    const same = Object.hasOwn(expected, k) && Object.hasOwn(p.props, k) && JSON.stringify(p.props[k]) === JSON.stringify(expected[k]);
+    if (!same) throw new FrontmatterError("INVALID_YAML", BREAKS);
+  }
+  return content.slice(0, loc.yamlStart) + nextRaw + content.slice(loc.yamlStart + loc.raw.length);
 }
 
 function applyEdits(raw: string, edits: Edit[]): string {
@@ -227,7 +262,7 @@ export function setProperties(content: string, set: Record<string, PropValue>, u
   const loc = locate(content);
   const setKeys = Object.keys(set);
   if (!loc) return setKeys.length === 0 ? content : newBlock(content, set);
-  const { map } = openBlock(loc);
+  const { props, map } = openBlock(loc);
   const indentUnit = detectIndent(loc.raw);
   const edits: Edit[] = [];
   const appended: string[] = [];
@@ -252,17 +287,22 @@ export function setProperties(content: string, set: Record<string, PropValue>, u
     nextRaw = nextRaw.slice(0, -loc.eol.length);
   }
   if (appended.length > 0) nextRaw += (nextRaw === "" ? "" : loc.eol) + appended.join(loc.eol);
-  return content.slice(0, loc.yamlStart) + nextRaw + content.slice(loc.yamlStart + loc.raw.length);
+  const expected: Record<string, PropValue> = Object.create(null);
+  for (const [k, v] of Object.entries(props)) if (!unset.includes(k)) expected[k] = v;
+  for (const [k, v] of Object.entries(set)) expected[k] = toPropValue(v);
+  return verified(loc, content, nextRaw, expected);
 }
 
 export function renameProperty(content: string, from: string, to: string): string {
   const loc = locate(content);
   if (!loc || from === to) return content;
-  const { map } = openBlock(loc);
+  const { props, map } = openBlock(loc);
   if (!map) return content;
   const hit = findPair(map, from);
   if (!hit || findPair(map, to)) return content;
   const [ks, ke] = keyRange(hit.pair);
   const nextRaw = loc.raw.slice(0, ks) + renderInlineScalar(to) + loc.raw.slice(ke);
-  return content.slice(0, loc.yamlStart) + nextRaw + content.slice(loc.yamlStart + loc.raw.length);
+  const expected: Record<string, PropValue> = Object.create(null);
+  for (const [k, v] of Object.entries(props)) expected[k === from ? to : k] = v;
+  return verified(loc, content, nextRaw, expected);
 }
