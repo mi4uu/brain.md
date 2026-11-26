@@ -3,6 +3,8 @@ import { dirname, join } from "node:path";
 import type { Vault, MutationEvent } from "../vault/vault";
 import { atomicWrite } from "../vault/atomic-write";
 import { basenameNoExt } from "../vault/paths";
+import { toPropValue, type PropValue } from "@brainmd/shared/frontmatter";
+import { inferType, resolveType, type PropertyInfo } from "@brainmd/shared/property-types";
 import { parseNote } from "./parse";
 import { LinkResolver } from "./resolve";
 
@@ -29,11 +31,18 @@ export interface IndexEntry {
   // and `search: false` (visible in the tree, out of search, graph, RAG).
   hidden?: boolean;
   noSearch?: boolean;
+  // The whole frontmatter mapping, JSON-safe; {} when there is none.
+  props: Record<string, PropValue>;
+  // File birth time; mtime where the filesystem does not report one.
+  ctime: number;
 }
 
+export type { PropertyInfo };
+
 export interface IndexData {
-  // 2 added the hidden/noSearch flags; an older snapshot is rebuilt.
-  version: 2;
+  // 2 added the hidden/noSearch flags, 3 added props and ctime; an older
+  // snapshot is rebuilt.
+  version: 3;
   entries: Record<string, IndexEntry>;
 }
 
@@ -49,7 +58,7 @@ export class VaultIndex {
   // Set by app.ts (vault/visibility.ts). Search, graph and list_notes
   // consult it; absent in unit tests, where nothing is hidden.
   visibility?: VisibilityRules;
-  private data: IndexData = { version: 2, entries: {} };
+  private data: IndexData = { version: 3, entries: {} };
   private unsubscribe?: () => void;
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
   // Resolved link targets and the inbound links they give each note, rebuilt
@@ -210,6 +219,45 @@ export class VaultIndex {
       .sort((a, b) => a.tag.localeCompare(b.tag));
   }
 
+  // Every frontmatter key in the notes `allowed` lets through, with how many
+  // notes use it, the type their values suggest and up to 20 of the most
+  // common scalar values (list items are counted one by one). Registry
+  // overrides are applied by the caller (properties/registry.ts).
+  propertyKeys(allowed?: (path: string) => boolean): PropertyInfo[] {
+    const acc = new Map<string, { count: number; raw: PropValue[]; freq: Map<string, { v: PropValue; n: number }> }>();
+    for (const e of this.entries()) {
+      if (allowed && !allowed(e.path)) continue;
+      for (const [name, value] of Object.entries(e.props)) {
+        let a = acc.get(name);
+        if (!a) {
+          a = { count: 0, raw: [], freq: new Map() };
+          acc.set(name, a);
+        }
+        a.count++;
+        if (value !== null) a.raw.push(value);
+        for (const item of Array.isArray(value) ? value : [value]) {
+          if (item === null || typeof item === "object") continue;
+          if (typeof item === "string" && item.length > 200) continue;
+          const key = `${typeof item}:${item}`;
+          const hit = a.freq.get(key);
+          if (hit) hit.n++;
+          else a.freq.set(key, { v: item, n: 1 });
+        }
+      }
+    }
+    return Array.from(acc.entries())
+      .map(([name, a]) => ({
+        name,
+        type: resolveType(name, undefined, inferType(a.raw)),
+        count: a.count,
+        values: Array.from(a.freq.values())
+          .sort((x, y) => y.n - x.n || String(x.v).localeCompare(String(y.v)))
+          .slice(0, 20)
+          .map((x) => x.v),
+      }))
+      .sort((x, y) => y.count - x.count || x.name.localeCompare(y.name));
+  }
+
   private invalidateLinks(): void {
     this.links = undefined;
   }
@@ -255,7 +303,7 @@ export class VaultIndex {
         if (e) next[p] = e;
       }),
     );
-    this.data = { version: 2, entries: next };
+    this.data = { version: 3, entries: next };
     this.invalidateLinks();
   }
 
@@ -322,6 +370,7 @@ export class VaultIndex {
       const data = await this.vault.readNote(path);
       const parsed = parseNote(data.content);
       const bn = basenameNoExt(path);
+      const st = await stat(this.vault.abs(path));
       return {
         path,
         mtime: data.mtime,
@@ -343,6 +392,8 @@ export class VaultIndex {
         body: parsed.body,
         hidden: parsed.frontmatter?.hidden === true || undefined,
         noSearch: parsed.frontmatter?.search === false || undefined,
+        props: parsed.frontmatter ? (toPropValue(parsed.frontmatter) as Record<string, PropValue>) : {},
+        ctime: st.birthtimeMs > 0 ? st.birthtimeMs : data.mtime,
       };
     } catch {
       return null;
@@ -360,7 +411,7 @@ export class VaultIndex {
     try {
       const raw = await readFile(abs, "utf8");
       const parsed = JSON.parse(raw) as IndexData;
-      if (parsed.version === 2) {
+      if (parsed.version === 3) {
         this.data = parsed;
         this.invalidateLinks();
         return true;
