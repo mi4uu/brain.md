@@ -6,14 +6,14 @@ export interface TextEdit {
   insert: string;
 }
 
-interface Located {
+export interface Located {
   from: number;
   to: number;
   lines: string[];
   eol: string;
 }
 
-function locate(text: string, range: LineRange): Located | null {
+export function locateRange(text: string, range: LineRange): Located | null {
   const parts = text.split("\n");
   if (range.from < 1 || range.to < range.from || range.to > parts.length) return null;
   let from = 0;
@@ -30,12 +30,12 @@ function locate(text: string, range: LineRange): Located | null {
 }
 
 export function readTable(text: string, range: LineRange): MdTable | null {
-  const loc = locate(text, range);
+  const loc = locateRange(text, range);
   return loc ? parseTable(loc.lines) : null;
 }
 
 export function tableEdit(text: string, range: LineRange, fn: (t: MdTable) => MdTable): TextEdit | null {
-  const loc = locate(text, range);
+  const loc = locateRange(text, range);
   if (!loc) return null;
   const model = parseTable(loc.lines);
   if (!model) return null;
