@@ -199,21 +199,11 @@ function replaceValue(raw: string, pair: Pair, value: PropValue, eol: string, in
   return { start: afterColon, end: vEnd, text: block + trailingEol };
 }
 
-function deletePairEdit(raw: string, map: YAMLMap, index: number, eol: string): Edit {
-  const items = map.items as Pair[];
-  const start = lineStartOf(raw, keyRange(items[index]!)[0]);
-  let end: number;
-  if (index + 1 < items.length) {
-    end = lineStartOf(raw, keyRange(items[index + 1]!)[0]);
-  } else {
-    const v = items[index]!.value as { range?: [number, number, number] } | null;
-    const tail = v?.range ? v.range[2] : keyRange(items[index]!)[2];
-    end = endOfLine(raw, tail);
-  }
-  if (end >= raw.length && start > 0) {
-    return { start: start - (raw[start - 2] === "\r" ? 2 : 1), end: raw.length, text: "" };
-  }
-  return { start, end, text: "" };
+function deletePairEdit(raw: string, map: YAMLMap, index: number): Edit {
+  const pair = (map.items as Pair[])[index]!;
+  const v = pair.value as { range?: [number, number, number] } | null;
+  const tail = v?.range ? v.range[1] : keyRange(pair)[1];
+  return { start: lineStartOf(raw, keyRange(pair)[0]), end: endOfLine(raw, tail), text: "" };
 }
 
 function newBlock(content: string, set: Record<string, PropValue>): string {
@@ -241,23 +231,27 @@ export function setProperties(content: string, set: Record<string, PropValue>, u
   const indentUnit = detectIndent(loc.raw);
   const edits: Edit[] = [];
   const appended: string[] = [];
+  let deleted = false;
 
   for (const name of unset) {
     if (name in set) continue;
     const hit = map ? findPair(map, name) : null;
-    if (hit && map) edits.push(deletePairEdit(loc.raw, map, hit.index, loc.eol));
+    if (hit && map) {
+      edits.push(deletePairEdit(loc.raw, map, hit.index));
+      deleted = true;
+    }
   }
   for (const [name, value] of Object.entries(set)) {
     const hit = map ? findPair(map, name) : null;
     if (hit) edits.push(replaceValue(loc.raw, hit.pair, value, loc.eol, indentUnit));
     else appended.push(...appendLines(name, value, indentUnit, loc.eol));
   }
-  if (appended.length > 0) {
-    const lead = loc.raw === "" ? "" : loc.eol;
-    edits.push({ start: loc.raw.length, end: loc.raw.length, text: lead + appended.join(loc.eol) });
+  if (edits.length === 0 && appended.length === 0) return content;
+  let nextRaw = applyEdits(loc.raw, edits);
+  if (deleted && nextRaw.endsWith(loc.eol) && !loc.raw.endsWith("\n")) {
+    nextRaw = nextRaw.slice(0, -loc.eol.length);
   }
-  if (edits.length === 0) return content;
-  const nextRaw = applyEdits(loc.raw, edits);
+  if (appended.length > 0) nextRaw += (nextRaw === "" ? "" : loc.eol) + appended.join(loc.eol);
   return content.slice(0, loc.yamlStart) + nextRaw + content.slice(loc.yamlStart + loc.raw.length);
 }
 

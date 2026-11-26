@@ -111,3 +111,14 @@ test("null values render as empty", () => {
   expect(readFrontmatter(setProperties(wrap("a: 1"), { n: null, m: 2 })).props).toEqual({ a: 1, n: null, m: 2 });
   expect(setProperties(wrap("a:\nb: 1"), { a: null })).toBe(wrap("a:\nb: 1"));
 });
+test("unset keeps comment lines that belong to the next key", () => {
+  expect(setProperties(wrap("a: 1\nb: 2\n# about c\nc: 3"), {}, ["b"])).toBe(wrap("a: 1\n# about c\nc: 3"));
+  expect(setProperties(wrap("a: 1\nb:\n  - x # t\n# about c\nc: 3"), {}, ["b"])).toBe(wrap("a: 1\n# about c\nc: 3"));
+  expect(setProperties(wrap("a: 1\r\nb: 2\r\n# about c\r\nc: 3", "\r\n"), {}, ["b"])).toBe(wrap("a: 1\r\n# about c\r\nc: 3", "\r\n"));
+});
+test("unset several trailing keys leaves no blank line", () => {
+  expect(setProperties(wrap("a: 1\nb: 2\nc: 3"), {}, ["b", "c"])).toBe(wrap("a: 1"));
+  expect(setProperties(wrap("a: 1\r\nb: 2\r\nc: 3", "\r\n"), {}, ["b", "c"])).toBe(wrap("a: 1", "\r\n"));
+  expect(setProperties(wrap("a: 1\nb: 2\nc: 3"), {}, ["a", "b", "c"])).toBe("---\n\n---\nbody\n");
+  expect(setProperties(wrap("a: 1\nb: 2\nc: 3"), { d: 4 }, ["b", "c"])).toBe(wrap("a: 1\nd: 4"));
+});
