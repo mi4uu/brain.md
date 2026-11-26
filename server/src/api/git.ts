@@ -1,12 +1,14 @@
 import { Elysia, t } from "elysia";
-import type { GitRepo } from "../git/git";
+import { RevertError, type GitRepo } from "../git/git";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { Autocommit } from "../git/autocommit";
 import { singleActorCommitOpts } from "../git/autocommit";
 import { currentIdentity } from "../auth/identity";
 import type { SettingsStore } from "../settings/settings";
 import type { Vault } from "../vault/vault";
 import { asError } from "./errors";
-import { assertSafePath, assertMarkdown, assertRestoreTargetIsFile } from "../vault/paths";
+import { assertSafePath, assertMarkdown, assertRestoreTargetIsFile, assertRealContainment } from "../vault/paths";
 import { requireRead, requireWrite, requireOwner } from "./perm-guard";
 import { principalFor } from "./auth-middleware";
 import { isOwnerPrincipal } from "./principal";
@@ -36,11 +38,55 @@ async function requireNotePathForAgents(
   }
 }
 
+// The owner's "seen up to here" cursor for the Changes view. One cursor per
+// vault, not per login: every login (password, Google, GitHub) is the same
+// single owner, and phone and desktop must agree on what is new. Lives under
+// .brain/, which the vault's .gitignore keeps out of history.
+interface SeenCursor {
+  sha: string;
+  ts: number;
+}
+
+const REVERT_STATUS: Record<RevertError["code"], number> = {
+  NOT_FOUND: 404,
+  NOT_CHANGED: 400,
+  UNSUPPORTED: 400,
+  CREATED: 400,
+  PENDING: 409,
+  CONFLICT: 409,
+};
+
+// Mark-seen is read, compare, write; run one at a time so two quick
+// requests cannot leave the older one on disk.
+let seenChain: Promise<unknown> = Promise.resolve();
+function oneAtATime<T>(fn: () => Promise<T>): Promise<T> {
+  const next = seenChain.then(fn, fn);
+  seenChain = next.catch(() => undefined);
+  return next;
+}
+
+function seenFile(vault: Vault): string {
+  return join(vault.root, ".brain", "changes-seen.json");
+}
+
+async function readSeen(vault: Vault): Promise<SeenCursor | null> {
+  try {
+    const raw = JSON.parse(await readFile(seenFile(vault), "utf8")) as Partial<SeenCursor>;
+    if (typeof raw.sha === "string" && /^[a-f0-9]{4,64}$/i.test(raw.sha) && typeof raw.ts === "number") {
+      return { sha: raw.sha, ts: raw.ts };
+    }
+  } catch {
+    // missing or unreadable: nothing seen yet
+  }
+  return null;
+}
+
 export function gitRoutes(
   vault: Vault,
   repo: GitRepo,
   autocommit: Autocommit,
   settings: SettingsStore,
+  isHidden: (path: string) => boolean = () => false,
 ) {
   return new Elysia({ prefix: "/api/git" })
     .get("/status", async ({ set, request }) => {
@@ -211,6 +257,170 @@ export function gitRoutes(
         }
       },
       { body: t.Object({ message: t.Optional(t.String()) }) },
+    )
+    .get(
+      "/changes",
+      async ({ query, set, request }) => {
+        try {
+          // Lists paths across the whole vault, so it cannot be scoped by
+          // folder permissions: owner only, like the other vault-wide routes.
+          requireOwner(request);
+          if (!(await repo.isEnabled())) return { enabled: false, seen: null, commits: [], hasMore: false };
+          const asked = Number(query.limit);
+          const limit = Number.isFinite(asked) && asked > 0 ? Math.min(500, Math.floor(asked)) : 200;
+          const { commits, more } = await repo.changes({ limit, before: query.before });
+          // Agents' working files are often hidden notes; the UI leaves them
+          // out unless "show hidden" is on, so it needs to know which. A rename
+          // counts as hidden when either side is.
+          for (const c of commits) {
+            for (const f of c.files) {
+              if (isHidden(f.path) || (f.oldPath !== undefined && isHidden(f.oldPath))) f.hidden = true;
+            }
+          }
+          const seen = await readSeen(vault);
+          if (seen) {
+            // New means after the cursor in history, not later on the clock.
+            const after = await repo.commitsAfter(seen.sha);
+            for (const c of commits) c.afterSeen = after ? after.has(c.sha) : c.ts > seen.ts;
+          }
+          return { enabled: true, seen, commits, hasMore: more };
+        } catch (e) {
+          const { status, body } = asError(e);
+          set.status = status;
+          return body;
+        }
+      },
+      { query: t.Object({ limit: t.Optional(t.String()), before: t.Optional(t.String()) }) },
+    )
+    .post(
+      "/changes/seen",
+      async ({ body, set, request }) => {
+        try {
+          // Agents never move the owner's cursor; only the owner marks seen.
+          requireOwner(request);
+          if (!/^[a-f0-9]{4,64}$/i.test(body.sha)) throw new VaultError("invalid sha", "INVALID_PATH");
+          // Time and identity come from git, not the client, and the cursor
+          // only ever moves forward along history.
+          const next = await repo.commitTime(body.sha);
+          if (!next || !(await repo.isAncestor(next.sha, "HEAD").catch(() => false))) {
+            throw new VaultError(`no commit ${body.sha} in this vault's history`, "NOT_FOUND");
+          }
+          return await oneAtATime(async () => {
+            const prev = await readSeen(vault);
+            // Only forward: keep the old cursor unless it is behind the new
+            // one in history (or no longer in history at all).
+            if (prev && prev.sha !== next.sha) {
+              const prevInHistory = await repo.isAncestor(prev.sha, "HEAD").catch(() => false);
+              if (prevInHistory && !(await repo.isAncestor(prev.sha, next.sha).catch(() => false))) return prev;
+            }
+            await mkdir(join(vault.root, ".brain"), { recursive: true });
+            const tmp = `${seenFile(vault)}.${process.pid}.${Date.now()}.tmp`;
+            try {
+              await writeFile(tmp, JSON.stringify(next));
+              await rename(tmp, seenFile(vault));
+            } catch (e) {
+              await rm(tmp, { force: true });
+              throw e;
+            }
+            return next;
+          });
+        } catch (e) {
+          const { status, body: err } = asError(e);
+          set.status = status;
+          return err;
+        }
+      },
+      { body: t.Object({ sha: t.String(), ts: t.Optional(t.Number()) }) },
+    )
+    .get(
+      "/patch",
+      async ({ query, set, request }) => {
+        try {
+          // Both sides must be single notes outside reserved folders: git
+          // would otherwise return every file under a directory pathspec.
+          for (const p of query.oldPath ? [query.path, query.oldPath] : [query.path]) {
+            assertSafePath(p);
+            assertMarkdown(p);
+            await requireRead(vault, request, p);
+          }
+          await requireNotePathForAgents(vault, request, query.path);
+          const patch = await repo.commitPatch(query.sha, query.path, query.oldPath);
+          return { patch };
+        } catch (e) {
+          const { status, body } = asError(e);
+          set.status = status;
+          return body;
+        }
+      },
+      { query: t.Object({ sha: t.String(), path: t.String(), oldPath: t.Optional(t.String()) }) },
+    )
+    .post(
+      "/revert",
+      async ({ body, set, request }) => {
+        try {
+          requireOwner(request);
+          assertSafePath(body.path);
+          assertMarkdown(body.path);
+          await assertRestoreTargetIsFile(vault.root, body.path);
+          await assertRealContainment(vault.root, join(vault.root, body.path));
+          await requireWrite(vault, request, body.path);
+          // Gives edits still waiting for the debounce a chance to land as
+          // their own commit; revertChange refuses if the note is still dirty.
+          await autocommit.flush();
+          const identity = currentIdentity();
+          const commitOpts = identity ? singleActorCommitOpts(identity) : {};
+          // The note's vault lock is held from the checks to the commit, so
+          // no save or agent write can land in between and be overwritten.
+          const sha = await vault.withNotesLocked([body.path], async () => {
+            if (body.mode === "trash") {
+              // The change created the note: undoing it moves the note to
+              // Trash like any delete, then records exactly that.
+              await repo.assertCreatedHere(body.sha, body.path);
+              const trashed = await vault.deleteNoteLocked(body.path);
+              try {
+                return await repo.commitPath(
+                  body.path,
+                  `revert ${body.path} (trash, created in ${body.sha.slice(0, 7)})`,
+                  commitOpts,
+                );
+              } catch (e) {
+                await vault.restoreFromTrashLocked(trashed);
+                throw e;
+              }
+            }
+            return repo.revertChange({
+              sha: body.sha,
+              path: body.path,
+              mode: body.mode,
+              message: `revert ${body.path} (${body.mode === "restore" ? "restore before" : "undo"} ${body.sha.slice(0, 7)})`,
+              ...commitOpts,
+            });
+          });
+          if (body.mode !== "trash") await vault.notifyWrite(body.path);
+          return { ok: true, sha };
+        } catch (e) {
+          if (e instanceof RevertError) {
+            set.status = REVERT_STATUS[e.code];
+            const message =
+              e.code === "PENDING" && !autocommit.opts.enabled
+                ? `${e.message}. Autocommit is off, so commit them first (More, Commit now)`
+                : e.code === "PENDING"
+                  ? `${e.message}, try again in a few seconds`
+                  : e.message;
+            return { error: message, code: e.code };
+          }
+          const { status, body: err } = asError(e);
+          set.status = status;
+          return err;
+        }
+      },
+      {
+        body: t.Object({
+          sha: t.String(),
+          path: t.String(),
+          mode: t.Union([t.Literal("patch"), t.Literal("restore"), t.Literal("trash")]),
+        }),
+      },
     )
     .post(
       "/autocommit",

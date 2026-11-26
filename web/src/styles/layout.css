@@ -446,6 +446,24 @@
 .layout-key {
   margin-left: auto;
 }
+.main .pane-head {
+  container-type: inline-size;
+}
+/* A narrow pane (small window, wide sidebar) keeps the icons and drops
+   the words, so the switch never spills into the next pane head. */
+@container (max-width: 380px) {
+  .layout-opt-label {
+    display: none;
+  }
+  .layout-opt {
+    padding: 0 8px;
+  }
+}
+@container (max-width: 200px) {
+  .layout-key {
+    display: none;
+  }
+}
 
 .drawer-backdrop {
   position: fixed;

@@ -71,7 +71,13 @@ export function HistoryPanel({ path, onClose, onRestored }: Props) {
 
   const restore = async () => {
     if (!selected || !path) return;
-    if (!confirm(`Restore "${path}" to ${selected.sha.slice(0, 7)}?\n"${selected.subject}"`)) return;
+    const when = new Date(selected.ts).toLocaleString();
+    if (
+      !confirm(
+        `Restore "${path}" to the version from ${when} by ${selected.author}?\n\nThe current text is replaced. It stays in history, so this can be undone.`,
+      )
+    )
+      return;
     try {
       await gitApi.restore(path, selected.sha);
       onRestored();
@@ -84,7 +90,7 @@ export function HistoryPanel({ path, onClose, onRestored }: Props) {
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="grid h-[80vh] max-w-5xl grid-rows-[auto_auto_1fr] gap-0 p-0">
-        <DialogHeader className="flex flex-row items-center gap-3 border-b border-border px-4 py-3">
+        <DialogHeader className="flex flex-row items-center gap-3 border-b border-border py-3 pl-4 pr-12">
           <DialogTitle className="text-md font-medium">History</DialogTitle>
           {path ? (
             <div className="inline-flex items-center gap-0.5 rounded-2 border border-border bg-surface-alt p-0.5 text-sm">
@@ -107,7 +113,7 @@ export function HistoryPanel({ path, onClose, onRestored }: Props) {
             <span className="text-sm text-fg-3">All vault</span>
           )}
           {path && scope === "note" ? (
-            <span className="truncate text-sm text-fg-3">— {path}</span>
+            <span className="truncate text-sm text-fg-3">{path.replace(/\.md$/, "")}</span>
           ) : null}
           <span className="flex-1" />
           {authors.length > 1 ? (
@@ -202,16 +208,24 @@ export function HistoryPanel({ path, onClose, onRestored }: Props) {
                     <button
                       type="button"
                       onClick={restore}
-                      className="shrink-0 rounded-1 bg-accent px-3 py-1 text-sm font-medium text-accent-on hover:bg-accent-strong"
+                      disabled={loadingPatch || !patch.trim()}
+                      className="shrink-0 rounded-1 bg-accent px-3 py-1 text-sm font-medium text-accent-on hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-accent"
                     >
-                      Restore this version
+                      {!loadingPatch && !patch.trim() ? "Same as current" : "Restore this version"}
                     </button>
                   ) : null}
                 </div>
                 {loadingPatch ? (
-                  <p className="p-4 text-sm text-fg-3">loading…</p>
+                  <p className="p-4 text-sm text-fg-3">Loading</p>
+                ) : patch.trim() ? (
+                  <>
+                    <p className="px-4 pt-3 text-xs text-fg-3">From this version to the current note</p>
+                    <DiffView patch={patch} />
+                  </>
+                ) : path ? (
+                  <p className="p-4 text-center text-sm text-fg-3">This version matches the current note.</p>
                 ) : (
-                  <DiffView patch={patch} />
+                  <p className="p-4 text-center text-sm text-fg-3">Open a note to compare its versions.</p>
                 )}
               </div>
             ) : (

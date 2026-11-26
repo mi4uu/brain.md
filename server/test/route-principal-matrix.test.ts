@@ -169,6 +169,9 @@ const ROUTES: RouteRow[] = [
   { name: "POST /api/git/flush", class: "admin", exec: (f) => call(f.handle, "POST", "/api/git/flush", undefined, f.bearer) },
   { name: "POST /api/git/checkpoint", class: "admin", exec: (f) => call(f.handle, "POST", "/api/git/checkpoint", {}, f.bearer) },
   { name: "POST /api/git/autocommit", class: "admin", exec: (f) => call(f.handle, "POST", "/api/git/autocommit", { enabled: true }, f.bearer) },
+  { name: "GET /api/git/changes", class: "admin", exec: (f) => call(f.handle, "GET", "/api/git/changes", undefined, f.bearer) },
+  { name: "POST /api/git/changes/seen", class: "admin", exec: (f) => call(f.handle, "POST", "/api/git/changes/seen", { sha: "abcdef1", ts: 1 }, f.bearer) },
+  { name: "POST /api/git/revert", class: "admin", exec: (f) => call(f.handle, "POST", "/api/git/revert", { sha: "abcdef1", path: "public/b.md", mode: "patch" }, f.bearer) },
 
   // ---- strict (target: secret/a.md or the secret/ folder) ----
   { name: "GET /api/note/secret/a.md", class: "strict", exec: (f) => call(f.handle, "GET", "/api/note/secret/a.md", undefined, f.bearer) },
@@ -186,6 +189,7 @@ const ROUTES: RouteRow[] = [
   { name: "GET /api/git/log?path=secret/a.md", class: "strict", exec: (f) => call(f.handle, "GET", "/api/git/log?path=secret/a.md", undefined, f.bearer) },
   { name: "GET /api/git/show?path=secret/a.md", class: "strict", exec: (f) => call(f.handle, "GET", "/api/git/show?sha=HEAD&path=secret/a.md", undefined, f.bearer) },
   { name: "GET /api/git/diff?path=secret/a.md", class: "strict", exec: (f) => call(f.handle, "GET", "/api/git/diff?sha=HEAD&path=secret/a.md", undefined, f.bearer) },
+  { name: "GET /api/git/patch?path=secret/a.md", class: "strict", exec: (f) => call(f.handle, "GET", "/api/git/patch?sha=HEAD&path=secret/a.md", undefined, f.bearer) },
   { name: "POST /api/git/restore secret/a.md", class: "strict", exec: (f) => call(f.handle, "POST", "/api/git/restore", { path: "secret/a.md", sha: "HEAD" }, f.bearer) },
 
   // ---- filtered (list/search routes: never 403, denied path just absent) ----

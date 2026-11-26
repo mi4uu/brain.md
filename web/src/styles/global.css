@@ -91,6 +91,18 @@ kbd {
   background: var(--accent-strong);
   color: var(--on-accent);
 }
+.btn:disabled,
+.btn:disabled:hover {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: transparent;
+  color: var(--text-2);
+}
+.btn.primary:disabled,
+.btn.primary:disabled:hover {
+  background: var(--accent);
+  color: var(--on-accent);
+}
 .btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;

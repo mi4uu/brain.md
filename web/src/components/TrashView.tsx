@@ -24,7 +24,6 @@ export function TrashView({ onClose, onRestored }: Props) {
       setItems((await res.json()) as TrashItem[]);
       setError(null);
     } catch (e) {
-      setItems((prev) => prev ?? []);
       setError(`Could not load the trash (${e instanceof Error ? e.message : String(e)}).`);
     }
   }, []);
@@ -42,6 +41,7 @@ export function TrashView({ onClose, onRestored }: Props) {
         body: JSON.stringify({ trashPath: p }),
       });
       if (!res.ok) throw new Error(await res.text());
+      setItems((prev) => (prev ? prev.filter((i) => i.path !== p) : prev));
       await reload();
       onRestored();
     } catch (e) {
@@ -66,7 +66,7 @@ export function TrashView({ onClose, onRestored }: Props) {
           </p>
         ) : null}
         {items === null ? (
-          <p className="tasks-empty">Loading trash</p>
+          error ? null : <p className="tasks-empty">Loading trash</p>
         ) : filesOnly.length === 0 ? (
           <p className="tasks-empty">Trash is empty.</p>
         ) : (

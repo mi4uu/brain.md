@@ -16,6 +16,9 @@ import { TasksView } from "./components/TasksView";
 import { GraphView } from "./components/GraphView";
 import { LocalGraph } from "./components/LocalGraph";
 import { TrashView } from "./components/TrashView";
+import { ChangesView } from "./components/ChangesView";
+import { useChanges, UnseenPathsContext } from "./changes/useChanges";
+import { relativeTime } from "./changes/model";
 import { EditorToolbar } from "./components/EditorToolbar";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { IconPicker } from "./components/IconPicker";
@@ -30,6 +33,7 @@ import {
   SearchIcon,
   FileSearchIcon,
   SettingsIcon,
+  ChangesIcon,
   BrandMark,
   LogOutIcon,
   StarIcon,
@@ -102,6 +106,7 @@ import "./styles/panels.css";
 import "./styles/toolbar.css";
 import "./styles/history.css";
 import "./styles/graph.css";
+import "./styles/changes.css";
 import "./styles/hljs.css";
 import "katex/dist/katex.min.css";
 
@@ -156,11 +161,12 @@ export function App() {
   const refocusLayoutSwitch = useRef(false);
   const pickDesktopView = useCallback(
     (view: DesktopView) => {
+      if (view === desktopView) return;
       const active = document.activeElement;
       refocusLayoutSwitch.current = active instanceof HTMLElement && active.closest(".layout-switch") !== null;
       setDesktopView(view);
     },
-    [setDesktopView],
+    [desktopView, setDesktopView],
   );
   // Lives in the first visible pane head: the editor head in split and
   // editor-only, the preview head in preview-only.
@@ -173,10 +179,12 @@ export function App() {
             type="button"
             className="layout-opt"
             aria-pressed={desktopView === o.view}
+            aria-label={o.label}
+            title={o.label}
             onClick={() => pickDesktopView(o.view)}
           >
             {o.icon}
-            <span>{o.label}</span>
+            <span className="layout-opt-label">{o.label}</span>
           </button>
         ))}
       </div>
@@ -214,6 +222,19 @@ export function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showTasks, setShowTasks] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
+  const changes = useChanges(showHidden);
+  const [showChanges, setShowChanges] = useState(false);
+  // A link to a note or tag wins over the Changes start screen.
+  const deepLinkAtLoad = useRef(
+    window.location.hash.startsWith("#/note/") || window.location.hash.startsWith("#/tag/"),
+  );
+  const startDecided = useRef(false);
+  const ownHashRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (startDecided.current || !changes.loaded || changes.error) return;
+    startDecided.current = true;
+    if (!deepLinkAtLoad.current && changes.unseenCount > 0) setShowChanges(true);
+  }, [changes.loaded, changes.error, changes.unseenCount]);
   const [showTrash, setShowTrash] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
@@ -472,6 +493,11 @@ export function App() {
   useEffect(() => {
     function onHash() {
       const h = window.location.hash;
+      // openNote() already did the work for a hash it set itself.
+      if (h === ownHashRef.current) {
+        ownHashRef.current = null;
+        return;
+      }
       if (h.startsWith("#/note/")) {
         const rest = decodeURI(h.slice("#/note/".length));
         // split a single trailing #<slug> off the path
@@ -505,7 +531,8 @@ export function App() {
       void settingsApi
         .get()
         .then((s) => {
-          if (s.homepage && !window.location.hash) openNote(s.homepage);
+          // The homepage opens behind the Changes start screen, not over it.
+          if (s.homepage && !window.location.hash) openNote(s.homepage, { keepChanges: true });
         })
         .catch(() => {});
     }
@@ -537,7 +564,7 @@ export function App() {
   }, []);
 
   const openNote = useCallback(
-    async (p: string, opts?: { headingSlug?: string }): Promise<boolean> => {
+    async (p: string, opts?: { headingSlug?: string; keepChanges?: boolean }): Promise<boolean> => {
       if (!(await leaveNote())) {
         revertHash();
         return false;
@@ -549,8 +576,17 @@ export function App() {
         setContent(data.content);
         setTagFilter(null);
         setMobileView("edit");
+        if (!opts?.keepChanges) setShowChanges(false);
         const want = `#/note/${encodeURI(p)}${opts?.headingSlug ? `#${opts.headingSlug}` : ""}`;
-        if (window.location.hash !== want) window.location.hash = want;
+        if (window.location.hash !== want) {
+          ownHashRef.current = want;
+          window.location.hash = want;
+          // If the browser fires no hashchange for it, do not let the mark
+          // swallow a later, real navigation to the same note.
+          setTimeout(() => {
+            if (ownHashRef.current === want) ownHashRef.current = null;
+          }, 500);
+        }
         const bl = await api.backlinks(p);
         setBacklinks(bl);
         // V54: kick off the related fetch in parallel. The server responds
@@ -1076,7 +1112,20 @@ export function App() {
             brain<span className="brand-ext">.md</span>
           </span>
         </a>
-        <span className="title">{path ? path.replace(/\.md$/, "") : ""}</span>
+        <span className="title">
+          {showChanges ? "Changes" : path ? path.replace(/\.md$/, "") : ""}
+          {!showChanges && path && changes.latestByPath.get(path) ? (
+            <button
+              type="button"
+              className="byline"
+              onClick={() => setShowHistory(true)}
+              title="Open history"
+            >
+              edited by {changes.latestByPath.get(path)!.actor} ·{" "}
+              {relativeTime(changes.latestByPath.get(path)!.ts)}
+            </button>
+          ) : null}
+        </span>
         {gitStatus?.enabled ? (
           <div className="topbar-center">
             <GitStatusChip status={gitStatus} />
@@ -1093,16 +1142,41 @@ export function App() {
                   : "error"
             : ""}
         </span>
+        {changes.available ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className={clsx("btn icon changes-btn", showChanges && "is-active")}
+                aria-label={
+                  changes.unseenCount > 0 ? `Changes, ${changes.unseenCount} new` : "Changes"
+                }
+                aria-pressed={showChanges}
+                onClick={() => setShowChanges((v) => !v)}
+              >
+                <ChangesIcon />
+                {changes.unseenCount > 0 ? (
+                  <span className="changes-badge" aria-hidden="true">
+                    {changes.unseenCount > 99 ? "99+" : changes.unseenCount}
+                  </span>
+                ) : null}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Changes</TooltipContent>
+          </Tooltip>
+        ) : null}
         <IconBtn label="Search (⌘P)" onClick={() => setCmd("search")}>
           <SearchIcon />
         </IconBtn>
-        <IconBtn
-          label={path && bookmarks.includes(path) ? "Remove bookmark" : "Bookmark"}
-          onClick={toggleBookmark}
-          disabled={!path}
-        >
-          <StarIcon filled={path ? bookmarks.includes(path) : false} />
-        </IconBtn>
+        <div className="topbar-wide-only">
+          <IconBtn
+            label={path && bookmarks.includes(path) ? "Remove bookmark" : "Bookmark"}
+            onClick={toggleBookmark}
+            disabled={!path}
+          >
+            <StarIcon filled={path ? bookmarks.includes(path) : false} />
+          </IconBtn>
+        </div>
         <div className="topbar-wide-only">
           <IconBtn label="Daily note" onClick={openDaily}>
             <CalendarIcon />
@@ -1130,6 +1204,10 @@ export function App() {
             <TooltipContent side="bottom">More</TooltipContent>
           </Tooltip>
           <DropdownMenuContent align="end" className="topbar-menu min-w-[220px]">
+            <DropdownMenuItem className="narrow-only" disabled={!path} onSelect={toggleBookmark}>
+              <StarIcon filled={path ? bookmarks.includes(path) : false} />
+              <span>{path && bookmarks.includes(path) ? "Remove bookmark" : "Bookmark"}</span>
+            </DropdownMenuItem>
             <DropdownMenuItem className="narrow-only" onSelect={openDaily}>
               <CalendarIcon />
               <span>Daily note</span>
@@ -1278,6 +1356,7 @@ export function App() {
             <AccordionItem value="vault" className="sidebar-item">
               <AccordionTrigger className="sidebar-trigger">Vault</AccordionTrigger>
               <AccordionContent className="sidebar-body">
+                <UnseenPathsContext.Provider value={changes.unseenPaths}>
                 <FileTree
                   data={tree}
                   activePath={path}
@@ -1306,6 +1385,7 @@ export function App() {
                       .catch((e: unknown) => setToast(`Sort failed: ${e instanceof Error ? e.message : String(e)}`))
                   }
                 />
+                </UnseenPathsContext.Provider>
               </AccordionContent>
             </AccordionItem>
 
@@ -1385,10 +1465,43 @@ export function App() {
 
       {drawerOpen && isMobile ? <div className="drawer-backdrop open" onClick={() => setDrawerOpen(false)} /> : null}
 
+      {showChanges ? (
+        <ChangesView
+          changes={changes}
+          onOpen={(p) => void openNote(p)}
+          beforeRevert={async (p) => {
+            // Typing in the open note that has not reached the server yet
+            // would otherwise be overwritten by the reverted text.
+            if (p === path) await flushSaveRef.current();
+          }}
+          onVaultChanged={(p) => {
+            void refreshTree();
+            void refreshGit();
+            if (p === path) {
+              void api
+                .readNote(p)
+                .then((data) => {
+                  noteRevisionRef.current = data.revision;
+                  resetBaselineRef.current(data.content);
+                  setContent(data.content);
+                })
+                .catch((e: unknown) => {
+                  const msg = e instanceof Error ? e.message : String(e);
+                  if (/^404|not found/i.test(msg)) {
+                    setPath(null);
+                    setContent("");
+                  } else setToast(`Could not reload ${p}: ${msg}`);
+                });
+            }
+          }}
+        />
+      ) : null}
+
       <main
         ref={mainRef}
         className={clsx(
           "main",
+          showChanges && "is-covered",
           isMobile && mobileView === "preview" && "show-preview",
           !isMobile && desktopView !== "split" && `view-${desktopView}`,
           path && "has-toolbar",
@@ -1494,7 +1607,7 @@ export function App() {
         ) : null}
       </main>
 
-      {isMobile && path ? (
+      {isMobile && path && !showChanges ? (
         <nav className="mobile-tabs" aria-label="Editor view">
           <Tabs
             value={mobileView}

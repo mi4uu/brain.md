@@ -17,6 +17,33 @@ export interface GitStatus {
   autocommit: { enabled: boolean; debounceMs: number };
 }
 
+export type ChangeStatus = "added" | "modified" | "deleted" | "renamed";
+export type ActorKind = "human" | "agent" | "unattributed";
+
+export interface ChangedFile {
+  path: string;
+  oldPath?: string;
+  status: ChangeStatus;
+  actor: string;
+  actorKind: ActorKind;
+  hidden?: boolean;
+}
+
+export interface ChangeCommit {
+  sha: string;
+  ts: number;
+  author: string;
+  files: ChangedFile[];
+  afterSeen?: boolean;
+}
+
+export interface ChangesPage {
+  enabled: boolean;
+  seen: { sha: string; ts: number } | null;
+  commits: ChangeCommit[];
+  hasMore: boolean;
+}
+
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -33,6 +60,39 @@ function encPath(p: string): string {
 }
 
 export const gitApi = {
+  async changes(opts: { limit?: number; before?: string } = {}): Promise<ChangesPage> {
+    const params = new URLSearchParams();
+    if (opts.limit) params.set("limit", String(opts.limit));
+    if (opts.before) params.set("before", opts.before);
+    return jsonOrThrow<ChangesPage>(await fetch(`/api/git/changes?${params.toString()}`));
+  },
+  async markSeen(sha: string): Promise<{ sha: string; ts: number }> {
+    return jsonOrThrow(
+      await fetch("/api/git/changes/seen", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sha }),
+      }),
+    );
+  },
+  async patch(sha: string, path: string, oldPath?: string): Promise<{ patch: string }> {
+    const old = oldPath ? `&oldPath=${encPath(oldPath)}` : "";
+    return jsonOrThrow<{ patch: string }>(
+      await fetch(`/api/git/patch?sha=${encodeURIComponent(sha)}&path=${encPath(path)}${old}`),
+    );
+  },
+  async revert(sha: string, path: string, mode: "patch" | "restore" | "trash"): Promise<{ ok: true; sha: string | null }> {
+    const res = await fetch("/api/git/revert", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sha, path, mode }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+      throw new RevertFailed(body.code ?? String(res.status), body.error ?? res.statusText);
+    }
+    return res.json() as Promise<{ ok: true; sha: string | null }>;
+  },
   async status(): Promise<GitStatus> {
     return jsonOrThrow<GitStatus>(await fetch("/api/git/status"));
   },
@@ -89,3 +149,12 @@ export const gitApi = {
     );
   },
 };
+
+export class RevertFailed extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}

@@ -239,6 +239,9 @@ Small, nested radii: 4px for rows, keycaps, code and chips; 6px for buttons, inp
 ### Wikilink (signature)
 Links between notes render as link-coloured text wrapped in mono `[[` `]]` brackets at 0.75em in muted text; on hover the brackets take the link colour and the text underlines. Broken links use the warn colour with a wavy underline. This is the one detail only brain.md has; do not reuse the bracket treatment for anything that is not a note link.
 
+### Changes View (signature)
+The owner's review of what agents and people changed. It takes the main area (not a dialog) and opens on start when agents changed something since the last "Mark all seen", unless the URL names a note. Day groups (Today, Yesterday, date) hold one row per note: an accent dot when it is new, the path with the folder muted, actor chips (agent in mono with a strong hairline, person as muted sans, unattributed with a dashed hairline), the edit count and the last time in mono. A row expands into its edits, each with Diff and Revert. Revert asks which of two things to do, undo only this change or restore the note to before it, and lists the later edits the second option removes. Only agent changes count as new; the owner's own edits are listed but never highlighted. The same accent dot marks changed notes in the tree, and the topbar carries the count.
+
 ### Accent Picker
 Settings > Editor shows the five accent presets as a radiogroup of bordered swatch buttons (12px dot in the preset colour for the current theme, label in UI type). The active preset gets the active surface step and the strong hairline. Arrow keys, Home and End move the selection.
 

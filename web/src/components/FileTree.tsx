@@ -1,4 +1,5 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useContext, useMemo, useState, type ReactNode } from "react";
+import { UnseenPathsContext } from "../changes/useChanges";
 import clsx from "clsx";
 import {
   ChevRightIcon,
@@ -432,6 +433,7 @@ function NoteRow({
 >) {
   const label = node.name.endsWith(".md") ? node.name.slice(0, -3) : node.name;
   const active = node.path === activePath;
+  const changed = useContext(UnseenPathsContext).has(node.path);
   return (
     <RowContextMenu items={getCtxItems(node)}>
       <div
@@ -456,6 +458,7 @@ function NoteRow({
           <FileIcon />
         </span>
         <span className="label">{label}</span>
+        {changed ? <span className="tree-changed" role="img" aria-label="Changed by an agent" title="Changed by an agent since you last looked" /> : null}
         <div className="tree-actions" onClick={(e) => e.stopPropagation()}>
           <RowDropdownMenu items={getCtxItems(node)} />
         </div>
