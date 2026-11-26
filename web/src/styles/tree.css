@@ -122,7 +122,11 @@
   .tree-row {
     min-height: var(--tap);
     /* leave room for the absolutely-positioned action on touch */
-    padding-right: 36px;
+    padding-right: 48px;
+  }
+  .tree-actions button {
+    width: 40px;
+    height: 40px;
   }
 }
 

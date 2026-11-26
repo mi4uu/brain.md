@@ -564,7 +564,7 @@ export function App() {
   }, []);
 
   const openNote = useCallback(
-    async (p: string, opts?: { headingSlug?: string; keepChanges?: boolean }): Promise<boolean> => {
+    async (p: string, opts?: { headingSlug?: string; keepChanges?: boolean; edit?: boolean }): Promise<boolean> => {
       if (!(await leaveNote())) {
         revertHash();
         return false;
@@ -575,7 +575,8 @@ export function App() {
         setPath(p);
         setContent(data.content);
         setTagFilter(null);
-        setMobileView("edit");
+        // On a phone a note opens for reading; new and daily notes open for writing.
+        setMobileView(opts?.edit ? "edit" : "preview");
         if (!opts?.keepChanges) setShowChanges(false);
         const want = `#/note/${encodeURI(p)}${opts?.headingSlug ? `#${opts.headingSlug}` : ""}`;
         if (window.location.hash !== want) {
@@ -787,7 +788,7 @@ export function App() {
       try {
         await api.writeNote(rel, `# ${trimmed}\n\n`);
         await refreshTree();
-        await openNote(rel);
+        await openNote(rel, { edit: true });
       } catch (e) {
         setToast(`Create failed: ${e instanceof Error ? e.message : String(e)}`);
       }
@@ -828,7 +829,7 @@ export function App() {
     }
     await refreshTree();
     setMissingNote(null);
-    await openNote(p);
+    await openNote(p, { edit: true });
   }, [missingNote, openNote, refreshTree]);
 
   const createFolder = useCallback(
@@ -929,7 +930,7 @@ export function App() {
       await api.writeNote(rel, `# ${name}\n\n`);
       await refreshTree();
     }
-    await openNote(rel);
+    await openNote(rel, { edit: true });
   }, [dailyDir, openNote, refreshTree]);
 
   const refreshSettings = useCallback(async () => {
@@ -1113,7 +1114,18 @@ export function App() {
           </span>
         </a>
         <span className="title">
-          {showChanges ? "Changes" : path ? path.replace(/\.md$/, "") : ""}
+          {showChanges ? (
+            "Changes"
+          ) : path ? (
+            <span title={path.replace(/\.md$/, "")}>
+              {path.includes("/") ? (
+                <span className="title-dir">{path.slice(0, path.lastIndexOf("/") + 1)}</span>
+              ) : null}
+              {path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/, "")}
+            </span>
+          ) : (
+            ""
+          )}
           {!showChanges && path && changes.latestByPath.get(path) ? (
             <button
               type="button"
@@ -1126,22 +1138,22 @@ export function App() {
             </button>
           ) : null}
         </span>
-        {gitStatus?.enabled ? (
-          <div className="topbar-center">
-            <GitStatusChip status={gitStatus} />
-          </div>
-        ) : null}
-        <span className="saved">
-          {path
-            ? saveStatus === "saved"
-              ? "saved"
-              : saveStatus === "dirty"
-                ? "unsaved"
-                : saveStatus === "saving"
-                  ? "saving…"
-                  : "error"
-            : ""}
-        </span>
+        <StatusChip
+          hasNote={!!path}
+          save={saveStatus}
+          git={gitStatus}
+          onRetrySave={() => void flush()}
+          onRecord={async () => {
+            try {
+              await gitApi.flush();
+            } catch (e) {
+              setToast(`Could not record history: ${e instanceof Error ? e.message : String(e)}`);
+            }
+            void refreshGit();
+            void changes.reload();
+          }}
+          onHistory={() => setShowHistory(true)}
+        />
         {changes.available ? (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -1289,9 +1301,6 @@ export function App() {
         <header>
           <strong className="sidebar-title">Vault</strong>
           <span style={{ flex: 1 }} />
-          <IconBtn label="Search (⌘P)" onClick={() => setCmd("search")}>
-            <SearchIcon />
-          </IconBtn>
           <IconBtn label="New note" onClick={() => createNote("")}>
             <FilePlusIcon />
           </IconBtn>
@@ -1841,27 +1850,87 @@ function TagsContent({
   );
 }
 
-function GitStatusChip({ status }: { status: GitStatus }) {
-  if (!status.enabled) return null;
-  const cls = status.dirty ? "dirty" : "clean";
-  const ts = status.lastCommit
-    ? new Date(status.lastCommit.ts).toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "—";
+// One place for "is my work safe": the open note's save state first, then
+// whether the vault's history has caught up. Each state says what it means
+// and, where there is something to do, the click does it.
+function StatusChip({
+  hasNote,
+  save,
+  git,
+  onRetrySave,
+  onRecord,
+  onHistory,
+}: {
+  hasNote: boolean;
+  save: "saved" | "dirty" | "saving" | "error";
+  git: GitStatus | null;
+  onRetrySave: () => void;
+  onRecord: () => void;
+  onHistory: () => void;
+}) {
+  const history = git?.enabled ? git : null;
+  const last = history?.lastCommit
+    ? new Date(history.lastCommit.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : null;
+  let tone: "ok" | "wait" | "warn" | "error" = "ok";
+  let label = "";
+  let hint = "";
+  let action: (() => void) | null = null;
+  if (hasNote && save === "error") {
+    tone = "error";
+    label = "Not saved";
+    hint = "The last save failed. Click to try again.";
+    action = onRetrySave;
+  } else if (hasNote && save === "saving") {
+    tone = "wait";
+    label = "Saving";
+    hint = "Writing the note to disk.";
+  } else if (hasNote && save === "dirty") {
+    tone = "warn";
+    label = "Unsaved";
+    hint = "Changes are saved a moment after you stop typing.";
+  } else if (history?.dirty) {
+    tone = "warn";
+    label = hasNote ? "Saved, not in history" : "Not in history";
+    hint = "Saved to disk. Autocommit adds it to history shortly. Click to record it now.";
+    action = onRecord;
+  } else if (history) {
+    label = hasNote ? "Saved" : last ? `In history ${last}` : "No history yet";
+    hint = last
+      ? `${hasNote ? "Saved to disk and " : ""}in history. Last change ${last}. Click for history.`
+      : "Nothing recorded yet.";
+    action = onHistory;
+  } else if (hasNote) {
+    label = "Saved";
+    hint = "Saved to disk. Git history is off for this vault.";
+  } else {
+    return null;
+  }
+  const body = (
+    <>
+      <span className="status-dot" aria-hidden="true" />
+      <span className="status-label" aria-live="polite">
+        {label}
+      </span>
+    </>
+  );
   return (
-    <span
-      className={`history-status-bar ${cls}`}
-      title={
-        status.lastCommit
-          ? `${status.lastCommit.subject}\n${status.lastCommit.sha.slice(0, 7)} · ${new Date(status.lastCommit.ts).toLocaleString()}`
-          : "no commits yet"
-      }
-    >
-      <span className="dot" />
-      <span>{status.dirty ? "uncommitted" : ts}</span>
-    </span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        {action ? (
+          <button type="button" className={`status-chip is-${tone}`} onClick={action} aria-label={`${label}. ${hint}`}>
+            {body}
+          </button>
+        ) : (
+          <span className={`status-chip is-${tone}`} tabIndex={0} aria-label={`${label}. ${hint}`}>
+            {body}
+          </span>
+        )}
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="max-w-[260px]">
+        {hint}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

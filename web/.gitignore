@@ -30,3 +30,6 @@ plugins/impeccable-live.client.ts
 app/plugins/impeccable-live.client.ts
 src/plugins/impeccable-live.client.ts
 # impeccable-live-ignore-end
+
+# Local critique snapshots (absolute paths, per machine)
+.impeccable/critique/

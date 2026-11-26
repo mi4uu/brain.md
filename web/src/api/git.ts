@@ -93,6 +93,10 @@ export const gitApi = {
     }
     return res.json() as Promise<{ ok: true; sha: string | null }>;
   },
+  // Records pending autocommit edits now, each under whoever made them.
+  async flush(): Promise<{ sha: string | null }> {
+    return jsonOrThrow(await fetch("/api/git/flush", { method: "POST" }));
+  },
   async status(): Promise<GitStatus> {
     return jsonOrThrow<GitStatus>(await fetch("/api/git/status"));
   },
