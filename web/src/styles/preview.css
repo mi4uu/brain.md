@@ -428,17 +428,6 @@
   padding-left: var(--space-4);
 }
 
-.preview .doc .frontmatter-error {
-  color: var(--callout-danger);
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  background: rgba(239, 68, 68, 0.08);
-  border: 1px solid var(--callout-danger);
-  border-radius: var(--radius-2);
-  padding: var(--space-2) var(--space-3);
-  margin: var(--space-3) 0;
-}
-
 .preview .doc :is(.katex-display) {
   margin: var(--space-3) 0;
   overflow-x: auto;
@@ -474,32 +463,4 @@
   height: 1px;
   background: var(--accent);
   pointer-events: none;
-}
-
-.props {
-  border: 1px solid var(--border);
-  background: var(--bg-surface);
-  border-radius: var(--radius-2);
-  padding: var(--space-2) var(--space-3);
-  margin: 0 0 var(--space-4);
-  font-family: var(--font-sans);
-  font-size: var(--text-sm);
-}
-.props-row {
-  display: grid;
-  grid-template-columns: 120px 1fr;
-  gap: var(--space-3);
-  padding: 4px 0;
-  border-bottom: 1px dashed var(--border);
-}
-.props-row:last-child {
-  border-bottom: none;
-}
-.props-row .k {
-  color: var(--text-3);
-  text-transform: lowercase;
-}
-.props-row .v {
-  color: var(--text-1);
-  word-break: break-word;
 }

@@ -6,6 +6,8 @@ import type { Backlink, TreeData } from "./api/types";
 import { FileTree } from "./components/FileTree";
 import { Editor } from "./components/Editor";
 import { Preview, type PreviewHandle } from "./components/Preview";
+import { PropertiesPanel } from "./components/properties/PropertiesPanel";
+import { minimalChange } from "./properties/model";
 import { Backlinks } from "./components/Backlinks";
 import { Related } from "./components/Related";
 import type { RelatedHit } from "./api/client";
@@ -108,6 +110,7 @@ import "./styles/toolbar.css";
 import "./styles/history.css";
 import "./styles/graph.css";
 import "./styles/changes.css";
+import "./styles/properties.css";
 import "./styles/hljs.css";
 import "katex/dist/katex.min.css";
 
@@ -267,6 +270,55 @@ export function App() {
     [content, path],
   );
   const editorViewRef = useRef<EditorView | null>(null);
+  const contentRef = useRef(content);
+  useEffect(() => {
+    contentRef.current = content;
+  }, [content]);
+  // Property edits from the panel. With the editor mounted they are one
+  // CodeMirror transaction over the changed bytes, so undo, autosave, the
+  // status chip and base_revision behave as for typing; without it the
+  // content state is edited directly.
+  const editContent = useCallback((edit: (current: string) => string) => {
+    const view = editorViewRef.current;
+    const current = view ? view.state.doc.toString() : contentRef.current;
+    const next = edit(current);
+    if (view) {
+      const change = minimalChange(current, next);
+      if (change) view.dispatch({ changes: change, userEvent: "input.properties" });
+    } else if (next !== current) {
+      setContent(next);
+    }
+  }, []);
+  // "Fix in source": show the editor if it is hidden, then put the cursor in
+  // the frontmatter.
+  const focusFrontmatter = useCallback(
+    (offset: number) => {
+      if (isMobile) setMobileView("edit");
+      else if (desktopView === "preview") setDesktopView("split");
+      window.setTimeout(() => {
+        const view = editorViewRef.current;
+        if (!view) return;
+        view.dispatch({ selection: { anchor: Math.min(offset, view.state.doc.length) }, scrollIntoView: true });
+        view.focus();
+      }, 50);
+    },
+    [isMobile, desktopView, setDesktopView],
+  );
+  // The panel lives above the preview; when the preview is hidden (editor
+  // only, or the mobile Edit tab) it moves above the editor instead.
+  const previewShown = isMobile ? mobileView === "preview" : desktopView !== "edit";
+  const propsPanel = (variant: "preview" | "editor") =>
+    path && !tagFilter ? (
+      <PropertiesPanel
+        key={path}
+        variant={variant}
+        notePath={path}
+        content={content}
+        onEdit={editContent}
+        onFixInSource={focusFrontmatter}
+        onNotice={setToast}
+      />
+    ) : null;
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const previewHandleRef = useRef<PreviewHandle | null>(null);
   const mainRef = useRef<HTMLElement | null>(null);
@@ -1551,6 +1603,7 @@ export function App() {
             <TagFilterView tag={tagFilter} notes={tagFilteredNotes ?? []} onOpen={openNote} onClear={() => setTagFilter(null)} />
           ) : path ? (
             <>
+              {previewShown ? null : propsPanel("editor")}
               <Editor
                 value={content}
                 onChange={setContent}
@@ -1591,6 +1644,7 @@ export function App() {
             ref={previewHandleRef}
             content={content}
             notePath={path}
+            header={previewShown ? propsPanel("preview") : null}
             resolveByBasename={resolveWikilink}
             onOpenNote={openNote}
             onMissingNote={askCreateMissing}
