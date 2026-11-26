@@ -1,4 +1,5 @@
 .props-panel {
+  container: props / inline-size;
   margin: 0 0 var(--space-4);
   font-family: var(--font-sans);
   font-size: var(--text-sm);
@@ -347,5 +348,42 @@
   }
   .props-error .btn {
     min-height: 40px;
+  }
+}
+
+/* Phone width (or a narrow pane): the name column gives way to the value.
+   Dates in the mono font need about 145px, and a datetime never fits beside
+   the name, so a datetime value drops to its own line under the name. */
+@container props (max-width: 440px) {
+  .prop-row {
+    grid-template-columns: 24px minmax(64px, 24%) minmax(0, 1fr) 24px;
+    column-gap: var(--space-1);
+  }
+  .prop-name {
+    text-overflow: ellipsis;
+  }
+  .prop-value {
+    min-width: 0;
+  }
+  .prop-input::-webkit-calendar-picker-indicator {
+    margin-inline-start: var(--space-1);
+  }
+  .prop-row:has(> .prop-value input[type="datetime-local"]) > .prop-value {
+    grid-column: 2 / 5;
+    grid-row: 2;
+  }
+  .prop-row > .prop-remove {
+    grid-column: 4;
+    grid-row: 1;
+  }
+  .prop-chip-input {
+    flex: 1 1 48px;
+  }
+}
+@media (pointer: coarse) {
+  @container props (max-width: 440px) {
+    .prop-row {
+      grid-template-columns: 40px minmax(72px, 24%) minmax(0, 1fr) 40px;
+    }
   }
 }
