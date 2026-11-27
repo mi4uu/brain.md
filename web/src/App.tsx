@@ -410,14 +410,14 @@ export function App() {
   const onEditTable = useCallback(
     (range: LineRange, fn: (t: MdTable) => MdTable) => {
       const v = editorViewRef.current;
-      if (v) {
-        dispatchTableEdit(v, range, fn);
-        return;
-      }
+      if (v) return dispatchTableEdit(v, range, fn);
+      let applied = false;
       editContent((cur) => {
         const edit = tableEdit(cur, range, fn);
+        applied = edit !== null;
         return edit ? applyEdit(cur, edit) : cur;
       });
+      return applied;
     },
     [editContent],
   );

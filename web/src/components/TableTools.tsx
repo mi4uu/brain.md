@@ -1,12 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { readTable } from "../tables/apply";
 import { escapeCell, setCell, type LineRange, type MdTable } from "../tables/md-table";
+import { toast } from "./ui/use-toast";
 
 export interface CellSel {
   line: number;
-  end: number;
   row: number;
   col: number;
+}
+
+interface Editing extends CellSel {
+  text: string;
 }
 
 interface Box {
@@ -26,7 +30,7 @@ interface TableToolsProps {
   docRef: RefObject<HTMLDivElement | null>;
   content: string;
   html: string;
-  onEditTable: (range: LineRange, fn: (t: MdTable) => MdTable) => void;
+  onEditTable: (range: LineRange, fn: (t: MdTable) => MdTable) => boolean;
   children: ReactNode;
 }
 
@@ -59,10 +63,9 @@ function addressOf(target: EventTarget | null): CellSel | null {
   if (!cell || !table || table.closest(".embed-body")) return null;
   const tr = cell.parentElement as HTMLTableRowElement | null;
   const line = Number(table.dataset.sourceLine);
-  const end = Number(table.dataset.sourceEnd);
-  if (!tr || !Number.isInteger(line) || !Number.isInteger(end)) return null;
+  if (!tr || !Number.isInteger(line)) return null;
   const inHead = tr.parentElement?.tagName === "THEAD";
-  return { line, end, row: inHead ? -1 : tr.rowIndex - 1, col: (cell as HTMLTableCellElement).cellIndex };
+  return { line, row: inHead ? -1 : tr.rowIndex - 1, col: (cell as HTMLTableCellElement).cellIndex };
 }
 
 function matchesModel(table: HTMLTableElement, model: MdTable): boolean {
@@ -75,11 +78,14 @@ function matchesModel(table: HTMLTableElement, model: MdTable): boolean {
 const cellText = (m: MdTable, row: number, col: number): string =>
   (row < 0 ? m.header[col] : m.rows[row]?.[col]) ?? "";
 
+const sameCell = (a: CellSel, b: CellSel): boolean => a.line === b.line && a.row === b.row && a.col === b.col;
+
 export function TableTools({ scrollerRef, docRef, content, html, onEditTable, children }: TableToolsProps) {
-  const [editing, setEditing] = useState<CellSel | null>(null);
+  const [editing, setEditing] = useState<Editing | null>(null);
   const [geo, setGeo] = useState<Geo | null>(null);
   const [tick, setTick] = useState(0);
-  const doneRef = useRef(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const closedRef = useRef<Editing | null>(null);
 
   // The end line is read from the rendered table at call time: a stored one
   // goes stale as soon as an edit changes the table's line count.
@@ -90,6 +96,22 @@ export function TableTools({ scrollerRef, docRef, content, html, onEditTable, ch
     const range = { from: line, to: end };
     const model = readTable(content, range);
     return model && matchesModel(table, model) ? range : null;
+  };
+
+  const close = (target: Editing) => {
+    closedRef.current = target;
+    setEditing((cur) => (cur === target ? null : cur));
+  };
+
+  const commit = (target: Editing, value: string) => {
+    if (closedRef.current === target) return;
+    close(target);
+    const next = escapeCell(value);
+    if (next === target.text) return;
+    const range = liveRange(target.line);
+    if (!range || !onEditTable(range, (t) => setCell(t, target.row, target.col, next))) {
+      toast({ description: "Table changed, edit not applied" });
+    }
   };
 
   useEffect(() => {
@@ -118,64 +140,59 @@ export function TableTools({ scrollerRef, docRef, content, html, onEditTable, ch
   useEffect(() => {
     const doc = docRef.current;
     if (!doc) return;
+    const editable = (t: Element): CellSel | null =>
+      t.closest("a, input, button, summary") ? null : addressOf(t);
+    // A press on another cell must not blur the open input: the blur commit
+    // would re-render the table before mouseup and the click would miss.
+    const onMouseDown = (e: MouseEvent) => {
+      if (editing && e.button === 0 && editable(e.target as Element)) e.preventDefault();
+    };
     const onClick = (e: MouseEvent) => {
-      const t = e.target as Element;
-      if (t.closest("a, input, button, summary")) return;
-      const addr = addressOf(t);
+      const addr = editable(e.target as Element);
       if (!addr) return;
       const selection = window.getSelection();
       if (selection && !selection.isCollapsed) return;
-      if (!liveRange(addr.line)) return;
-      doneRef.current = false;
-      setEditing(addr);
+      const range = liveRange(addr.line);
+      const model = range ? readTable(content, range) : null;
+      if (!model) return;
+      e.preventDefault();
+      if (editing && sameCell(editing, addr)) return;
+      if (editing && inputRef.current) commit(editing, inputRef.current.value);
+      setEditing({ ...addr, text: cellText(model, addr.row, addr.col) });
     };
+    doc.addEventListener("mousedown", onMouseDown);
     doc.addEventListener("click", onClick);
-    return () => doc.removeEventListener("click", onClick);
-  }, [docRef, content, html]);
-
-  const model = editing ? readTable(content, { from: editing.line, to: editing.end }) : null;
-
-  const commit = (value: string) => {
-    if (!editing || doneRef.current) return;
-    doneRef.current = true;
-    const target = editing;
-    setEditing(null);
-    const range = liveRange(target.line);
-    const current = range ? readTable(content, range) : null;
-    if (!range || !current) return;
-    const next = escapeCell(value);
-    if (next === cellText(current, target.row, target.col)) return;
-    onEditTable(range, (t) => setCell(t, target.row, target.col, next));
-  };
-
-  const cancel = () => {
-    doneRef.current = true;
-    setEditing(null);
-  };
+    return () => {
+      doc.removeEventListener("mousedown", onMouseDown);
+      doc.removeEventListener("click", onClick);
+    };
+  });
 
   return (
     <>
       {children}
       <div className="table-tools">
-        {editing && model && geo?.edit ? (
+        {editing && geo?.edit ? (
           <input
+            key={`${editing.line}:${editing.row}:${editing.col}`}
+            ref={inputRef}
             // biome-ignore lint/a11y/noAutofocus: the input opens on a click and must take the keyboard at once
             autoFocus
             className="tt-input"
             aria-label="Edit table cell"
-            defaultValue={cellText(model, editing.row, editing.col)}
-            style={{ left: geo.edit.left, top: geo.edit.top, width: geo.edit.width, minHeight: geo.edit.height }}
+            defaultValue={editing.text}
+            style={{ left: geo.edit.left, top: geo.edit.top, width: geo.edit.width, height: geo.edit.height }}
             onFocus={(e) => e.currentTarget.select()}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) {
                 e.preventDefault();
-                commit(e.currentTarget.value);
+                commit(editing, e.currentTarget.value);
               } else if (e.key === "Escape") {
                 e.preventDefault();
-                cancel();
+                close(editing);
               }
             }}
-            onBlur={(e) => commit(e.currentTarget.value)}
+            onBlur={(e) => commit(editing, e.currentTarget.value)}
           />
         ) : null}
       </div>

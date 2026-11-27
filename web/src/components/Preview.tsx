@@ -53,7 +53,7 @@ interface PreviewProps {
   onOpenTag: (tag: string) => void;
   onScrollLine?: (line: number) => void;
   onSelectLine?: (line: number) => void;
-  onEditTable?: (range: LineRange, fn: (t: MdTable) => MdTable) => void;
+  onEditTable?: (range: LineRange, fn: (t: MdTable) => MdTable) => boolean;
 }
 
 export interface PreviewHandle {
@@ -272,7 +272,8 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
         if (inEmbed.classList?.contains("embed-body")) return;
         inEmbed = inEmbed.parentElement;
       }
-      if (onEditTable && (e.target as HTMLElement | null)?.closest?.("table[data-source-end]")) return;
+      // TableTools claims the clicks it turns into a cell edit.
+      if (e.defaultPrevented) return;
       // climb again — no link/tag/checkbox hit → find nearest [data-source-line]
       if (!onSelectLine) return;
       let block = e.target as HTMLElement | null;
@@ -293,7 +294,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
     };
     root.addEventListener("click", handler);
     return () => root.removeEventListener("click", handler);
-  }, [onOpenNote, onMissingNote, onOpenTag, onSelectLine, onEditTable, html]);
+  }, [onOpenNote, onMissingNote, onOpenTag, onSelectLine, html]);
 
   // note transclusion: fill .embed-note bodies w/ rendered content of target note
   useEffect(() => {
