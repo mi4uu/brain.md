@@ -1,0 +1,217 @@
+import { describe, expect, test } from "bun:test";
+import type { BaseQueryResponse } from "@brainmd/shared/base-types";
+import {
+  candidateKeys,
+  clampWidth,
+  coerceInput,
+  columnAt,
+  coverSource,
+  dragStarted,
+  editText,
+  filtersFrom,
+  formatScalar,
+  flatFilters,
+  isEditable,
+  linkParts,
+  moveChange,
+  moveColumn,
+  moveRowInResult,
+  patchRowRevision,
+  patchRowValues,
+  propNameOf,
+  summarise,
+  toggleColumn,
+} from "../src/bases/model";
+
+describe("columns and editing", () => {
+  test("propNameOf and isEditable", () => {
+    expect(propNameOf("status")).toBe("status");
+    expect(propNameOf("note.status")).toBe("status");
+    expect(propNameOf("file.name")).toBeNull();
+    expect(propNameOf("formula.x")).toBeNull();
+    expect(isEditable("text", "status", "a")).toBe(true);
+    expect(isEditable("file", "file.size", 3)).toBe(false);
+    expect(isEditable("text", "meta", { a: 1 })).toBe(false);
+    expect(isEditable("formula", "formula.x", 1)).toBe(false);
+  });
+
+  test("isEditable refuses values the editor cannot show faithfully", () => {
+    expect(isEditable("number", "n", "n/a")).toBe(false);
+    expect(isEditable("number", "n", Number.POSITIVE_INFINITY)).toBe(false);
+    expect(isEditable("number", "n", 3)).toBe(true);
+    expect(isEditable("number", "n", null)).toBe(true);
+    expect(isEditable("text", "t", "a\nb")).toBe(false);
+    expect(isEditable("multitext", "l", [{ a: 1 }])).toBe(false);
+    expect(isEditable("multitext", "l", "a, b")).toBe(false);
+    expect(isEditable("multitext", "l", ["a", "b"])).toBe(true);
+    expect(isEditable("checkbox", "c", "yes")).toBe(false);
+    expect(isEditable("text", "t", ["a"])).toBe(false);
+  });
+
+  test("coerceInput by type", () => {
+    expect(coerceInput("number", " 12.5 ")).toEqual({ kind: "set", value: 12.5 });
+    expect(coerceInput("number", "abc")).toEqual({ kind: "error", message: "Not a number" });
+    expect(coerceInput("number", "")).toEqual({ kind: "unset" });
+    expect(coerceInput("text", "  hi ")).toEqual({ kind: "set", value: "hi" });
+    expect(coerceInput("date", "2026-12-01")).toEqual({ kind: "set", value: "2026-12-01" });
+    expect(coerceInput("multitext", "a, b,, c")).toEqual({ kind: "set", value: ["a", "b", "c"] });
+    expect(coerceInput("tags", "#a, b")).toEqual({ kind: "set", value: ["a", "b"] });
+    expect(coerceInput("multitext", " , ")).toEqual({ kind: "unset" });
+    expect(coerceInput("tags", "##a, b c,  #")).toEqual({ kind: "set", value: ["a", "b-c"] });
+    expect(coerceInput("checkbox", "true")).toEqual({ kind: "set", value: true });
+  });
+
+  test("editText", () => {
+    expect(editText(null)).toBe("");
+    expect(editText(["a", "b"])).toBe("a, b");
+    expect(editText(3)).toBe("3");
+    expect(editText(false)).toBe("false");
+  });
+
+  test("linkParts", () => {
+    expect(linkParts("[[people/Ann]]")).toEqual({ target: "people/Ann", label: "Ann" });
+    expect(linkParts("[[Ann|The Ann]]")).toEqual({ target: "Ann", label: "The Ann" });
+    expect(linkParts("[[Ann#Heading]]")).toEqual({ target: "Ann", label: "Ann" });
+    expect(linkParts("plain")).toBeNull();
+    expect(linkParts("[[]]")).toBeNull();
+  });
+
+  test("width and column order helpers", () => {
+    expect(clampWidth(10)).toBe(60);
+    expect(clampWidth(5000)).toBe(800);
+    expect(clampWidth(150.6)).toBe(151);
+    expect(toggleColumn([], "status")).toEqual(["file.name", "status"]);
+    expect(toggleColumn(["file.name", "status"], "status")).toEqual(["file.name"]);
+    expect(moveColumn(["a", "b", "c"], "c", -1)).toEqual(["a", "c", "b"]);
+    expect(moveColumn(["a", "b", "c"], "a", -1)).toEqual(["a", "b", "c"]);
+  });
+
+  test("simple filter editor round trip", () => {
+    expect(flatFilters(undefined)).toEqual([]);
+    expect(flatFilters("a == 1")).toEqual(["a == 1"]);
+    expect(flatFilters({ and: ["a", "b"] })).toEqual(["a", "b"]);
+    expect(flatFilters({ or: ["a"] })).toBeNull();
+    expect(flatFilters({ and: ["a", { not: ["b"] }] })).toBeNull();
+    expect(filtersFrom([" a ", ""])).toEqual({ and: ["a"] });
+    expect(filtersFrom([])).toBeNull();
+  });
+});
+
+describe("summaries", () => {
+  const v = [3, 1, 2, null, "x"];
+  test("numeric", () => {
+    expect(summarise("Sum", v)).toBe("6");
+    expect(summarise("Average", v)).toBe("2");
+    expect(summarise("Min", v)).toBe("1");
+    expect(summarise("Max", v)).toBe("3");
+    expect(summarise("Range", v)).toBe("2");
+    expect(summarise("Median", [1, 2, 3, 4])).toBe("2.5");
+    expect(summarise("Average", [1, 2])).toBe("1.5");
+    expect(summarise("Sum", ["a"])).toBeNull();
+  });
+  test("counts and dates", () => {
+    expect(summarise("Empty", [null, "", [], "a"])).toBe("3");
+    expect(summarise("Filled", [null, "", [], "a"])).toBe("1");
+    expect(summarise("Checked", [true, false, true, null])).toBe("2");
+    expect(summarise("Unchecked", [true, false, true, null])).toBe("1");
+    expect(summarise("Unique", ["a", "a", "b", null])).toBe("2");
+    expect(summarise("Earliest", ["2026-12-01", "2026-01-05"])).toBe("2026-01-05");
+    expect(summarise("Latest", ["2026-12-01", "2026-01-05"])).toBe("2026-12-01");
+    expect(summarise("Nope", [1])).toBeNull();
+  });
+});
+
+describe("kanban drag", () => {
+  test("drag threshold and drop target", () => {
+    expect(dragStarted(3, 3)).toBe(false);
+    expect(dragStarted(6, 0)).toBe(true);
+    const cols = [
+      { key: "Todo", left: 0, right: 100, top: 0, bottom: 400 },
+      { key: null, left: 110, right: 210, top: 0, bottom: 400 },
+    ];
+    expect(columnAt(cols, 50, 10)).toEqual({ key: "Todo" });
+    expect(columnAt(cols, 150, 10)).toEqual({ key: null });
+    expect(columnAt(cols, 105, 10)).toBeUndefined();
+  });
+
+  test("moveChange writes the right type", () => {
+    expect(moveChange("text", "Done")).toEqual({ set: "Done" });
+    expect(moveChange(undefined, "Done")).toEqual({ set: "Done" });
+    expect(moveChange("number", "3")).toEqual({ set: 3 });
+    expect(moveChange("number", "x")).toEqual({ set: "x" });
+    expect(moveChange("checkbox", "true")).toEqual({ set: true });
+    expect(moveChange("multitext", "a")).toEqual({ set: ["a"] });
+    expect(moveChange("text", null)).toEqual({ unset: true });
+  });
+});
+
+const board = (): BaseQueryResponse => ({
+  views: [{ name: "B", type: "kanban" }],
+  view: "B",
+  columns: [{ key: "file.name", label: "Name", type: "file" }],
+  groups: [
+    { key: "Todo", label: "Todo", count: 2, rows: [{ path: "a.md", title: "a", revision: "1", values: { "file.name": "a.md" } }, { path: "b.md", title: "b", revision: "2", values: {} }] },
+    { key: "Done", label: "Done", count: 0, rows: [] },
+  ],
+  total: 2,
+  warnings: [],
+});
+
+describe("optimistic result updates", () => {
+  test("moveRowInResult moves a card and adjusts counts", () => {
+    const r = moveRowInResult(board(), "a.md", "Done");
+    expect(r.groups.map((g) => [g.key, g.count, g.rows.map((x) => x.path)])).toEqual([["Todo", 1, ["b.md"]], ["Done", 1, ["a.md"]]]);
+  });
+  test("a No value column is created on demand; an unknown column leaves the result alone", () => {
+    expect(moveRowInResult(board(), "a.md", null).groups.at(-1)).toMatchObject({ key: null, label: "No value", count: 1 });
+    const same = board();
+    expect(moveRowInResult(same, "a.md", "Blocked")).toBe(same);
+    expect(moveRowInResult(same, "zzz.md", "Done")).toBe(same);
+  });
+  test("patchRowValues touches one row", () => {
+    const r = patchRowValues(board(), "b.md", { status: "Doing" });
+    expect(r.groups[0]!.rows[1]!.values).toEqual({ status: "Doing" });
+    expect(r.groups[0]!.rows[0]!.values).toEqual({ "file.name": "a.md" });
+  });
+  test("patchRowRevision sets one row's revision", () => {
+    const r = patchRowRevision(board(), "b.md", "9");
+    expect(r.groups[0]!.rows[1]!.revision).toBe("9");
+    expect(r.groups[0]!.rows[0]!.revision).toBe("1");
+  });
+  test("candidateKeys", () => {
+    const k = candidateKeys(["status", "file.name"], ["late"]);
+    expect(k).toContain("file.mtime");
+    expect(k).toContain("status");
+    expect(k).toContain("formula.late");
+    expect(new Set(k).size).toBe(k.length);
+  });
+});
+
+describe("cover images", () => {
+  test("external URL, media file next to the note, and refusals", () => {
+    expect(coverSource("a/b.md", "https://x.test/p.png")).toEqual({ external: "https://x.test/p.png" });
+    expect(coverSource("a/b.md", "[[pic.png]]")).toEqual({ media: "a/.media/pic.png" });
+    expect(coverSource("b.md", "![[sub/pic.JPG|200]]")).toEqual({ media: ".media/pic.JPG" });
+    expect(coverSource("a/b.md", "pic.webp")).toEqual({ media: "a/.media/pic.webp" });
+    expect(coverSource("a/b.md", ["[[pic.png]]", "x"])).toEqual({ media: "a/.media/pic.png" });
+    expect(coverSource("a/b.md", "notes.txt")).toBeNull();
+    expect(coverSource("a/b.md", 3)).toBeNull();
+    expect(coverSource("a/b.md", "")).toBeNull();
+  });
+});
+
+describe("formatScalar", () => {
+  const col = (key: string, type: "file" | "text" | "datetime") => ({ key, label: key, type });
+  test("plain values", () => {
+    expect(formatScalar(col("n", "text"), 3)).toBe("3");
+    expect(formatScalar(col("n", "text"), null)).toBe("");
+    expect(formatScalar(col("n", "text"), "hi")).toBe("hi");
+    expect(formatScalar(col("n", "text"), { a: 1 })).toBe('{"a":1}');
+  });
+  test("timestamps are shown in local time; text that is not a date stays as written", () => {
+    const iso = "2026-11-26T10:00:00.000Z";
+    expect(formatScalar(col("file.mtime", "file"), iso)).not.toBe(iso);
+    expect(formatScalar(col("when", "datetime"), iso)).not.toBe(iso);
+    expect(formatScalar(col("file.mtime", "file"), "later")).toBe("later");
+  });
+});
