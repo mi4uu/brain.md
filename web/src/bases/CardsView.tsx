@@ -1,31 +1,65 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { api } from "../api/client";
 import { CellValue } from "./CellValue";
 import { RowMenu } from "./RowMenu";
+import { createQueue } from "./media-queue";
 import { coverSource } from "./model";
 import type { LayoutProps, Row } from "./types";
 
+const enqueueMedia = createQueue(4);
+
+// Resolves true once the element is near the viewport (at once without the API).
+function useNearViewport(): [RefObject<HTMLDivElement>, boolean] {
+  const ref = useRef<HTMLDivElement>(null);
+  const [near, setNear] = useState(typeof IntersectionObserver === "undefined");
+  useEffect(() => {
+    const el = ref.current;
+    if (near || !el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setNear(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [near]);
+  return [ref, near];
+}
+
 // A plain <img> load carries no bearer token, so with auth on it would 401.
-// Fetch the bytes through the app's patched fetch and show a blob URL.
+// Fetch the bytes through the app's patched fetch and show a blob URL, only
+// near the viewport and at most a few at a time.
 function MediaImg({ path }: { path: string }) {
+  const [ref, near] = useNearViewport();
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
-    let live = true;
+    setUrl(null);
+    if (!near) return;
+    const ctl = new AbortController();
     let made: string | null = null;
-    fetch(api.mediaUrl(path))
-      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(String(r.status)))))
-      .then((b) => {
-        if (!live) return;
-        made = URL.createObjectURL(b);
-        setUrl(made);
-      })
-      .catch(() => {});
+    const cancel = enqueueMedia(async () => {
+      const r = await fetch(api.mediaUrl(path), { signal: ctl.signal });
+      if (!r.ok) return;
+      const b = await r.blob();
+      if (ctl.signal.aborted) return;
+      made = URL.createObjectURL(b);
+      setUrl(made);
+    });
     return () => {
-      live = false;
+      cancel();
+      ctl.abort();
       if (made) URL.revokeObjectURL(made);
     };
-  }, [path]);
-  return url ? <img src={url} alt="" loading="lazy" /> : <div className="base-cover-ph" />;
+  }, [path, near]);
+  return (
+    <div ref={ref} className="base-cover-media">
+      {url ? <img src={url} alt="" /> : <div className="base-cover-ph" />}
+    </div>
+  );
 }
 
 function ExternalImg({ src }: { src: string }) {

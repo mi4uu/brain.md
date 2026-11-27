@@ -25,7 +25,7 @@ export function ListView({ result, host }: LayoutProps) {
                     const v = r.values[c.key] ?? null;
                     if (v === null || v === "" || (Array.isArray(v) && v.length === 0)) return null;
                     return (
-                      <span key={c.key} className="base-list-prop" title={c.label}>
+                      <span key={c.key} className="base-list-prop">
                         <span className="sr-only">{c.label}: </span>
                         <CellValue col={c} value={v} row={r} host={host} />
                       </span>
