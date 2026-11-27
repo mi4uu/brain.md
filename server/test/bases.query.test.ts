@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { runBaseQuery, type QueryEntry, type QueryIndex } from "../src/bases/query";
+import { runBaseQuery, type QueryDeps, type QueryEntry, type QueryIndex } from "../src/bases/query";
 import type { PropValue } from "@brainmd/shared/frontmatter";
 import type { PropertyType } from "@brainmd/shared/property-types";
 
@@ -55,8 +55,8 @@ const TYPES = new Map<string, PropertyType>([
 const ALL = () => true;
 const NO_SECRET = (p: string) => !p.startsWith("secret/");
 
-function q(source: string, o: { allowed?: (p: string) => boolean; req?: object; idx?: QueryIndex } = {}) {
-  return runBaseQuery({ source, ...o.req }, { index: o.idx ?? index(), allowed: o.allowed ?? ALL, types: TYPES, now: NOW });
+function q(source: string, o: { allowed?: (p: string) => boolean; req?: object; idx?: QueryIndex; deps?: Partial<QueryDeps> } = {}) {
+  return runBaseQuery({ source, ...o.req }, { index: o.idx ?? index(), allowed: o.allowed ?? ALL, types: TYPES, now: NOW, ...o.deps });
 }
 
 const paths = (r: ReturnType<typeof q>) => r.groups.flatMap((g) => g.rows.map((x) => x.path));
@@ -440,5 +440,64 @@ describe("robustness, round 3", () => {
     expect(r.groups[0]!.rows[0]!.values["formula.c0"]).toHaveLength(10000);
     expect(r.warnings.some((w) => w.includes("too large"))).toBe(true);
     expect(r.warnings.some((w) => w.includes("cut"))).toBe(true);
+  });
+});
+
+describe("robustness, round 4", () => {
+  const manyNotes = (n: number) => Array.from({ length: n }, (_, i) => entry(`bulk/n${i}.md`, { n: i }));
+  const chain9 = () => {
+    const defs = ['  f0: \'"xxxxxxxxxx"\''];
+    for (let i = 1; i <= 9; i++) defs.push(`  f${i}: formula.f${i - 1} + formula.f${i - 1}`);
+    return defs;
+  };
+  const wide = (order: string) => {
+    const g = Array.from({ length: 20 }, (_, i) => `  g${i}: (formula.f9 + formula.f9 + "${i}").lower()`);
+    const f = Array.from({ length: 20 }, (_, i) => `    - formula.g${i}.length > 0`);
+    return `formulas:\n${[...chain9(), ...g].join("\n")}\nfilters:\n  and:\n${f.join("\n")}\n    - formula.f6.length > 0\nviews:\n  - type: table\n    name: T\n    order: [${order}]\n`;
+  };
+
+  test("only small values a later phase reads are kept between phases", () => {
+    const stats = { retainedPeak: 0 };
+    const r = q(wide("file.name"), { idx: index({ entries: () => manyNotes(300) }), req: { limit: 1 }, deps: { stats } });
+    expect(r.total).toBe(300);
+    expect(stats.retainedPeak).toBe(0);
+    const big = { retainedPeak: 0 };
+    const r2 = q(wide("file.name, formula.f6, formula.f9"), { idx: index({ entries: () => manyNotes(300) }), req: { limit: 1 }, deps: { stats: big } });
+    expect(r2.total).toBe(300);
+    expect(r2.groups[0]!.rows[0]!.values["formula.f9"]).toHaveLength(5120);
+    // f0..f6 (1270 chars) stay because f9 reads them; f7..f9 are over 1000 and are computed again for the page row.
+    expect(big.retainedPeak).toBeGreaterThan(300 * 1270);
+    expect(big.retainedPeak).toBeLessThan(300 * 2000);
+    expect(r2.warnings).toEqual([]);
+  });
+
+  test("a filter formula read by a column formula is charged once", () => {
+    const ones = Array.from({ length: 300 }, () => "1").join(" + ");
+    const parts = Array.from({ length: 12 }, (_, i) => `f${i}`);
+    const defs = parts.map((f) => `  ${f}: ${ones}\n`).join("");
+    const sum = parts.map((f) => `formula.${f}`).join(" + ");
+    const r = q(`formulas:\n${defs}  heavy: ${sum}\n  half: formula.heavy / 2\nfilters: formula.heavy > 1\nviews:\n  - type: table\n    name: T\n    order: [file.name, formula.half]\n`);
+    expect(r.total).toBeGreaterThan(0);
+    expect(r.groups[0]!.rows[0]!.values["formula.half"]).toBe(1800);
+    expect(r.warnings).toEqual([]);
+  });
+
+  test("kept formula values stay under a query-wide cap; capped rows still get their values", () => {
+    const stats = { retainedPeak: 0 };
+    const r = q(wide("file.name, formula.f6"), { idx: index({ entries: () => manyNotes(300) }), req: { limit: 300 }, deps: { stats, retainCap: 50_000 } });
+    expect(r.total).toBe(300);
+    expect(stats.retainedPeak).toBeGreaterThan(0);
+    expect(stats.retainedPeak).toBeLessThanOrEqual(50_000);
+    expect(r.groups[0]!.rows.every((row) => (row.values["formula.f6"] as string).length === 640)).toBe(true);
+    expect(r.warnings.some((w) => w.includes("computed again"))).toBe(true);
+  });
+
+  test("sort and group keys count against the cap and are left empty past it", () => {
+    const stats = { retainedPeak: 0 };
+    const src = `formulas:\n${chain9().join("\n")}\nviews:\n  - type: table\n    name: T\n    sort:\n      - property: formula.f6\n    groupBy:\n      property: formula.f5\n`;
+    const r = q(src, { idx: index({ entries: () => manyNotes(300) }), req: { limit: 1 }, deps: { stats, retainCap: 50_000 } });
+    expect(r.total).toBe(300);
+    expect(stats.retainedPeak).toBeLessThanOrEqual(50_000);
+    expect(r.warnings.some((w) => w.includes("left empty"))).toBe(true);
   });
 });

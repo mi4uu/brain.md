@@ -47,7 +47,12 @@ export interface QueryDeps {
   // Effective property types (registry first, then inferred), from listProperties.
   types: ReadonlyMap<string, PropertyType>;
   now?: Date;
+  // Cost units (about one per character) of formula values and sort and group keys held between phases.
+  retainCap?: number;
+  stats?: { retainedPeak: number };
 }
+
+type Row = { e: QueryEntry; scope: Scope; memo: Map<string, Value>; held: number };
 
 type Compiled = { leaf: Node | null } | { op: "and" | "or" | "not"; kids: Compiled[] };
 
@@ -64,8 +69,24 @@ const DEFAULT_VIEW: ViewConfig = {
 const WIKI = /^\[\[([^\]|#^]*)/;
 const MAX_CELL = 10_000;
 const MAX_RESPONSE_CHARS = 5_000_000;
+const MAX_KEPT_STRING = 1_000;
+const MAX_RETAINED = 8_000_000;
+const ENTRY_COST = 32;
 const DROP = Symbol("drop");
 const cap = (s: string): string => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
+// JSC keeps a slice's whole parent alive; resolving a fresh rope copies just the kept characters.
+const own = (s: string): string => (s.length < 2 ? s : (s + "\0").slice(0, -1));
+const clip = (v: Value, n: number): Value => (typeof v === "string" ? own(v.length > n ? v.slice(0, n) : v) : v);
+
+function weigh(v: Value, depth = 0): number {
+  if (typeof v === "string") return ENTRY_COST + v.length;
+  if (Array.isArray(v)) {
+    let n = ENTRY_COST + 8 * v.length;
+    if (depth < 4) for (const x of v) n += typeof x === "string" || Array.isArray(x) ? weigh(x, depth + 1) : 0;
+    return n;
+  }
+  return ENTRY_COST;
+}
 
 export function runBaseQuery(req: BaseQueryRequest, deps: QueryDeps): BaseQueryResponse {
   const warned: string[] = [];
@@ -132,30 +153,110 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
     thisValue = t;
   }
 
+  const parsedFormulas = new Map<string, ReturnType<typeof parseExpression>>();
+  const parseFormula = (name: string): ReturnType<typeof parseExpression> => {
+    let p = parsedFormulas.get(name);
+    if (!p) {
+      p = parseExpression(cfg.formulas[name]!);
+      parsedFormulas.set(name, p);
+    }
+    return p;
+  };
   const formulaNodes = new Map<string, Node | null>();
   const formulaNode = (name: string): Node | null => {
     if (formulaNodes.has(name)) return formulaNodes.get(name)!;
-    const p = parseExpression(cfg.formulas[name]!);
+    const p = parseFormula(name);
     if (!p.ok) warn(`formula "${name}": ${p.error}`);
     const node = p.ok ? p.node : null;
     formulaNodes.set(name, node);
     return node;
   };
 
-  // A formula is evaluated and charged once per note per query, so memos live until the row
-  // is dropped or emitted. Only oversized text is evicted early, to bound memory.
-  const memos = new Map<Scope, Map<string, Value>>();
-  const release = (scope: Scope): void => {
-    memos.get(scope)?.clear();
+  const gb = view.groupBy;
+  const colKeys = view.order.length > 0 ? view.order : ["file.name"];
+  // The cover property of a cards view rides along in `values` without being a column.
+  const valueKeys = view.image && !colKeys.includes(view.image) ? [...colKeys, view.image] : colKeys;
+
+  // Formulas a later phase reads: sort, group and cell keys plus everything they refer to.
+  // A reference that cannot be read statically (formula[expr]) keeps every formula.
+  const later = new Set<string>();
+  let laterAll = false;
+  const todo: string[] = [];
+  const want = (name: string): void => {
+    if (Object.hasOwn(cfg.formulas, name) && !later.has(name)) {
+      later.add(name);
+      todo.push(name);
+    }
   };
-  const evictLarge = (scope: Scope): void => {
-    const memo = memos.get(scope);
-    if (!memo) return;
-    for (const [k, v] of memo) if (typeof v === "string" && v.length > MAX_CELL) memo.delete(k);
+  for (const k of [...view.sort.map((x) => x.property), ...(gb ? [gb.property] : []), ...valueKeys]) {
+    if (k.startsWith("formula.")) want(k.slice(8));
+  }
+  while (todo.length > 0 && !laterAll) {
+    const p = parseFormula(todo.pop()!);
+    const stack: Node[] = p.ok ? [p.node] : [];
+    while (stack.length > 0) {
+      const n = stack.pop()!;
+      if (n.t === "member" && n.obj.t === "id" && n.obj.name === "formula") want(n.name);
+      else if (n.t === "index" && n.obj.t === "id" && n.obj.name === "formula") {
+        if (n.key.t === "lit" && typeof n.key.v === "string") want(n.key.v);
+        else laterAll = true;
+      } else if (n.t === "id" && n.name === "formula") laterAll = true;
+      else if (n.t === "member") stack.push(n.obj);
+      else if (n.t === "index") stack.push(n.obj, n.key);
+      else if (n.t === "call") stack.push(n.callee, ...n.args);
+      else if (n.t === "unary") stack.push(n.arg);
+      else if (n.t === "bin") stack.push(n.l, n.r);
+    }
+  }
+
+  // A formula is evaluated and charged once per note per query. Between phases a row keeps only
+  // the values a later phase reads, only up to MAX_KEPT_STRING each, and only while the whole
+  // query stays under the cap; anything else is computed (and charged) again if it is read.
+  const retainCap = deps.retainCap ?? MAX_RETAINED;
+  let retained = 0;
+  const hold = (n: number): void => {
+    retained += n;
+    if (deps.stats && retained > deps.stats.retainedPeak) deps.stats.retainedPeak = retained;
   };
-  const scopeFor = (e: QueryEntry): Scope => {
-    const memo = new Map<string, Value>();
-    const busy = new Set<string>();
+  const busy = new Set<string>();
+  const release = (r: Row): void => {
+    retained -= r.held;
+    r.held = 0;
+    r.memo = new Map();
+  };
+  const park = (r: Row): void => {
+    retained -= r.held;
+    r.held = 0;
+    const kept = new Map<string, Value>();
+    let cost = 0;
+    for (const [k, v] of r.memo) {
+      if (!laterAll && !later.has(k)) continue;
+      if (typeof v === "string" && v.length > MAX_KEPT_STRING) continue;
+      kept.set(k, v);
+      cost += weigh(v);
+    }
+    if (retained + cost > retainCap) {
+      if (kept.size > 0) warn("formula values were too large to keep for every note; some were computed again");
+      r.memo = new Map();
+      return;
+    }
+    r.memo = kept;
+    r.held = cost;
+    hold(cost);
+  };
+  // Sort and group keys live to the end of the query, so they are counted and never released.
+  const keepKey = (v: Value): Value => {
+    const k = clip(v, MAX_KEPT_STRING);
+    const cost = weigh(k);
+    if (retained + cost > retainCap) {
+      warn("sort and group values were too large to keep for every note; some were left empty");
+      return null;
+    }
+    hold(cost);
+    return k;
+  };
+  const rowFor = (e: QueryEntry): Row => {
+    const row: Row = { e, scope: undefined!, memo: new Map(), held: 0 };
     const scope: Scope = {
       now,
       warn,
@@ -169,7 +270,7 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
           warn(`unknown formula "${name}"`);
           return null;
         }
-        if (memo.has(name)) return memo.get(name)!;
+        if (row.memo.has(name)) return row.memo.get(name)!;
         if (busy.has(name)) {
           warn(`formula "${name}" refers to itself`);
           return null;
@@ -178,12 +279,12 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
         const node = formulaNode(name);
         const v = node ? evaluate(node, scope) : null;
         busy.delete(name);
-        memo.set(name, v);
+        row.memo.set(name, typeof v === "string" && v.length <= MAX_KEPT_STRING ? own(v) : v);
         return v;
       },
     };
-    memos.set(scope, memo);
-    return scope;
+    row.scope = scope;
+    return row;
   };
 
   const compile = (f: FilterNode | undefined): Compiled | null => {
@@ -210,21 +311,19 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
 
   const globalFilter = compile(cfg.filters);
   const viewFilter = compile(view.filters);
-  const rows: Array<{ e: QueryEntry; scope: Scope }> = [];
+  const rows: Row[] = [];
   for (const e of entries) {
     if (!allowed(e.path) || e.path === thisPath || index.visibility.isHidden(e.path)) continue;
-    const scope = scopeFor(e);
+    const row = rowFor(e);
+    const scope = row.scope;
     const out =
       (globalFilter && test(globalFilter, scope) === false) ||
       (viewFilter && test(viewFilter, scope) === false) ||
       // A budget hit makes every expression of the note null; a `not` must not turn that into a pass.
       scope.budget.hit;
-    if (out) {
-      release(scope);
-      continue;
-    }
-    evictLarge(scope);
-    rows.push({ e, scope });
+    if (out) continue;
+    park(row);
+    rows.push(row);
   }
 
   const keyValue = (key: string, scope: Scope): Value => {
@@ -237,11 +336,10 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
   const isEmpty = (v: Value): boolean => v === null || v === "" || (Array.isArray(v) && v.length === 0);
   const order = (a: Value, b: Value): number => compareValues(a, b) ?? toStr(a).localeCompare(toStr(b), undefined, { numeric: true });
 
-  const slim = (v: Value): Value => (typeof v === "string" && v.length > 1000 ? v.slice(0, 1000) : v);
   const sortVals = new Map(
     rows.map((r) => {
-      const vals = view.sort.map((s) => slim(keyValue(s.property, r.scope)));
-      evictLarge(r.scope);
+      const vals = view.sort.map((s) => keepKey(keyValue(s.property, r.scope)));
+      if (view.sort.length > 0) park(r);
       return [r, vals];
     }),
   );
@@ -288,24 +386,26 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
     const c = clean(toProp(v), from);
     if (c === DROP) return null;
     const text = Array.isArray(c) ? (c.length === 0 ? null : c.map(String).join(", ")) : String(c);
-    return text === null ? null : text.slice(0, 1000);
+    return text === null ? null : text.slice(0, MAX_KEPT_STRING);
   };
 
-  const gb = view.groupBy;
-  type Item = { e: QueryEntry; scope: Scope; group: string | null };
-  const groupOf = new Map<Item, Value>();
+  type Item = { row: Row; e: QueryEntry; scope: Scope; group: string | null };
+  // The raw value of each group's first row orders the groups.
+  const present = new Map<string | null, Value>();
   let items: Item[] = rows.map((r) => {
-    const raw = gb ? slim(keyValue(gb.property, r.scope)) : null;
-    const it = { ...r, group: gb ? groupKeyOf(raw, r.e.path) : null };
-    groupOf.set(it, raw);
-    evictLarge(r.scope);
-    return it;
+    let group: string | null = null;
+    if (gb) {
+      const raw = keyValue(gb.property, r.scope);
+      const key = groupKeyOf(raw, r.e.path);
+      group = key === null ? null : (keepKey(key) as string | null);
+      if (!present.has(group)) present.set(group, keepKey(raw));
+      park(r);
+    }
+    return { row: r, e: r.e, scope: r.scope, group };
   });
 
   let groupKeys: Array<string | null> = [null];
   if (gb) {
-    const present = new Map<string | null, Value>();
-    for (const it of items) if (!present.has(it.group)) present.set(it.group, groupOf.get(it)!);
     const listed = view.groupOrder.filter((k, i, a) => a.indexOf(k) === i);
     const rest = [...present.keys()].filter((k): k is string => k !== null && !listed.includes(k));
     rest.sort((a, b) => order(present.get(a)!, present.get(b)!));
@@ -322,9 +422,8 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
   const offset = Number.isFinite(req.offset) ? Math.max(0, Math.floor(req.offset!)) : 0;
   const page = items.slice(offset, offset + limit);
   const pageSet = new Set(page);
-  for (const it of items) if (!pageSet.has(it)) release(it.scope);
+  for (const it of items) if (!pageSet.has(it)) release(it.row);
 
-  const colKeys = view.order.length > 0 ? view.order : ["file.name"];
   const display = new Map<string, string>();
   for (const [k, v] of Object.entries(cfg.properties)) if (v.displayName) display.set(k.replace(/^note\./, ""), v.displayName);
   const labelFor = (key: string): string => {
@@ -337,14 +436,12 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
   const typeFor = (key: string): PropertyType | "file" | "formula" =>
     key.startsWith("file.") ? "file" : key.startsWith("formula.") ? "formula" : (types.get(key.replace(/^note\./, "")) ?? "text");
 
-  // The cover property of a cards view rides along in `values` without being a column.
-  const valueKeys = view.image && !colKeys.includes(view.image) ? [...colKeys, view.image] : colKeys;
   let spent = 0;
   const fit = (v: PropValue, depth = 0): PropValue => {
     if (typeof v === "string") {
       if (v.length > MAX_CELL) {
         warn(`a long value was cut to ${MAX_CELL} characters`);
-        v = v.slice(0, MAX_CELL);
+        v = own(v.slice(0, MAX_CELL));
       }
       spent += v.length;
       return v;
@@ -369,7 +466,7 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
       const c = clean(toProp(keyValue(k, it.scope)), it.e.path);
       values[k] = c === DROP ? null : fit(c);
     }
-    release(it.scope);
+    release(it.row);
     return { path: it.e.path, title: it.e.title, revision: it.e.revision, values };
   };
 
