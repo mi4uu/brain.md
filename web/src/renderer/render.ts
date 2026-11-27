@@ -15,6 +15,7 @@ import { remarkWikilinks } from "./plugins/wikilinks";
 import { remarkTags } from "./plugins/tags";
 import { remarkCallouts } from "./plugins/callouts";
 import { remarkMermaid } from "./plugins/mermaid";
+import { remarkBaseBlock } from "./plugins/base";
 import { remarkSourcepos } from "./plugins/sourcepos";
 import { remarkHighlight } from "./plugins/highlight";
 import { remarkComments } from "./plugins/comments";
@@ -295,6 +296,7 @@ export function renderMarkdown(
     .use(remarkHighlight)
     .use(remarkCallouts)
     .use(remarkMermaid)
+    .use(remarkBaseBlock, { lineOffset })
     .use(remarkWikilinks)
     .use(remarkTags)
     .use(remarkSourcepos, { lineOffset })
