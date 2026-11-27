@@ -94,4 +94,36 @@ describe("query_notes", () => {
   test("the agent instructions mention the tool", () => {
     expect(DEFAULT_MCP_INSTRUCTIONS).toContain("query_notes");
   });
+
+  test("view with the simple form, and a view in no fence, are errors", async () => {
+    const mixed = await call({ filter: "n > 1", view: "All" });
+    expect(mixed.body.code).toBe("INVALID_ARGUMENT");
+    const missing = await call({ path: "work/Board.md", view: "Nope" });
+    expect(missing.isError).toBe(true);
+    expect(missing.body.code).toBe("NOT_FOUND");
+    const empty = (await client.callTool({ name: "query_notes", arguments: { base: "" } })) as { isError?: boolean };
+    expect(empty.isError).toBe(true);
+  });
+
+  test("long cells are cut and counted in a warning", async () => {
+    await h.vault.writeNote("work/long.md", `---\ndesc: ${"x".repeat(5000)}\n---\n# Long\n`);
+    const r = await call({ filter: 'file.name == "long.md"', columns: ["desc"] });
+    expect(r.body.rows[0].values.desc).toHaveLength(501);
+    expect(r.body.rows[0].values.desc.endsWith("…")).toBe(true);
+    expect(r.body.warnings).toContain("1 cell(s) longer than 500 characters were cut.");
+  });
+
+  test("a page stops at the reply budget and continues at the first omitted row", async () => {
+    for (let i = 0; i < 150; i++) {
+      await h.vault.writeNote(`big/b${String(i).padStart(3, "0")}.md`, `---\n${Array.from({ length: 10 }, (_, k) => `p${k}: ${"y".repeat(450)}`).join("\n")}\n---\n# B\n`);
+    }
+    const cols = Array.from({ length: 10 }, (_, k) => `p${k}`);
+    const r = await call({ filter: 'file.inFolder("big")', columns: cols, limit: 200 });
+    expect(r.body.rows.length).toBeLessThan(150);
+    expect(JSON.stringify(r.body).length).toBeLessThan(220_000);
+    expect(r.note).toContain(`offset=${r.body.rows.length}`);
+    expect(r.body.warnings.some((w: string) => w.includes("shortened"))).toBe(true);
+    const next = await call({ filter: 'file.inFolder("big")', columns: cols, limit: 200, offset: r.body.rows.length });
+    expect(next.body.rows[0].path).toBe(`big/b${String(r.body.rows.length).padStart(3, "0")}.md`);
+  });
 });

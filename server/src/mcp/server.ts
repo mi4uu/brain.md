@@ -70,6 +70,9 @@ import { StoreIncompatibleError } from "../rag/store";
 // read-only tools can run without a prompt while writes still ask. The RAG
 // tools leave openWorldHint unset because a configured remote embedder
 // receives the query text.
+const QUERY_CELL_CHARS = 500;
+const QUERY_REPLY_BYTES = 200_000;
+
 const READ_ONLY_LOCAL = { readOnlyHint: true, openWorldHint: false } as const;
 const READ_ONLY_RAG = { readOnlyHint: true } as const;
 // Not idempotent: a repeat with the same content still bumps mtime and
@@ -409,9 +412,9 @@ function registerHandlers(
         "A filter is an expression: note properties by name, `file.*` values (name, path, folder, tags, links, backlinks, size, ctime, mtime), " +
         "`==  !=  <  >  &&  ||  !`, and functions such as contains, startsWith, isEmpty, file.hasTag(\"x\"), file.inFolder(\"x\"), today(), now(). " +
         'Example: status == "open" && file.hasTag("work"). Columns are `file.name`, `file.mtime` or a property name. ' +
-        "Syntax it cannot run comes back as `warnings`, not an error. 50 rows per page (`limit`, `offset`). Hidden notes are skipped.",
+        "Syntax it cannot run comes back as `warnings`, not an error. 50 rows per page (`limit`, `offset`); cells are cut at 500 characters and a page stops at about 200 KB. Hidden notes are skipped.",
       inputSchema: {
-        base: z.string().max(100_000).optional(),
+        base: z.string().min(1).max(100_000).optional(),
         path: z.string().min(1).optional(),
         view: z.string().optional(),
         filter: z.string().max(2000).optional(),
@@ -428,6 +431,7 @@ function registerHandlers(
         if ([base !== undefined, path !== undefined, simple].filter(Boolean).length > 1) {
           throw coded("INVALID_ARGUMENT", "Pass one of: base, path (with view), or filter / columns / sort.");
         }
+        if (simple && view !== undefined) throw coded("INVALID_ARGUMENT", "view applies to base or path, not to filter / columns / sort.");
         let source: string;
         let thisPath: string | undefined;
         if (base !== undefined) {
@@ -438,6 +442,7 @@ function registerHandlers(
           const fences = findBaseFences((await vault.readNote(path)).content);
           if (fences.length === 0) throw coded("NO_BASE_BLOCK", `${path} has no base block`);
           const hit = view ? fences.find((f) => parseBase(f.source).config.views.some((v) => v.name === view)) : undefined;
+          if (view && !hit) throw coded("NOT_FOUND", `${path} has no view named "${view}"`);
           source = (hit ?? fences[0]!).source;
           thisPath = path;
         } else {
@@ -453,11 +458,35 @@ function registerHandlers(
         const rows = res.groups.flatMap((g) =>
           g.rows.map((r) => ({ path: r.path, title: r.title, ...(grouped ? { group: g.label } : {}), values: r.values })),
         );
-        const p = paginate(rows, limit, offset, 50);
-        const warnings =
-          res.total > rows.length
-            ? [...res.warnings, `Only the first ${rows.length} of ${res.total} rows can be paged; narrow the query.`]
-            : res.warnings;
+        const start = Math.min(offset ?? 0, rows.length);
+        const cap = limit ?? 50;
+        let cut = 0;
+        const clip = (v: unknown): unknown => {
+          if (typeof v === "string" && v.length > QUERY_CELL_CHARS) {
+            cut++;
+            return v.slice(0, QUERY_CELL_CHARS) + "…";
+          }
+          return Array.isArray(v) ? v.map(clip) : v;
+        };
+        const items: typeof rows = [];
+        let bytes = 0;
+        let budgetHit = false;
+        for (const r of rows.slice(start, start + cap)) {
+          const row = { ...r, values: Object.fromEntries(Object.entries(r.values).map(([k, v]) => [k, clip(v)])) } as typeof r;
+          const size = JSON.stringify(row).length;
+          if (items.length > 0 && bytes + size > QUERY_REPLY_BYTES) {
+            budgetHit = true;
+            break;
+          }
+          bytes += size;
+          items.push(row);
+        }
+        const end = start + items.length;
+        const p = { items, total: rows.length, offset: start, nextOffset: end < rows.length ? end : null };
+        const warnings = [...res.warnings];
+        if (res.total > rows.length) warnings.push(`Only the first ${rows.length} of ${res.total} rows can be paged; narrow the query.`);
+        if (cut > 0) warnings.push(`${cut} cell(s) longer than ${QUERY_CELL_CHARS} characters were cut.`);
+        if (budgetHit) warnings.push(`The page was shortened to ${items.length} rows to keep the reply small; continue at offset=${end}.`);
         logCall("query_notes", args, true);
         return pageContent("query_notes", { view: res.view, views: res.views, columns: res.columns, total: res.total, warnings, rows: p.items }, p, "rows");
       } catch (err) {
