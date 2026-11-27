@@ -6,7 +6,7 @@ import { DropdownMenuItem } from "../components/ui/dropdown-menu";
 import { CellValue } from "./CellValue";
 import { RowMenu } from "./RowMenu";
 import type { BaseHost } from "./host";
-import { columnAt, dragStarted, moveChange, moveRefusal, moveRowInResult, presetValue, propNameOf } from "./model";
+import { MAX_MOVE_KEY, columnAt, dragStarted, moveChange, moveRefusal, moveRowInResult, presetValue, propNameOf } from "./model";
 import type { Column, LayoutProps, Row } from "./types";
 
 type ColumnInfo = { key: string | null; label: string };
@@ -82,6 +82,7 @@ export function KanbanView(props: LayoutProps) {
   const { result, view, host, vaultTypes, editView } = props;
   const [drag, setDrag] = useState<DragState | null>(null);
   const colRefs = useRef(new Map<string | null, HTMLElement>());
+  const boardRef = useRef<HTMLDivElement | null>(null);
   const ghostRef = useRef<HTMLDivElement | null>(null);
   const cleanupRef = useRef<() => void>(() => {});
   const focusPath = useRef<string | null>(null);
@@ -132,7 +133,7 @@ export function KanbanView(props: LayoutProps) {
     if (!path) return;
     focusPath.current = null;
     const t = setTimeout(() => {
-      const card = [...document.querySelectorAll<HTMLElement>("[data-card-path]")].find((el) => el.dataset.cardPath === path);
+      const card = [...(boardRef.current?.querySelectorAll<HTMLElement>("[data-card-path]") ?? [])].find((el) => el.dataset.cardPath === path);
       card?.querySelector<HTMLElement>(".base-card-title")?.focus();
     }, 60);
     return () => clearTimeout(t);
@@ -149,11 +150,6 @@ export function KanbanView(props: LayoutProps) {
     cleanupRef.current();
     const card = e.currentTarget;
     const id = e.pointerId;
-    try {
-      card.setPointerCapture(id);
-    } catch {
-      /* capture is only a nicety */
-    }
     const x0 = e.clientX;
     const y0 = e.clientY;
     let lx = x0;
@@ -208,6 +204,11 @@ export function KanbanView(props: LayoutProps) {
           return;
         }
         dragging = true;
+        try {
+          card.setPointerCapture(id);
+        } catch {
+          /* capture is only a nicety */
+        }
         setDrag({ path: row.path, title: row.title || row.path, x: lx, y: ly, over: hit(lx, ly) });
         return;
       }
@@ -259,16 +260,17 @@ export function KanbanView(props: LayoutProps) {
     );
   }
 
-  // null: the column cannot take a preset, with the reason.
+  // { why }: the column cannot take a preset, with the reason.
   const presetFor = (key: string | null): { preset: Record<string, PropValue> } | { why: string } => {
     if (!groupProp) return { why: "Grouped by a computed property, so a new note cannot be preset" };
+    if (key !== null && key.length >= MAX_MOVE_KEY) return { why: "This column name is too long to preset on a new note" };
     const ch = presetValue(groupType, key);
     if (!ch) return { why: "This column is a joined list value, so a new note cannot be preset" };
     return { preset: "set" in ch ? { [groupProp]: ch.set } : {} };
   };
 
   return (
-    <div className={drag ? "base-board dragging" : "base-board"}>
+    <div ref={boardRef} className={drag ? "base-board dragging" : "base-board"}>
       {columns.map((g) => {
         const plus = presetFor(g.key);
         return (
@@ -287,12 +289,13 @@ export function KanbanView(props: LayoutProps) {
               <button
                 type="button"
                 className="btn base-btn icon"
-                aria-label={`Add a note to ${g.label}`}
+                aria-label={"why" in plus ? `Add a note to ${g.label} (unavailable)` : `Add a note to ${g.label}`}
                 disabled={"why" in plus}
                 title={"why" in plus ? plus.why : undefined}
                 onClick={() => "preset" in plus && void props.newNote(plus.preset)}
               >
                 <PlusIcon aria-hidden />
+                {"why" in plus ? <span style={SR_ONLY}>{plus.why}</span> : null}
               </button>
             </header>
             <div className="base-col-body">
@@ -319,3 +322,5 @@ export function KanbanView(props: LayoutProps) {
 }
 
 const EMPTY: ColumnInfo[] = [];
+
+const SR_ONLY = { position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" } as const;
