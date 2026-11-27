@@ -17,6 +17,7 @@ import {
   filtersFrom,
   formatScalar,
   flatFilters,
+  groupType,
   isEditable,
   linkParts,
   MOVE_REFUSED,
@@ -371,5 +372,33 @@ describe("moveRefusal", () => {
     expect(moveRefusal("status", "text", row({ status: { a: 1 } }))).toBe(MOVE_REFUSED.list);
     expect(moveRefusal("status", "text", row({ status: "x" }), "x".repeat(1000))).toBe(MOVE_REFUSED.long);
     expect(moveRefusal("status", "text", row({ status: "x" }), "x".repeat(999))).toBeNull();
+  });
+});
+
+describe("groupType", () => {
+  const res = (values: PropValue[], columns: Array<{ key: string; type: string }> = []): BaseQueryResponse => ({
+    views: [],
+    view: "B",
+    columns: columns.map((c) => ({ ...c, label: c.key })),
+    total: values.length,
+    warnings: [],
+    groups: [{ key: null, label: "", count: values.length, rows: values.map((v, i) => ({ path: `${i}.md`, title: `${i}`, revision: "r", values: { n: v } })) }],
+  });
+
+  test("the vault type wins when it is known", () => {
+    expect(groupType("n", new Map([["n", "text"]]), res([7]))).toBe("text");
+  });
+
+  test("without vault types: the column type from the query, then the kind of the loaded values", () => {
+    expect(groupType("n", new Map(), res([null], [{ key: "n", type: "number" }]))).toBe("number");
+    expect(groupType("note.n", new Map(), res([null, 7]))).toBe("number");
+    expect(groupType("n", new Map(), res([true]))).toBe("checkbox");
+    expect(groupType("n", new Map(), res(["x"]))).toBeUndefined();
+    expect(groupType("n", new Map(), res([null]))).toBeUndefined();
+    expect(groupType("formula.n", new Map(), res([7]))).toBeUndefined();
+  });
+
+  test("a number board written with the inferred type keeps numbers", () => {
+    expect(moveChange(groupType("n", new Map(), res([7])), "8")).toEqual({ set: 8 });
   });
 });

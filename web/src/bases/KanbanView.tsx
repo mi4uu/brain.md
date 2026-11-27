@@ -6,7 +6,7 @@ import { DropdownMenuItem } from "../components/ui/dropdown-menu";
 import { CellValue } from "./CellValue";
 import { RowMenu } from "./RowMenu";
 import type { BaseHost } from "./host";
-import { MAX_MOVE_KEY, columnAt, dragStarted, moveChange, moveRefusal, moveRowInResult, presetValue, propNameOf } from "./model";
+import { MAX_MOVE_KEY, columnAt, dragStarted, groupType as groupTypeOf, moveChange, moveRefusal, moveRowInResult, presetValue, propNameOf } from "./model";
 import type { Column, LayoutProps, Row } from "./types";
 
 type ColumnInfo = { key: string | null; label: string };
@@ -92,7 +92,7 @@ export function KanbanView(props: LayoutProps) {
 
   const groupKey = view.groupBy?.property ?? null;
   const groupProp = groupKey ? propNameOf(groupKey) : null;
-  const groupType = groupProp ? vaultTypes.get(groupProp) : undefined;
+  const groupType = groupKey ? groupTypeOf(groupKey, vaultTypes, result) : undefined;
 
   const columns = useMemo<Array<ColumnInfo & { count: number; rows: Row[] }>>(
     () => (result.groups.some((g) => g.key === null) ? result.groups : [...result.groups, { key: null, label: "No value", count: 0, rows: [] }]),
@@ -110,7 +110,7 @@ export function KanbanView(props: LayoutProps) {
     if (!gk) return;
     const from = res.groups.find((g) => g.rows.some((r) => r.path === row.path))?.key ?? null;
     if (from === toKey) return;
-    const type = prop ? types.get(prop) : undefined;
+    const type = groupTypeOf(gk, types, res);
     const why = moveRefusal(gk, type, row, toKey);
     const ch = why || !prop ? null : moveChange(type, toKey);
     if (!ch || !prop) {
@@ -145,8 +145,7 @@ export function KanbanView(props: LayoutProps) {
     const cur = latest.current;
     const gk = cur.view.groupBy?.property;
     if (!gk) return;
-    const gp = propNameOf(gk);
-    const why = moveRefusal(gk, gp ? cur.vaultTypes.get(gp) : undefined, row);
+    const why = moveRefusal(gk, groupTypeOf(gk, cur.vaultTypes, cur.result), row);
     cleanupRef.current();
     const card = e.currentTarget;
     const id = e.pointerId;

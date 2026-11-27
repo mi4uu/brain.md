@@ -207,6 +207,27 @@ export function presetValue(type: PropertyType | undefined, key: string | null):
   return { set: key };
 }
 
+// The type a board writes its group property with. Vault types arrive late (and not at all
+// when /api/properties fails), so the query's column type and then the loaded values stand in:
+// without them a move on a number board would write "8" as text.
+export function groupType(groupKey: string, vaultTypes: ReadonlyMap<string, PropertyType>, result: BaseQueryResponse): PropertyType | undefined {
+  const name = propNameOf(groupKey);
+  if (name === null) return undefined;
+  const known = vaultTypes.get(name);
+  if (known) return known;
+  const col = result.columns.find((c) => propNameOf(c.key) === name);
+  if (col && col.type !== "file" && col.type !== "formula") return col.type as PropertyType;
+  for (const g of result.groups) {
+    for (const r of g.rows) {
+      const v = byColumn(r.values, groupKey);
+      if (typeof v === "number") return "number";
+      if (typeof v === "boolean") return "checkbox";
+      if (v !== null && v !== undefined) return undefined;
+    }
+  }
+  return undefined;
+}
+
 // Whether a card can be moved by rewriting its group property.
 export function canMove(type: PropertyType | undefined, value: PropValue, partial?: boolean): boolean {
   if (partial) return false;
