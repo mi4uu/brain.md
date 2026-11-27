@@ -14,7 +14,12 @@ export interface RowCell {
   to: number;
 }
 
-const FENCE = /^ {0,3}(```|~~~)/;
+const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+// Lines that open another block: GFM ends a table there, and a header on one
+// is not a top-level table. Errs towards ending early, since an excluded
+// line is never rewritten.
+const BLOCK_START =
+  /^(?: {0,3}(?:[-+*]|\d{1,9}[.)])(?:[ \t]|$)| {0,3}#{1,6}(?:[ \t]|$)| {0,3}(?:>|<|\$\$|\[\^)| {4}|\t)/;
 const DELIM_CELL = /^:?-+:?$/;
 const MIN_WIDTH = 3;
 
@@ -199,23 +204,27 @@ export function setAlign(t: MdTable, col: number, align: Align): MdTable {
   return { ...n, align: n.align.map((a, i) => (i === col ? align : a)) };
 }
 
-const isRowLine = (l: string): boolean => l.trim() !== "" && l.includes("|") && !FENCE.test(l);
+const isRowLine = (l: string): boolean =>
+  l.trim() !== "" && l.includes("|") && !FENCE.test(l) && !BLOCK_START.test(l);
 
 // A row line without any pipe also continues a GFM table, but ending the
 // table there is the safer side for rewriting: text we do not recognise is
 // left alone instead of being reflowed into a cell.
 export function findTableAt(lines: string[], lineNo: number): LineRange | null {
-  let fence = false;
+  let fence: string | null = null;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
-    if (FENCE.test(line)) {
-      fence = !fence;
+    const f = FENCE.exec(line);
+    if (f) {
+      const marker = f[1]!;
+      if (fence === null) fence = marker;
+      else if (marker[0] === fence[0] && marker.length >= fence.length && f[2]!.trim() === "") fence = null;
       continue;
     }
-    if (fence) continue;
+    if (fence !== null) continue;
     const next = lines[i + 1];
     if (next === undefined || !line.includes("|") || !isDelimiterRow(next)) continue;
-    if (/^[ \t]/.test(line)) continue;
+    if (/^[ \t]/.test(line) || BLOCK_START.test(line)) continue;
     if (splitRow(line).length !== splitRow(next).length) continue;
     let end = i + 1;
     while (end + 1 < lines.length && isRowLine(lines[end + 1]!)) end++;
