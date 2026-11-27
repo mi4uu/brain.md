@@ -94,14 +94,14 @@ describe("propertyKeys", () => {
   });
 });
 
-describe("snapshot version 3", () => {
+describe("snapshot version", () => {
   test("an older snapshot is rebuilt instead of trusted", async () => {
     await h.vault.writeNote("a.md", "---\nstatus: todo\n---\n");
     await mkdir(join(dir, ".brain"), { recursive: true });
     await writeFile(join(dir, ".brain/index.json"), JSON.stringify({ version: 2, entries: {} }));
     const idx = new VaultIndex(h.vault);
     await idx.loadOrBuild();
-    expect(idx.snapshot().version).toBe(3);
+    expect(idx.snapshot().version).toBe(4);
     expect(idx.get("a.md")!.props).toEqual({ status: "todo" });
   });
 });

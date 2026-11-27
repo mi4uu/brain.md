@@ -35,14 +35,18 @@ export interface IndexEntry {
   props: Record<string, PropValue>;
   // File birth time; mtime where the filesystem does not report one.
   ctime: number;
+  // sha256 of the file content: what PUT /api/note and PATCH
+  // /api/note-properties take as baseRevision. Kept here so a view can edit a
+  // row without reading its file.
+  revision: string;
 }
 
 export type { PropertyInfo };
 
 export interface IndexData {
-  // 2 added the hidden/noSearch flags, 3 added props and ctime; an older
-  // snapshot is rebuilt.
-  version: 3;
+  // 2 added the hidden/noSearch flags, 3 added props and ctime, 4 added
+  // revision; an older snapshot is rebuilt.
+  version: 4;
   entries: Record<string, IndexEntry>;
 }
 
@@ -58,7 +62,7 @@ export class VaultIndex {
   // Set by app.ts (vault/visibility.ts). Search, graph and list_notes
   // consult it; absent in unit tests, where nothing is hidden.
   visibility?: VisibilityRules;
-  private data: IndexData = { version: 3, entries: {} };
+  private data: IndexData = { version: 4, entries: {} };
   private unsubscribe?: () => void;
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
   // Resolved link targets and the inbound links they give each note, rebuilt
@@ -303,7 +307,7 @@ export class VaultIndex {
         if (e) next[p] = e;
       }),
     );
-    this.data = { version: 3, entries: next };
+    this.data = { version: 4, entries: next };
     this.invalidateLinks();
   }
 
@@ -394,6 +398,7 @@ export class VaultIndex {
         noSearch: parsed.frontmatter?.search === false || undefined,
         props: parsed.frontmatter ? (toPropValue(parsed.frontmatter) as Record<string, PropValue>) : {},
         ctime: st.birthtimeMs > 0 ? st.birthtimeMs : data.mtime,
+        revision: data.revision,
       };
     } catch {
       return null;
@@ -411,7 +416,7 @@ export class VaultIndex {
     try {
       const raw = await readFile(abs, "utf8");
       const parsed = JSON.parse(raw) as IndexData;
-      if (parsed.version === 3) {
+      if (parsed.version === 4) {
         this.data = parsed;
         this.invalidateLinks();
         return true;
