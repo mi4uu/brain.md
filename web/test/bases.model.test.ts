@@ -4,6 +4,7 @@ import type { PropValue } from "@brainmd/shared/frontmatter";
 import {
   boardColumns,
   naturalWidth,
+  plainError,
   byColumn,
   matchKey,
   candidateKeys,
@@ -440,5 +441,31 @@ describe("naturalWidth", () => {
   test("list and unknown layouts stay at the reading width", () => {
     expect(naturalWidth("list", res([group(null, 2)]), { columnSize: {}, grouped: false })).toBeNull();
     expect(naturalWidth("map", res([group(null, 2)]), { columnSize: {}, grouped: false })).toBeNull();
+  });
+});
+
+describe("plainError", () => {
+  test("an API error shows the server's own sentence, not the status or the JSON", () => {
+    expect(plainError(new Error(`400: {"error":"filter: unexpected token ')' at 14"}`))).toBe("filter: unexpected token ')' at 14");
+  });
+
+  test("a short plain body passes through without the status", () => {
+    expect(plainError(new Error("404: note not found"))).toBe("note not found");
+  });
+
+  test("an HTML page or an empty body becomes a plain sentence", () => {
+    expect(plainError(new Error("502: <html><body>Bad gateway</body></html>"))).toBe("The server ran into a problem");
+    expect(plainError(new Error("403: "))).toBe("The server refused the request");
+  });
+
+  test("a network failure says the server is out of reach", () => {
+    expect(plainError(new TypeError("Failed to fetch"))).toBe("Could not reach the server");
+    expect(plainError(new TypeError("NetworkError when attempting to fetch resource."))).toBe("Could not reach the server");
+    expect(plainError(new TypeError("Load failed"))).toBe("Could not reach the server");
+  });
+
+  test("other messages are kept as they are", () => {
+    expect(plainError(new Error("views[0] is not a mapping"))).toBe("views[0] is not a mapping");
+    expect(plainError("plain")).toBe("plain");
   });
 });

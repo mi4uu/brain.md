@@ -111,7 +111,7 @@ export function KanbanView(props: LayoutProps) {
     const why = moveRefusal(gk, type, row, toKey);
     const ch = why || !prop ? null : moveChange(type, toKey);
     if (!ch || !prop) {
-      h.toast(why ?? "This board is grouped by a list property, so cards cannot move.");
+      h.toast(why ?? "This board is grouped by a list property, so cards cannot move");
       return;
     }
     void saveProps(row, "set" in ch ? { set: { [prop]: ch.set } } : { unset: [prop] }, (r) => moveRowInResult(r, row.path, toKey));

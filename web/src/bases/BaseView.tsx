@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { parseBase, type ViewConfig } from "@brainmd/shared/base-parse";
 import { MAX_QUERY_LIMIT, type BaseQueryResponse } from "@brainmd/shared/base-types";
-import { PlusIcon } from "@radix-ui/react-icons";
+import { ExclamationTriangleIcon, PlusIcon } from "@radix-ui/react-icons";
 import { BaseYamlError, addView } from "@brainmd/shared/base-yaml";
 import { setProperties, type PropValue } from "@brainmd/shared/frontmatter";
 import type { PropertyType } from "@brainmd/shared/property-types";
@@ -12,7 +12,7 @@ import { KanbanView } from "./KanbanView";
 import { ListView } from "./ListView";
 import { TableView } from "./TableView";
 import type { BaseHost } from "./host";
-import { candidateKeys, naturalWidth, optionType, partialHit, patchRowRevision, viewIndexFor } from "./model";
+import { candidateKeys, naturalWidth, optionType, partialHit, patchRowRevision, plainError, viewIndexFor } from "./model";
 import { buildNoteContent, planNewNote, uniqueNotePath } from "./new-note";
 import { FilterPopover, PropertiesPopover, SortPopover, type KeyOption } from "./ToolbarPopovers";
 import { blockKey, emitBaseRefresh, getActiveView, getCached, getLast, getOpenTool, onBaseRefresh, setActiveView, setCached, setOpenTool } from "./store";
@@ -41,7 +41,6 @@ function loadVaultTypes(): Promise<Map<string, PropertyType>> {
 }
 
 const DEFAULT_VIEW: ViewConfig = { type: "table", name: "Table", order: [], sort: [], groupOrder: [], columnSize: {}, summaries: {} };
-const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 export function BaseView({ source, startLine, ordinal, notePath, host }: BaseViewProps) {
   const key = blockKey(notePath, ordinal);
@@ -96,7 +95,7 @@ export function BaseView({ source, startLine, ordinal, notePath, host }: BaseVie
         })
         .catch((e: unknown) => {
           if (ctl.signal.aborted || (e instanceof Error && e.name === "AbortError")) return;
-          setError(errText(e));
+          setError(plainError(e));
         });
     }, 200);
     return () => {
@@ -126,7 +125,7 @@ export function BaseView({ source, startLine, ordinal, notePath, host }: BaseVie
         if (!ok) host.toast("Could not find this block in the note");
         return ok;
       } catch (e) {
-        host.toast(e instanceof BaseYamlError ? `Edit the block in the source: ${e.message}` : `Edit failed: ${errText(e)}`);
+        host.toast(e instanceof BaseYamlError ? `Edit the block in the source: ${e.message}` : `Edit failed: ${plainError(e)}`);
         return false;
       }
     },
@@ -146,7 +145,7 @@ export function BaseView({ source, startLine, ordinal, notePath, host }: BaseVie
           host.edit((text) => setProperties(text, change.set ?? {}, change.unset));
           return true;
         } catch (e) {
-          host.toast(`Property edit refused: ${errText(e)}`);
+          host.toast(`Property edit refused: ${plainError(e)}`);
           setTick((t) => t + 1);
           return false;
         }
@@ -162,7 +161,7 @@ export function BaseView({ source, startLine, ordinal, notePath, host }: BaseVie
         emitBaseRefresh();
         return true;
       } catch (e) {
-        host.toast(e instanceof ConflictError ? `${row.title} changed meanwhile, refreshed` : `Save failed: ${errText(e)}`);
+        host.toast(e instanceof ConflictError ? `${row.title} changed meanwhile, refreshed` : `Save failed: ${plainError(e)}`);
         emitBaseRefresh();
         return false;
       }
@@ -193,7 +192,7 @@ export function BaseView({ source, startLine, ordinal, notePath, host }: BaseVie
   if (!result) {
     return (
       <div className="base-view" aria-busy={!error}>
-        {error ? <p className="base-warn">Could not run this view: {error}</p> : <p className="base-empty">Loading view</p>}
+        {error ? <Problem kind="error">Could not run this view: {error}</Problem> : <p className="base-empty">Loading…</p>}
       </div>
     );
   }
@@ -236,15 +235,24 @@ export function BaseView({ source, startLine, ordinal, notePath, host }: BaseVie
           </>
         }
       />
-      {error ? <p className="base-warn">Could not refresh: {error}</p> : null}
+      {error ? <Problem kind="error">Could not refresh: {error}</Problem> : null}
       {warnings.length > 0 ? (
-        <p className="base-warn">
-          {warnings.slice(0, 3).join(" · ")}
-          {warnings.length > 3 ? ` · +${warnings.length - 3} more` : ""}
-        </p>
+        <Problem kind="warn">
+          {warnings[0]}
+          {warnings.length > 1 ? (
+            <details className="base-warn-more">
+              <summary>{warnings.length - 1} more</summary>
+              <ul>
+                {warnings.slice(1).map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+        </Problem>
       ) : null}
       {empty ? (
-        <p className="base-empty">No notes match this view.</p>
+        <p className="base-empty">{view.filters ? "No notes match this view. Check Filter." : "No notes match this view."}</p>
       ) : type === "table" ? (
         <TableView {...layout} />
       ) : type === "cards" ? (
@@ -256,6 +264,15 @@ export function BaseView({ source, startLine, ordinal, notePath, host }: BaseVie
       ) : (
         <p className="base-empty">The {type} layout is not supported yet. The view keeps its settings.</p>
       )}
+    </div>
+  );
+}
+
+function Problem({ kind, children }: { kind: "error" | "warn"; children: ReactNode }) {
+  return (
+    <div className={`base-warn base-warn-${kind}`} role={kind === "error" ? "alert" : "status"}>
+      <ExclamationTriangleIcon className="base-warn-icon" aria-hidden />
+      <div className="base-warn-body">{children}</div>
     </div>
   );
 }

@@ -94,7 +94,7 @@ export function BaseToolbar({ result, viewIndex, onSwitch, editView, toast, tool
               const name = window.prompt("View name", current?.name ?? "")?.trim();
               if (!name || name === current?.name) return;
               if (isNameTaken(names, name, viewIndex)) {
-                toast(`A view named "${name}" already exists.`);
+                toast(`A view named "${name}" already exists`);
                 return;
               }
               if (applied(editView((src, i) => renameView(src, i, name)))) onSwitch(name);

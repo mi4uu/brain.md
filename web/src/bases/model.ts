@@ -423,3 +423,24 @@ export function naturalWidth(type: string, res: BaseQueryResponse, view: { colum
   }
   return null;
 }
+
+const NETWORK = /^(Failed to fetch|NetworkError|Load failed)/;
+const MAX_PLAIN_BODY = 160;
+
+// api/client throws "<status>: <body>"; a person should read the server's
+// sentence, not the status code or the JSON around it.
+export function plainError(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e);
+  if (NETWORK.test(raw)) return "Could not reach the server";
+  const m = /^(\d{3}): ?([\s\S]*)$/.exec(raw);
+  if (!m) return raw;
+  const body = m[2]!.trim();
+  try {
+    const j: unknown = JSON.parse(body);
+    if (j && typeof j === "object" && "error" in j && typeof j.error === "string" && j.error) return j.error;
+  } catch {
+    /* not JSON */
+  }
+  if (body && body.length <= MAX_PLAIN_BODY && !/^[<{[]/.test(body)) return body;
+  return Number(m[1]) >= 500 ? "The server ran into a problem" : "The server refused the request";
+}
