@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildNoteContent, planNewNote, uniqueNotePath } from "../src/bases/new-note";
+import { buildNoteContent, planNewNote, safeFileName, uniqueNotePath } from "../src/bases/new-note";
 
 describe("+ New note rule", () => {
   test("folder from inFolder, properties from equality, tags from hasTag", () => {
@@ -28,5 +28,38 @@ describe("+ New note rule", () => {
     expect(buildNoteContent("T", { status: "Todo", owner: "[[Ann]]", tags: ["a"], n: 2 })).toBe(
       '---\nstatus: Todo\nowner: "[[Ann]]"\ntags:\n  - a\nn: 2\n---\n\n# T\n\n',
     );
+  });
+
+  test("file names and folders are made safe", () => {
+    const none = () => false;
+    expect(uniqueNotePath("../a/./b", none)).toBe("a/b/Untitled.md");
+    expect(uniqueNotePath("", none, "a/b")).toBe("a b.md");
+    expect(uniqueNotePath("", none, "con")).toBe("con_.md");
+    expect(uniqueNotePath("", none, "..")).toBe("Untitled.md");
+    expect(uniqueNotePath("", none, ".hidden. ")).toBe("hidden.md");
+    expect(uniqueNotePath("", none, "x".repeat(300))).toBe(`${"x".repeat(100)}.md`);
+    expect(safeFileName('a:b*c?"d')).toBe("a b c d");
+    const taken = new Set(["untitled.md"]);
+    expect(uniqueNotePath("", (p) => taken.has(p))).toBe("Untitled 1.md");
+  });
+
+  test("the fallback name is checked too", () => {
+    const stamp = 5;
+    const real = Date.now;
+    Date.now = () => stamp;
+    try {
+      const p = uniqueNotePath("", (q) => !q.includes("5"));
+      expect(p).toBe("Untitled 5.md");
+      const q = uniqueNotePath("", (x) => !x.includes("-1"));
+      expect(q).toBe("Untitled 5-1.md");
+    } finally {
+      Date.now = real;
+    }
+  });
+
+  test("unsafe numbers stay strings; blank tags and escapes", () => {
+    const plan = planNewNote(["a == 9007199254740993", "b == -0", "c == 1.5", "d == 12", 'file.hasTag("  ")', 'e == "x\\ny"', 'f == "a\\qb"']);
+    expect(plan.props).toEqual({ a: "9007199254740993", b: "-0", c: 1.5, d: 12, e: "x\ny", f: "a\\qb" });
+    expect(buildNoteContent("a\nb", {})).toBe("# a b\n\n");
   });
 });
