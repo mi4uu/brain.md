@@ -4,6 +4,7 @@ import type { PropValue } from "@brainmd/shared/frontmatter";
 import {
   boardColumns,
   naturalWidth,
+  needsRowMenu,
   plainError,
   byColumn,
   matchKey,
@@ -467,5 +468,17 @@ describe("plainError", () => {
   test("other messages are kept as they are", () => {
     expect(plainError(new Error("views[0] is not a mapping"))).toBe("views[0] is not a mapping");
     expect(plainError("plain")).toBe("plain");
+  });
+});
+
+describe("needsRowMenu", () => {
+  test("a table without the name column needs the row menu to open a note", () => {
+    expect(needsRowMenu([{ key: "status" }, { key: "due" }])).toBe(true);
+    expect(needsRowMenu([{ key: "status" }, { key: "file.name" }])).toBe(false);
+  });
+
+  test("the table's natural width makes room for the menu column", () => {
+    const res: BaseQueryResponse = { views: [], view: "V", columns: [{ key: "status", label: "status", type: "text" }], total: 1, warnings: [], groups: [{ key: null, label: "", count: 1, rows: [{ path: "a.md", title: "a", revision: "r", values: {} }] }] };
+    expect(naturalWidth("table", res, { columnSize: {}, grouped: false })).toBe(160 + 44 + 2);
   });
 });

@@ -4,7 +4,8 @@ import { columnId, setColumnSize, setViewGroupBy, setViewOrder, setViewSort, set
 import type { PropValue } from "@brainmd/shared/frontmatter";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
 import { EditableCell } from "./EditableCell";
-import { DEFAULT_COLUMN_WIDTH, MAX_COLUMN_WIDTH, MIN_COLUMN_WIDTH, SUMMARY_NAMES, byColumn, clampWidth, matchKey, moveColumn, patchRowValues, propNameOf, summarise, toggleColumn } from "./model";
+import { RowMenu } from "./RowMenu";
+import { DEFAULT_COLUMN_WIDTH, MAX_COLUMN_WIDTH, MIN_COLUMN_WIDTH, SUMMARY_NAMES, byColumn, clampWidth, matchKey, moveColumn, needsRowMenu, patchRowValues, propNameOf, summarise, toggleColumn } from "./model";
 import type { Column, LayoutProps, PropChange, Row } from "./types";
 
 export function TableView({ result, view, config, host, saveProps, editView }: LayoutProps) {
@@ -143,10 +144,12 @@ export function TableView({ result, view, config, host, saveProps, editView }: L
           {result.columns.map((c) => (
             <col key={c.key} style={{ width: widthOf(c.key) }} />
           ))}
+          {needsRowMenu(result.columns) ? <col className="base-col-menu" /> : null}
         </colgroup>
         <thead>
           <tr>
             {result.columns.map(header)}
+            {needsRowMenu(result.columns) ? <th aria-label="Row actions" /> : null}
           </tr>
         </thead>
         <TableBody result={result} host={host} saveProps={saveProps} />
@@ -165,6 +168,7 @@ const summaryOf = (own: Record<string, string>, base: Record<string, string>, c:
 // re-renders only the colgroup and the header, not every row.
 const TableBody = memo(function TableBody({ result, host, saveProps }: Pick<LayoutProps, "result" | "host" | "saveProps">) {
   const grouped = result.groups.some((g) => g.label !== "");
+  const menu = needsRowMenu(result.columns);
   const save = (row: Row, change: PropChange) => {
     const patch: Record<string, PropValue> = {};
     for (const name of [...Object.keys(change.set ?? {}), ...(change.unset ?? [])]) {
@@ -176,7 +180,7 @@ const TableBody = memo(function TableBody({ result, host, saveProps }: Pick<Layo
     <tbody key={g.key ?? "\u0000none"}>
       {grouped ? (
         <tr className="base-group">
-          <td colSpan={result.columns.length}>
+          <td colSpan={result.columns.length + (menu ? 1 : 0)}>
             {g.label} <span className="base-count">{g.count}</span>
           </td>
         </tr>
@@ -188,6 +192,11 @@ const TableBody = memo(function TableBody({ result, host, saveProps }: Pick<Layo
               <EditableCell col={c} value={r.values[c.key] ?? null} row={r} host={host} onCommit={(change) => save(r, change)} />
             </td>
           ))}
+          {menu ? (
+            <td className="base-td-menu">
+              <RowMenu row={r} host={host} />
+            </td>
+          ) : null}
         </tr>
       ))}
     </tbody>
@@ -212,6 +221,7 @@ const TableFoot = memo(function TableFoot({ result, viewSummaries, baseSummaries
             </td>
           );
         })}
+        {needsRowMenu(result.columns) ? <td /> : null}
       </tr>
     </tfoot>
   );

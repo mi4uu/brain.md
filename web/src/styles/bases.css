@@ -338,6 +338,12 @@
   left: 0;
   z-index: 2;
 }
+.preview .doc .base-col-menu {
+  width: 44px;
+}
+.preview .doc .base-td-menu {
+  text-align: right;
+}
 .preview .doc .base-sum-name {
   color: var(--text-3);
 }
@@ -681,6 +687,17 @@
   .preview .doc .base-th-btn,
   .preview .doc .base-cell-edit {
     display: flex;
+  }
+  /* No hover on touch, so links keep the underline rather than relying on colour alone. */
+  .preview .doc .base-link {
+    text-decoration: underline;
+  }
+  .preview .doc .base-col-menu {
+    width: 56px;
+  }
+  .preview .doc .base-table td.base-td-menu {
+    padding: 0 8px;
+    overflow: visible;
   }
   .preview .doc .base-num :is(.base-th-btn, .base-cell-edit) {
     justify-content: flex-end;

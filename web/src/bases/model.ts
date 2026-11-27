@@ -409,10 +409,16 @@ const CARD = 240;
 const GAP = 12;
 const BORDER = 2;
 const MAX_CARDS_ACROSS = 5;
+const ROW_MENU = 44;
+
+// The name cell is the table's way to open a note; without it the row menu is the only one.
+export function needsRowMenu(columns: ReadonlyArray<{ key: string }>): boolean {
+  return !columns.some((c) => c.key === "file.name");
+}
 
 // How wide a view wants to be before the pane clamps it; null keeps the reading width.
 export function naturalWidth(type: string, res: BaseQueryResponse, view: { columnSize: Record<string, number>; grouped: boolean }): number | null {
-  if (type === "table") return res.columns.reduce((n, c) => n + (view.columnSize[columnId(c.key)] ?? DEFAULT_COLUMN_WIDTH), 0) + BORDER;
+  if (type === "table") return res.columns.reduce((n, c) => n + (view.columnSize[columnId(c.key)] ?? DEFAULT_COLUMN_WIDTH), 0) + (needsRowMenu(res.columns) ? ROW_MENU : 0) + BORDER;
   if (type === "kanban") {
     if (!view.grouped) return null;
     return boardColumns(res.groups).reduce((n, g) => n + (g.rows.length > 0 ? BOARD_COL : BOARD_COL_EMPTY) + GAP, GAP) + BORDER;
