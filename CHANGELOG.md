@@ -13,12 +13,14 @@
   a status without rewriting the note. `GET /api/properties`,
   `PUT /api/properties/types` and `PATCH /api/note-properties/*` back the UI.
 - **Table editing.** In the editor, Tab and Shift-Tab move between cells and
-  re-pad the table, Enter moves down a row and adds one at the end, and
-  Mod-Alt-T (or the toolbar button) formats the table under the cursor. In
-  the preview, click a cell to edit its source, hover a table for `+` buttons
-  and drag handles, right click for insert, delete, move and align actions.
+  re-pad the table, Enter moves down a row and adds one at the end,
+  Shift-Enter then Enter leaves it, and Mod-Alt-T (or the toolbar button)
+  formats the table under the cursor. In the preview, click a cell to edit
+  its source, hover a table for `+` buttons and drag handles, right click for
+  insert, delete, move and align actions.
   On touch screens a tap selects a cell and shows the same actions in a bar.
-  Every action is one undo step. Tables stay plain GFM pipe tables.
+  Every action is one undo step, undone from the editor. Tables stay plain
+  GFM pipe tables.
 
 ## 0.9.0 - 2026-11-18
 

@@ -290,12 +290,14 @@ away, retry a failed save, or open History.
 **Tables.** Pipe tables are edited visually or from the keyboard and always
 stay plain Markdown. In the editor, <kbd>Tab</kbd> / <kbd>Shift-Tab</kbd> move
 between cells and re-pad the table, <kbd>Enter</kbd> moves down (and adds a
-row at the end), <kbd>Mod</kbd>+<kbd>Alt</kbd>+<kbd>T</kbd> formats it. In the
+row at the end), <kbd>Shift-Enter</kbd> then <kbd>Enter</kbd> leaves it with
+a blank line, <kbd>Mod</kbd>+<kbd>Alt</kbd>+<kbd>T</kbd> formats it. In the
 preview, click a cell to edit it, use the `+` on the right and bottom edge to
 add a column or row, drag the grips to reorder, and right click for insert,
-delete, move and align. On a phone, tap a cell for the action bar. On iPhone
-the long-press menu may not open on the first press; the tap action bar has
-every action. A literal pipe inside a cell, including inside code or a
+delete, move and align. Each preview edit is one undo step in the editor;
+with the preview alone on screen, switch to the editor to undo. On a phone,
+tap a cell for the action bar. On iPhone the long-press menu may not open on
+the first press; the tap action bar has every action. A literal pipe inside a cell, including inside code or a
 `[[link|alias]]`, must be written `\|`, as GFM requires.
 
 ![Editor + preview, sidebar with backlinks](docs/img/project-with-sidebar.png)
