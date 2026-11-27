@@ -1,9 +1,8 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { ArrowDownIcon, ArrowUpIcon, CaretSortIcon, Cross2Icon, MixerHorizontalIcon, PlusIcon } from "@radix-ui/react-icons";
+import { ArrowDownIcon, ArrowUpIcon, CaretSortIcon, Cross2Icon, EyeNoneIcon, EyeOpenIcon, MixerHorizontalIcon, PlusIcon } from "@radix-ui/react-icons";
 import type { ViewConfig } from "@brainmd/shared/base-parse";
 import type { SortSpec } from "@brainmd/shared/base-types";
 import { setViewFilters, setViewOrder, setViewSort } from "@brainmd/shared/base-yaml";
-import { ColumnsIcon } from "../components/Icons";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
 import { filtersFrom, flatFilters } from "./model";
 import {
@@ -62,6 +61,17 @@ function useKeepFocus(view: ViewConfig) {
   return { ref, onFocus };
 }
 
+// Radix focuses the first field on open, which after a mouse click shows a
+// focus ring and invites overwriting a filter. Focus the popover itself
+// instead, so Tab still starts inside it.
+function focusBox(e: Event, box: HTMLElement | null, field?: HTMLElement | null) {
+  e.preventDefault();
+  const coarse = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+  (field && !coarse ? field : box)?.focus({ preventScroll: true });
+}
+
+const POP = { align: "end", collisionPadding: 16 } as const;
+
 interface OpenProps {
   open: boolean;
   onOpenChange(open: boolean): void;
@@ -74,13 +84,13 @@ export function SortPopover({ view, options, editView, open, onOpenChange }: { v
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <button type="button" className="btn base-btn" aria-label="Sort">
+        <button type="button" className={view.sort.length > 0 ? "btn base-btn base-btn-on" : "btn base-btn"} aria-label="Sort">
           <CaretSortIcon aria-hidden />
           <span className="base-btn-text">Sort</span>
           {view.sort.length > 0 ? <span className="base-count">{view.sort.length}</span> : null}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="base-pop" ref={keep.ref} onFocus={keep.onFocus}>
+      <PopoverContent {...POP} className="base-pop" ref={keep.ref} onFocus={keep.onFocus} onOpenAutoFocus={(e) => focusBox(e, keep.ref.current)}>
         {view.sort.length === 0 ? <p className="base-hint">No sort. Rows follow file name.</p> : null}
         {view.sort.map((s, i) => {
           const value = optionKeyFor(options, s.property);
@@ -149,16 +159,17 @@ export function FilterPopover({ view, options, editView, open, onOpenChange }: {
   const meta = FILTER_OPS.find((o) => o.id === op)!;
   const built = buildFilter(chosen?.key ?? "", op, value, chosen?.type);
   const keep = useKeepFocus(view);
+  const newFilter = useRef<HTMLInputElement>(null);
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <button type="button" className="btn base-btn" aria-label="Filter">
+        <button type="button" className={flat === null || flat.length > 0 ? "btn base-btn base-btn-on" : "btn base-btn"} aria-label="Filter">
           <MixerHorizontalIcon aria-hidden />
           <span className="base-btn-text">Filter</span>
           {flat === null || flat.length > 0 ? <span className="base-count">{flat === null ? "…" : flat.length}</span> : null}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="base-pop base-pop-wide" ref={keep.ref} onFocus={keep.onFocus}>
+      <PopoverContent {...POP} className="base-pop base-pop-wide" ref={keep.ref} onFocus={keep.onFocus} onOpenAutoFocus={(e) => focusBox(e, keep.ref.current, newFilter.current)}>
         {flat === null ? (
           <p className="base-hint">This filter uses nested and / or / not groups. Edit it in the block source.</p>
         ) : (
@@ -217,6 +228,7 @@ export function FilterPopover({ view, options, editView, open, onOpenChange }: {
             ) : null}
             <div className="base-pop-row">
               <input
+                ref={newFilter}
                 className="base-input"
                 aria-label="New filter"
                 placeholder='file.hasTag("work")'
@@ -256,11 +268,11 @@ export function PropertiesPopover({ view, options, editView, open, onOpenChange 
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
         <button type="button" className="btn base-btn" aria-label="Properties">
-          <ColumnsIcon aria-hidden />
+          <EyeOpenIcon aria-hidden />
           <span className="base-btn-text">Properties</span>
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="base-pop" ref={keep.ref} onFocus={keep.onFocus}>
+      <PopoverContent {...POP} className="base-pop" ref={keep.ref} onFocus={keep.onFocus} onOpenAutoFocus={(e) => focusBox(e, keep.ref.current)}>
         {shown.map((key, i) => {
           const label = labelOf(options, key);
           return (
@@ -273,7 +285,7 @@ export function PropertiesPopover({ view, options, editView, open, onOpenChange 
                 <ArrowDownIcon aria-hidden />
               </button>
               <button type="button" className="btn base-btn icon" aria-label={`Hide ${label}`} disabled={shown.length === 1} onClick={() => set(hideColumn(view.order, key))}>
-                <Cross2Icon aria-hidden />
+                <EyeNoneIcon aria-hidden />
               </button>
             </div>
           );

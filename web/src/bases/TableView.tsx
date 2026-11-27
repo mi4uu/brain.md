@@ -83,10 +83,20 @@ export function TableView({ result, view, config, host, saveProps, editView }: L
           <DropdownMenuItem disabled={!sortedBy(c.key)} onSelect={() => editView((src, i) => setViewSort(src, i, view.sort.filter((s) => columnId(s.property) !== columnId(c.key))))}>Clear sort</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => editView((src, i) => setViewGroupBy(src, i, { property: c.key, direction: "ASC" }))}>Group by this</DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => editView((src, i) => setViewOrder(src, i, moveColumn(view.order, c.key, -1)))}>Move left</DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => editView((src, i) => setViewOrder(src, i, moveColumn(view.order, c.key, 1)))}>Move right</DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => commitWidth(c.key, clampWidth(widthOf(c.key) + 40))}>Wider</DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => commitWidth(c.key, clampWidth(widthOf(c.key) - 40))}>Narrower</DropdownMenuItem>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>Position</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="base-menu">
+              <DropdownMenuItem onSelect={() => editView((src, i) => setViewOrder(src, i, moveColumn(view.order, c.key, -1)))}>Move left</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => editView((src, i) => setViewOrder(src, i, moveColumn(view.order, c.key, 1)))}>Move right</DropdownMenuItem>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>Width</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="base-menu">
+              <DropdownMenuItem onSelect={() => commitWidth(c.key, clampWidth(widthOf(c.key) + 40))}>Wider</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => commitWidth(c.key, clampWidth(widthOf(c.key) - 40))}>Narrower</DropdownMenuItem>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
           <DropdownMenuItem disabled={result.columns.length < 2} onSelect={() => editView((src, i) => setViewOrder(src, i, toggleColumn(view.order, c.key)))}>Hide column</DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuSub>

@@ -11,6 +11,9 @@
   min-width: 28px;
   padding: 4px;
 }
+.btn.base-btn-on {
+  color: var(--text-1);
+}
 .base-count {
   color: var(--text-3);
   font-size: var(--text-xs);
@@ -25,6 +28,9 @@
 }
 .base-pop-wide {
   width: 420px;
+}
+.base-pop > .btn.base-btn {
+  align-self: flex-start;
 }
 .base-pop-row {
   display: flex;
@@ -151,7 +157,7 @@
   font-weight: 500;
   color: var(--text-1);
 }
-@container base-view (max-width: 480px) {
+@container base-view (max-width: 440px) {
   .preview .doc .base-btn-text {
     display: none;
   }
