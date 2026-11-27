@@ -28,6 +28,14 @@ describe("fenceEdit", () => {
     expect(fenceEdit(afterDelete, 1, mut)).not.toBeNull();
   });
 
+  test("expected from a CRLF note still matches", () => {
+    const crlf = note.replace(/\n/g, "\r\n");
+    const expected = "views:\r\n  - type: table\r\n    name: T";
+    const e = fenceEdit(crlf, 5, (s) => setViewSort(s, 0, [{ property: "a", direction: "ASC" }]), expected);
+    expect(e).not.toBeNull();
+    expect(applyEdit(crlf, e!)).toContain("sort:\r\n");
+  });
+
   test("CRLF notes keep CRLF", () => {
     const crlf = note.replace(/\n/g, "\r\n");
     const out = applyEdit(crlf, fenceEdit(crlf, 5, (s) => setViewSort(s, 0, [{ property: "a", direction: "DESC" }]))!);

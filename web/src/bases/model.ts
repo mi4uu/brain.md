@@ -27,6 +27,7 @@ export function propNameOf(key: string): string | null {
 // text reads back as exactly the stored items.
 function listRoundTrips(type: PropertyType, value: PropValue): boolean {
   if (value === null) return true;
+  if (typeof value === "string") return value !== "" && !value.includes(",") && cleanItem(type, value) === value;
   return Array.isArray(value) && value.every((x) => typeof x === "string" && x !== "" && !x.includes(",") && cleanItem(type, x) === x);
 }
 
@@ -188,7 +189,14 @@ export function columnAt(cols: ColumnRect[], x: number, y: number): { key: strin
 // stays text. null: the property is a list, which a move would flatten.
 export function moveChange(type: PropertyType | undefined, key: string | null): { set: PropValue } | { unset: true } | null {
   if (type && isListType(type)) return null;
+  return presetValue(type, key);
+}
+
+// What the "+" in a column presets on a new card: unlike a move, a list
+// property gets a one-item list.
+export function presetValue(type: PropertyType | undefined, key: string | null): { set: PropValue } | { unset: true } {
   if (key === null) return { unset: true };
+  if (type && isListType(type)) return { set: [key] };
   if (type === "number" && String(Number(key)) === key) return { set: Number(key) };
   if (type === "checkbox" && (key === "true" || key === "false")) return { set: key === "true" };
   return { set: key };

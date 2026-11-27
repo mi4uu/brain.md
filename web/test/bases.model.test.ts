@@ -17,6 +17,7 @@ import {
   moveChange,
   moveColumn,
   moveRowInResult,
+  presetValue,
   patchRowRevision,
   patchRowValues,
   propNameOf,
@@ -58,6 +59,13 @@ describe("columns and editing", () => {
     expect(isEditable("tags", "t", ["a", "b-c"])).toBe(true);
     expect(isEditable("tags", "t", [])).toBe(true);
     expect(isEditable("tags", "t", null)).toBe(true);
+  });
+
+  test("a lone string under a list type is editable only when nothing would change", () => {
+    expect(isEditable("tags", "t", "work")).toBe(true);
+    expect(isEditable("tags", "t", "my tag")).toBe(false);
+    expect(isEditable("aliases", "a", "a, b")).toBe(false);
+    expect(isEditable("aliases", "a", "")).toBe(false);
   });
 
   test("cells the server altered are read-only", () => {
@@ -172,6 +180,14 @@ describe("kanban drag", () => {
     expect(moveChange("number", " 3 ")).toEqual({ set: " 3 " });
     expect(moveChange("checkbox", "yes")).toEqual({ set: "yes" });
     expect(moveChange("checkbox", "false")).toEqual({ set: false });
+  });
+
+  test("presetValue gives a list property a one-item list", () => {
+    expect(presetValue("multitext", "a")).toEqual({ set: ["a"] });
+    expect(presetValue("tags", null)).toEqual({ unset: true });
+    expect(presetValue("number", "007")).toEqual({ set: "007" });
+    expect(presetValue("number", "3")).toEqual({ set: 3 });
+    expect(presetValue(undefined, "x")).toEqual({ set: "x" });
   });
 
   test("canMove refuses lists, nested values and partial cells", () => {

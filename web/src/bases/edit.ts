@@ -10,7 +10,7 @@ export { applyEdit, type TextEdit } from "../tables/apply";
 export function fenceEdit(text: string, startLine: number, mutate: (source: string) => string, expected?: string): TextEdit | null {
   const fence = findBaseFences(text).find((f) => f.startLine === startLine);
   if (!fence) return null;
-  if (expected !== undefined && fence.source !== expected) return null;
+  if (expected !== undefined && fence.source !== expected.replace(/\r\n/g, "\n")) return null;
   const next = mutate(fence.source);
   if (next === fence.source) return { from: fence.from, to: fence.from, insert: "" };
   return replaceFenceBody(text, fence, next);
