@@ -83,6 +83,8 @@ describe("every fence the renderer turns into a view passes the hydration gate",
     "three space indent": "# T\n\n   ```base\n   views: []\n   ```\n",
     "info text": "# T\n\n```base title\nviews: []\n```\n",
     "unclosed, no final newline": "# T\n\n```base\nviews: []",
+    "unclosed, final newline": "# T\n\n```base\nviews: []\n",
+    "unclosed, trailing blank lines": "# T\n\n```base\nviews: []\n\n\n",
     "empty body": "# T\n\n```base\n```\n",
     "body ends in a blank line": "# T\n\n```base\nviews: []\n\n```\n",
     crlf: "# T\r\n\r\n```base\r\nviews: []\r\n```\r\n",
@@ -95,4 +97,22 @@ describe("every fence the renderer turns into a view passes the hydration gate",
       expect(isLiveFence(md, Number(m![2]), unescapeAttr(m![1]!))).toBe(true);
     });
   }
+});
+
+describe("a base fence directly next to a table", () => {
+  const opts = { resolveWikilink: () => null, isMediaTarget: () => false, buildMediaUrl: (t: string) => t };
+  const ranges = (md: string) =>
+    [...renderMarkdown(md, opts).html.matchAll(/<(div class="base-block"|table)[^>]*data-source-line="(\d+)"[^>]*data-source-end="(\d+)"/g)].map(
+      (m) => `${m[1] === "table" ? "table" : "base"} ${m[2]}-${m[3]}`,
+    );
+  test("fence above, table below: both keep their ranges and the fence is live", () => {
+    const md = "```base\nviews: []\n```\n|a|b|\n|-|-|\n|1|2|\n";
+    expect(ranges(md)).toEqual(["base 1-3", "table 4-6"]);
+    expect(isLiveFence(md, 1, "views: []")).toBe(true);
+  });
+  test("table above, fence below", () => {
+    const md = "|a|b|\n|-|-|\n|1|2|\n```base\nviews: []\n```\n";
+    expect(ranges(md)).toEqual(["table 1-3", "base 4-6"]);
+    expect(isLiveFence(md, 4, "views: []")).toBe(true);
+  });
 });

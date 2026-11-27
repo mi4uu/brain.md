@@ -252,6 +252,19 @@ describe("findBaseFences and replaceFenceBody", () => {
     expect(f[0]!.source).toBe("views: []");
   });
 
+  test("an unclosed fence at the end leaves out the line after the final newline, like the renderer", () => {
+    const src = (md: string) => findBaseFences(md)[0]!.source;
+    expect(src("a\n```base\nviews: []\n")).toBe("views: []");
+    expect(src("```base\nviews: []\n\n")).toBe("views: []\n");
+    expect(src("```base\r\nviews: []\r\n")).toBe("views: []");
+    expect(src("```base\n")).toBe("");
+    expect(src("```base\n\n\n")).toBe("\n");
+    expect(findBaseFences("a\n```base\nviews: []\n")[0]!.endLine).toBe(4);
+    const md = "```base\nviews: []\n";
+    const e = replaceFenceBody(md, findBaseFences(md)[0]!, "views:\n  - type: table");
+    expect(md.slice(0, e.from) + e.insert + md.slice(e.to)).toBe("```base\nviews:\n  - type: table\n");
+  });
+
   test("CRLF notes", () => {
     const f = findBaseFences("```base\r\nviews: []\r\n```\r\n");
     expect(f[0]!.source).toBe("views: []");

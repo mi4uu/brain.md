@@ -51,6 +51,8 @@ export function BaseView({ source, startLine, ordinal, notePath, host }: BaseVie
   const fingerprintRef = useRef(fingerprint);
   fingerprintRef.current = fingerprint;
   const [result, setResult] = useState<BaseQueryResponse | null>(() => getCached(key, fingerprint) ?? getLast(key) ?? null);
+  const resultRef = useRef(result);
+  resultRef.current = result;
   const [openTool, setOpenToolState] = useState<string | null>(() => getOpenTool(key));
   const toolOpen = (name: string) => ({
     open: openTool === name,
@@ -153,12 +155,9 @@ export function BaseView({ source, startLine, ordinal, notePath, host }: BaseVie
         const res = await api.patchNoteProperties(row.path, { set: change.set, unset: change.unset, baseRevision: row.revision });
         const revision = res.revision;
         if (revision) {
-          setResult((r) => {
-            if (!r) return r;
-            const next = patchRowRevision(r, row.path, revision);
-            setCached(key, fingerprintRef.current, next);
-            return next;
-          });
+          setResult((r) => (r ? patchRowRevision(r, row.path, revision) : r));
+          const shown = resultRef.current;
+          if (shown) setCached(key, fingerprintRef.current, patchRowRevision(shown, row.path, revision));
         }
         emitBaseRefresh();
         return true;
@@ -175,16 +174,16 @@ export function BaseView({ source, startLine, ordinal, notePath, host }: BaseVie
     async (preset?: Record<string, PropValue>): Promise<void> => {
       const plan = planNewNote([parsed.config.filters, view.filters], preset);
       const tried = new Set<string>();
-      try {
-        for (let attempt = 0; attempt < 5; attempt++) {
-          const path = uniqueNotePath(plan.folder, (p) => host.noteExists(p) || tried.has(p.toLowerCase()));
-          const title = path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/, "");
-          if ((await host.createNote(path, buildNoteContent(title, plan.props))) !== "exists") return;
-          tried.add(path.toLowerCase());
+      for (let attempt = 0; attempt < 5; attempt++) {
+        let path: string;
+        try {
+          path = uniqueNotePath(plan.folder, (p) => host.noteExists(p) || tried.has(p.toLowerCase()));
+        } catch {
+          break;
         }
-      } catch (e) {
-        host.toast(`Create failed: ${errText(e)}`);
-        return;
+        const title = path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/, "");
+        if ((await host.createNote(path, buildNoteContent(title, plan.props))) !== "exists") return;
+        tried.add(path.toLowerCase());
       }
       host.toast("Could not find a free note name");
     },

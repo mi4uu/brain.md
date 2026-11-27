@@ -909,8 +909,12 @@ export function App() {
           setToast(`Create failed: ${e instanceof Error ? e.message : String(e)}`);
           return "failed";
         }
-        await baseLatest.current.refreshTree();
-        await baseLatest.current.openNote(p, { edit: true });
+        try {
+          await baseLatest.current.refreshTree();
+          await baseLatest.current.openNote(p, { edit: true });
+        } catch (e) {
+          setToast(`Created ${p}, but could not open it: ${e instanceof Error ? e.message : String(e)}`);
+        }
         return "created";
       },
       toast: (m) => setToast(m),

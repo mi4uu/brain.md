@@ -493,10 +493,30 @@
   .preview .doc .base-cell-edit {
     display: flex;
   }
-  /* The handle overlaps the right of the header button; the column menu's
-     Wider and Narrower are the other way in. */
+  .preview .doc .base-col-menu {
+    width: 56px;
+  }
+  .preview .doc .base-table td.base-td-menu {
+    padding: 0 8px;
+    overflow: visible;
+  }
+  /* A 40px handle centred on the column border. A sticky cell is its own
+     stacking context, so each header would paint over the handle of the one
+     before it; the head row sticks instead and the cells stay plain. */
+  .preview .doc .base-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  .preview .doc .base-table th {
+    position: relative;
+    z-index: auto;
+    overflow: visible;
+  }
   .preview .doc .base-resize {
+    right: -20px;
     width: 40px;
+    z-index: 2;
   }
   .preview .doc .base-check-wrap {
     min-width: 40px;

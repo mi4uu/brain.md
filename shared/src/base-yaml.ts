@@ -323,7 +323,10 @@ export function findBaseFences(content: string): BaseFence[] {
     const closed = j < lines.length;
     if (isBase) {
       const bodyFirst = i + 1;
-      const bodyLast = (closed ? j : lines.length) - 1;
+      // Unclosed: the "" after the note's final newline is not a body line;
+      // the renderer leaves it out too, and the two must agree on the source.
+      const end = closed ? j : lines.length > bodyFirst && lines[lines.length - 1] === "" ? lines.length - 1 : lines.length;
+      const bodyLast = end - 1;
       const from = bodyFirst <= bodyLast ? offsets[bodyFirst]! : closed ? offsets[j]! : content.length;
       const to =
         bodyFirst <= bodyLast

@@ -66,6 +66,33 @@ interface BaseRoot {
   root: Root;
   source: string;
   rendered: { startLine: number; notePath: string | null; host: BaseHost } | null;
+  // Scroll offsets inside the view (table wrap, kanban board). A detached
+  // element loses them, so they are put back after each move.
+  scroll: Map<HTMLElement, { top: number; left: number }>;
+}
+
+function newBaseRoot(el: HTMLElement, source: string): BaseRoot {
+  const scroll = new Map<HTMLElement, { top: number; left: number }>();
+  el.addEventListener(
+    "scroll",
+    (e) => {
+      const t = e.target;
+      if (t instanceof HTMLElement && t !== el) scroll.set(t, { top: t.scrollTop, left: t.scrollLeft });
+    },
+    { capture: true, passive: true },
+  );
+  return { el, root: createRoot(el), source, rendered: null, scroll };
+}
+
+function restoreScroll(entry: BaseRoot): void {
+  for (const [t, pos] of entry.scroll) {
+    if (!entry.el.contains(t)) {
+      entry.scroll.delete(t);
+      continue;
+    }
+    t.scrollTop = pos.top;
+    t.scrollLeft = pos.left;
+  }
 }
 
 export interface PreviewHandle {
@@ -421,10 +448,11 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
               else old.el.setAttribute(name, v);
             }
             holder.replaceWith(old.el);
+            restoreScroll(old);
           }
           entry = old;
         } else {
-          entry = { el: holder, root: createRoot(holder), source, rendered: null };
+          entry = newBaseRoot(holder, source);
         }
         const r = entry.rendered;
         if (!r || r.startLine !== startLine || r.notePath !== notePath || r.host !== baseHost) {
