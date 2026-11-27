@@ -15,6 +15,7 @@ export interface LayoutProps {
   vaultTypes: Map<string, PropertyType>;
   host: BaseHost;
   saveProps(row: Row, change: PropChange, optimistic?: (r: BaseQueryResponse) => BaseQueryResponse): Promise<boolean>;
-  editView(fn: (source: string, viewIndex: number) => string): void;
+  // false when the splice was refused; the toast has been shown and nothing changed.
+  editView(fn: (source: string, viewIndex: number) => string): boolean;
   newNote(preset?: Record<string, PropValue>): Promise<void>;
 }

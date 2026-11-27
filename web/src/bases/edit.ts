@@ -15,3 +15,9 @@ export function fenceEdit(text: string, startLine: number, mutate: (source: stri
   if (next === fence.source) return { from: fence.from, to: fence.from, insert: "" };
   return replaceFenceBody(text, fence, next);
 }
+
+// Whether a placeholder in the rendered HTML stands for a real ```base fence of
+// `text`. Raw HTML can carry a hand-made `.base-block`, which must not get a
+// live, writing view.
+export const isLiveFence = (text: string, startLine: number, source: string): boolean =>
+  fenceEdit(text, startLine, (s) => s, source) !== null;

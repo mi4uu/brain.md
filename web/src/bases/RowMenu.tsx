@@ -17,7 +17,7 @@ export function RowMenu({ row, host, children }: { row: Row; host: BaseHost; chi
           <DotsHorizontalIcon aria-hidden />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+      <DropdownMenuContent align="end" className="base-menu" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
         <DropdownMenuItem onSelect={() => host.openNote(row.path)}>Open note</DropdownMenuItem>
         {children ? <DropdownMenuSeparator /> : null}
         {children}

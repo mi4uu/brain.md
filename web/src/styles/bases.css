@@ -1,0 +1,515 @@
+/* Views from ```base blocks. Tokens only; no new colours. */
+
+/* Popovers and menus render in a portal, outside .preview .doc. */
+.btn.base-btn {
+  min-height: 28px;
+  padding: 4px 8px;
+  gap: 6px;
+  font-size: var(--text-sm);
+}
+.btn.base-btn.icon {
+  min-width: 28px;
+  padding: 4px;
+}
+.base-count {
+  color: var(--text-3);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.base-pop {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 320px;
+  max-width: calc(100vw - 32px);
+}
+.base-pop-wide {
+  width: 420px;
+}
+.base-pop-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.base-pop-wrap {
+  flex-wrap: wrap;
+}
+.base-pop-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+}
+.base-hint {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--text-xs);
+}
+.base-input,
+.base-select {
+  flex: 1;
+  min-width: 0;
+  min-height: 28px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--bg-surface);
+  color: var(--text-1);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+.base-input:focus-visible,
+.base-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+}
+.base-cell-input {
+  width: 100%;
+}
+@media (pointer: coarse) {
+  .btn.base-btn {
+    min-height: 40px;
+    min-width: 40px;
+  }
+  .btn.base-btn.icon {
+    min-width: 40px;
+  }
+  /* 16px stops iOS from zooming into a focused field. */
+  .base-input,
+  .base-select {
+    min-height: 40px;
+    font-size: 16px;
+  }
+  .base-menu [role="menuitem"],
+  .base-menu [role="menuitemradio"],
+  .base-menu [role="menuitemcheckbox"] {
+    min-height: 40px;
+  }
+}
+
+/* Inside the note. The longer selector beats the preview table, list and link rules. */
+.preview .doc .base-block {
+  margin: var(--space-4) 0;
+  max-width: 100%;
+}
+.preview .doc .base-view {
+  container: base-view / inline-size;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--bg-surface);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: var(--line-tight);
+  color: var(--text-1);
+  overflow-wrap: normal;
+  word-break: normal;
+}
+.preview .doc .base-view button {
+  font: inherit;
+}
+.preview .doc .base-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+.preview .doc .base-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+.preview .doc .base-switch {
+  min-width: 0;
+  max-width: 100%;
+}
+.preview .doc .base-switch-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--text-1);
+}
+@container base-view (max-width: 480px) {
+  .preview .doc .base-btn-text {
+    display: none;
+  }
+}
+.preview .doc .base-warn,
+.preview .doc .base-empty {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-3);
+  font-size: var(--text-xs);
+}
+.preview .doc .base-empty {
+  font-size: var(--text-sm);
+}
+.preview .doc .base-link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+.preview .doc .base-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: var(--radius-1);
+}
+.preview .doc .base-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.preview .doc .base-chip {
+  padding: 0 6px;
+  border-radius: var(--radius-1);
+  background: var(--tag-bg);
+  color: var(--tag-fg);
+}
+.preview .doc .base-partial {
+  color: var(--text-3);
+  text-decoration: underline dotted var(--border-strong);
+  text-underline-offset: 3px;
+  cursor: help;
+}
+
+.preview .doc .base-table-wrap {
+  overflow: auto;
+  max-height: min(70vh, 640px);
+}
+.preview .doc .base-table {
+  width: 100%;
+  min-width: max-content;
+  margin: 0;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+}
+.preview .doc .base-table th,
+.preview .doc .base-table td {
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+.preview .doc .base-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0;
+  background: var(--bg-surface-2);
+  color: var(--text-2);
+  font-weight: 500;
+}
+.preview .doc .base-table tfoot td {
+  position: sticky;
+  bottom: 0;
+  background: var(--bg-surface-2);
+  color: var(--text-2);
+  border-top: 1px solid var(--border);
+  border-bottom: 0;
+}
+.preview .doc .base-col-menu {
+  width: 44px;
+}
+.preview .doc .base-th-btn {
+  display: block;
+  width: 100%;
+  padding: 6px 12px 6px 8px;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.preview .doc .base-th-btn:hover {
+  background: var(--bg-hover);
+}
+.preview .doc .base-th-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.preview .doc .base-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.preview .doc .base-resize:hover,
+.preview .doc .base-resize:focus-visible {
+  background: var(--accent-soft);
+  outline: none;
+}
+.preview .doc .base-group td {
+  background: var(--bg-surface-2);
+  font-weight: 500;
+}
+.preview .doc .base-td-menu {
+  text-align: right;
+}
+.preview .doc .base-cell-edit {
+  min-height: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: var(--radius-1);
+  cursor: text;
+}
+.preview .doc .base-cell-edit:hover {
+  background: var(--bg-hover);
+}
+.preview .doc .base-cell-edit:focus-visible,
+.preview .doc .base-check:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.preview .doc .base-check {
+  margin: 0;
+  accent-color: var(--accent);
+}
+.preview .doc .base-check-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  min-height: 20px;
+}
+.preview .doc .base-summary-note {
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  color: var(--text-3);
+  font-size: var(--text-xs);
+}
+
+.preview .doc .base-cards-wrap,
+.preview .doc .base-list-wrap {
+  display: block;
+}
+.preview .doc .base-group-title {
+  margin: 0;
+  padding: var(--space-2) var(--space-3) 0;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-2);
+}
+.preview .doc .base-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+.preview .doc .base-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--bg-surface);
+}
+.preview .doc .base-card:has(:focus-visible) {
+  border-color: var(--border-strong);
+}
+.preview .doc .base-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.preview .doc .base-card-title {
+  min-width: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.preview .doc .base-card-props {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: var(--space-1) 0 0;
+}
+.preview .doc .base-card-props div {
+  display: flex;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+.preview .doc .base-card-props dt {
+  flex: 0 0 auto;
+  color: var(--text-3);
+}
+.preview .doc .base-card-props dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.preview .doc .base-cover {
+  margin: calc(var(--space-2) * -1) calc(var(--space-3) * -1) var(--space-2);
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--bg-surface-2);
+}
+.preview .doc .base-cover > *,
+.preview .doc .base-cover-media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  margin: 0;
+  object-fit: cover;
+  border-radius: 0;
+}
+.preview .doc .base-cover-ph {
+  background: var(--bg-surface-2);
+}
+
+.preview .doc .base-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.preview .doc .base-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 2px var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+.preview .doc .base-list li:last-child {
+  border-bottom: 0;
+}
+.preview .doc .base-list-meta {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  min-width: 0;
+  color: var(--text-3);
+  font-size: var(--text-xs);
+}
+.preview .doc .base-list-prop {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.preview .doc .base-board {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  overflow-x: auto;
+}
+.preview .doc .base-col {
+  flex: 0 0 min(260px, 85vw);
+  border-radius: var(--radius-2);
+  background: var(--bg-surface-2);
+}
+.preview .doc .base-col.over {
+  outline: 2px solid var(--accent);
+}
+.preview .doc .base-col-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+}
+.preview .doc .base-col-head h4 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.preview .doc .base-col-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 40px;
+  padding: 0 var(--space-2) var(--space-2);
+}
+.preview .doc .base-card.lifted {
+  opacity: 0.4;
+}
+.preview .doc .base-board.dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+.preview .doc .base-ghost {
+  position: fixed;
+  z-index: var(--z-modal);
+  max-width: 240px;
+  padding: 4px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-2);
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-2);
+  pointer-events: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .preview .doc .base-board .base-card {
+    cursor: grab;
+  }
+}
+@media (pointer: coarse) {
+  .preview .doc .base-th-btn,
+  .preview .doc .base-cell-edit,
+  .preview .doc .base-link {
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .preview .doc .base-th-btn,
+  .preview .doc .base-cell-edit {
+    display: flex;
+  }
+  /* The handle overlaps the right of the header button; the column menu's
+     Wider and Narrower are the other way in. */
+  .preview .doc .base-resize {
+    width: 40px;
+  }
+  .preview .doc .base-check-wrap {
+    min-width: 40px;
+    min-height: 40px;
+  }
+  .preview .doc .base-check {
+    width: 22px;
+    height: 22px;
+  }
+  .preview .doc .base-list li {
+    min-height: 40px;
+  }
+  .preview .doc .base-card-title {
+    min-height: 40px;
+  }
+}

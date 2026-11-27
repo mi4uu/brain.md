@@ -348,3 +348,30 @@ export function moveRefusal(
   if (toKey && toKey.length >= MAX_MOVE_KEY) return MOVE_REFUSED.long;
   return null;
 }
+
+// The view an edit targets, by name: exact, then case-insensitive, else the first.
+export function viewIndexFor(names: readonly string[], wanted: string | undefined): number {
+  if (wanted === undefined) return 0;
+  const exact = names.indexOf(wanted);
+  if (exact >= 0) return exact;
+  const lower = wanted.toLowerCase();
+  return Math.max(0, names.findIndex((n) => n.toLowerCase() === lower));
+}
+
+// The frontmatter key of a change that the server marked partial on this row;
+// writing it would persist the shortened value.
+export function partialHit(row: { partial?: readonly string[] }, change: { set?: Record<string, unknown>; unset?: readonly string[] }): string | null {
+  if (!row.partial?.length) return null;
+  const cut = new Set(row.partial.map((k) => propNameOf(k)).filter((k): k is string => k !== null));
+  for (const k of [...Object.keys(change.set ?? {}), ...(change.unset ?? [])]) if (cut.has(k)) return k;
+  return null;
+}
+
+export function optionType(key: string, columns: ReadonlyArray<{ key: string; type: string }>, vaultTypes: ReadonlyMap<string, PropertyType>): string | undefined {
+  const col = columns.find((c) => columnId(c.key) === columnId(key));
+  if (col) return col.type;
+  if (key.startsWith("file.")) return "file";
+  if (key.startsWith("formula.")) return "formula";
+  const name = propNameOf(key);
+  return name === null ? undefined : vaultTypes.get(name);
+}

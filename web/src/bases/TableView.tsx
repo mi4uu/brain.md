@@ -86,7 +86,7 @@ export function TableView({ result, view, config, host, saveProps, editView }: L
             {sortedBy(c.key) ? <span aria-hidden>{sortedBy(c.key) === "ASC" ? " ↑" : " ↓"}</span> : null}
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
+        <DropdownMenuContent align="start" className="base-menu">
           <DropdownMenuItem onSelect={() => editView((src, i) => setViewSort(src, i, [{ property: c.key, direction: "ASC" }]))}>Sort ascending</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => editView((src, i) => setViewSort(src, i, [{ property: c.key, direction: "DESC" }]))}>Sort descending</DropdownMenuItem>
           <DropdownMenuItem disabled={!sortedBy(c.key)} onSelect={() => editView((src, i) => setViewSort(src, i, view.sort.filter((s) => columnId(s.property) !== columnId(c.key))))}>Clear sort</DropdownMenuItem>
@@ -100,7 +100,7 @@ export function TableView({ result, view, config, host, saveProps, editView }: L
           <DropdownMenuSeparator />
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>Summary</DropdownMenuSubTrigger>
-            <DropdownMenuSubContent>
+            <DropdownMenuSubContent className="base-menu">
               <DropdownMenuItem disabled={inheritedOnly(c)} onSelect={() => editView((src, i) => setViewSummary(src, i, ownSummaryKey(c), null))}>
                 {inheritedOnly(c) ? "None (set in the base, edit the source)" : "None"}
               </DropdownMenuItem>

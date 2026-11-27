@@ -5,8 +5,10 @@ export interface BaseHost {
   // Rewrites the open note: one CodeMirror transaction when the editor is
   // mounted, else the content state. `fn` may throw; nothing is applied then.
   edit(fn: (current: string) => string): void;
-  // Rewrites the body of the ```base fence that opens on `startLine`. false when no such fence exists.
-  editFence(startLine: number, mutate: (source: string) => string): boolean;
+  // Rewrites the body of the ```base fence that opens on `startLine`. false when
+  // no such fence exists or its body is no longer `expected`, the source the
+  // view was rendered from.
+  editFence(startLine: number, mutate: (source: string) => string, expected: string): boolean;
   openNote(path: string): void;
   openLink(target: string, fromPath: string): void;
   noteExists(path: string): boolean;
