@@ -60,6 +60,10 @@
   font: inherit;
   font-size: var(--text-sm);
 }
+/* WebKit sizes a native select by its font and ignores min-height. */
+.base-select {
+  height: 28px;
+}
 .base-input:focus-visible,
 .base-select:focus-visible {
   outline: 2px solid var(--accent);
@@ -81,6 +85,9 @@
   .base-select {
     min-height: 40px;
     font-size: 16px;
+  }
+  .base-select {
+    height: 40px;
   }
   .base-menu [role="menuitem"],
   .base-menu [role="menuitemradio"],
@@ -189,9 +196,12 @@
   overflow: auto;
   max-height: min(70vh, 640px);
 }
+/* With table-layout: fixed a table is as wide as the larger of its width and
+   the sum of its <col> widths, so width 0 gives exactly that sum. Firefox
+   resolves min-width: max-content on a fixed table to millions of pixels. */
 .preview .doc .base-table {
-  width: 100%;
-  min-width: max-content;
+  width: 0;
+  min-width: 0;
   margin: 0;
   border-collapse: separate;
   border-spacing: 0;
