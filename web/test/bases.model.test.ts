@@ -66,6 +66,9 @@ describe("columns and editing", () => {
     expect(isEditable("tags", "t", "my tag")).toBe(false);
     expect(isEditable("aliases", "a", "a, b")).toBe(false);
     expect(isEditable("aliases", "a", "")).toBe(false);
+    expect(isEditable("multitext", "m", "x\ny")).toBe(false);
+    expect(isEditable("multitext", "m", ["a", "x\ny"])).toBe(false);
+    expect(isEditable("multitext", "m", ["a\r"])).toBe(false);
   });
 
   test("cells the server altered are read-only", () => {
@@ -188,6 +191,8 @@ describe("kanban drag", () => {
     expect(presetValue("number", "007")).toEqual({ set: "007" });
     expect(presetValue("number", "3")).toEqual({ set: 3 });
     expect(presetValue(undefined, "x")).toEqual({ set: "x" });
+    expect(presetValue("multitext", "a, b")).toBeNull();
+    expect(presetValue("text", "a, b")).toEqual({ set: "a, b" });
   });
 
   test("canMove refuses lists, nested values and partial cells", () => {
