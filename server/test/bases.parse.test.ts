@@ -136,3 +136,41 @@ views:
     expect(parseBase("a: 1\n".repeat(30000)).fatal).toBe(true);
   });
 });
+
+describe("parseBase list caps", () => {
+  test("order, sort and groupOrder drop repeats, first one wins", () => {
+    const r = parseBase(
+      "views:\n  - type: table\n    order: [a, b, a, file.name, b]\n    sort:\n      - property: n\n        direction: DESC\n      - property: n\n        direction: ASC\n      - property: m\n    groupOrder: [x, y, x]\n",
+    );
+    const v = r.config.views[0]!;
+    expect(v.order).toEqual(["a", "b", "file.name"]);
+    expect(v.sort).toEqual([
+      { property: "n", direction: "DESC" },
+      { property: "m", direction: "ASC" },
+    ]);
+    expect(v.groupOrder).toEqual(["x", "y"]);
+    expect(r.warnings).toEqual([]);
+  });
+
+  test("long lists are cut with one warning each", () => {
+    const names = (n: number, p: string) => Array.from({ length: n }, (_, i) => `${p}${i}`).join(", ");
+    const sort = Array.from({ length: 25 }, (_, i) => `{property: s${i}}`).join(", ");
+    const r = parseBase(`views:\n  - type: table\n    order: [${names(250, "c")}]\n    sort: [${sort}]\n    groupOrder: [${names(1200, "g")}]\n`);
+    const v = r.config.views[0]!;
+    expect(v.order).toHaveLength(200);
+    expect(v.order[199]).toBe("c199");
+    expect(v.sort).toHaveLength(20);
+    expect(v.groupOrder).toHaveLength(1000);
+    expect(r.warnings).toEqual([
+      'view 1: "order" lists more than 200 columns; the rest were ignored',
+      'view 1: "sort" has more than 20 entries; the rest were ignored',
+      'view 1: "groupOrder" lists more than 1000 groups; the rest were ignored',
+    ]);
+  });
+
+  test("repeats do not count toward a cap", () => {
+    const r = parseBase(`views:\n  - type: table\n    order: [${Array(5000).fill("a").join(",")}, b]\n`);
+    expect(r.config.views[0]!.order).toEqual(["a", "b"]);
+    expect(r.warnings).toEqual([]);
+  });
+});

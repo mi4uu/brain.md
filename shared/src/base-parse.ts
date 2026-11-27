@@ -31,6 +31,11 @@ export interface ParsedBase {
 }
 
 export const MAX_SOURCE_CHARS = 100_000;
+// Every column is a cell in every row, and sort and group lists are walked per note,
+// so their length is bounded here rather than by the source size.
+export const MAX_COLUMNS = 200;
+export const MAX_SORTS = 20;
+export const MAX_GROUP_NAMES = 1000;
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -39,6 +44,22 @@ const own = (o: Record<string, unknown>, k: string): unknown => (Object.hasOwn(o
 
 function strings(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}
+
+function capped<T>(items: Iterable<T>, keyOf: (x: T) => string, max: number, onCut: () => void): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const x of items) {
+    const k = keyOf(x);
+    if (seen.has(k)) continue;
+    if (out.length === max) {
+      onCut();
+      break;
+    }
+    seen.add(k);
+    out.push(x);
+  }
+  return out;
 }
 
 function direction(v: unknown): Direction {
@@ -84,11 +105,16 @@ function parseView(v: unknown, i: number, warn: (m: string) => void): ViewConfig
   }
   if (o.groupBy !== undefined && !(isRecord(o.groupBy) && typeof o.groupBy.property === "string")) warn(`${pre} "groupBy" needs a property`);
   if (o.limit !== undefined && !(typeof o.limit === "number" && Number.isFinite(o.limit) && o.limit > 0)) warn(`${pre} "limit" must be a positive number`);
-  const sort: SortSpec[] = [];
+  const sorts: SortSpec[] = [];
   for (const s of Array.isArray(o.sort) ? o.sort : []) {
-    if (isRecord(s) && typeof s.property === "string") sort.push({ property: s.property, direction: direction(s.direction) });
+    if (isRecord(s) && typeof s.property === "string") sorts.push({ property: s.property, direction: direction(s.direction) });
     else warn(`${pre} a "sort" entry needs a property`);
   }
+  const order = capped(strings(o.order), (x) => x, MAX_COLUMNS, () => warn(`${pre} "order" lists more than ${MAX_COLUMNS} columns; the rest were ignored`));
+  const sort = capped(sorts, (x) => x.property, MAX_SORTS, () => warn(`${pre} "sort" has more than ${MAX_SORTS} entries; the rest were ignored`));
+  const groupOrder = capped(strings(o.groupOrder), (x) => x, MAX_GROUP_NAMES, () =>
+    warn(`${pre} "groupOrder" lists more than ${MAX_GROUP_NAMES} groups; the rest were ignored`),
+  );
   const gb = isRecord(o.groupBy) && typeof o.groupBy.property === "string" ? o.groupBy : null;
   const sizes: Record<string, number> = Object.create(null);
   if (isRecord(o.columnSize)) {
@@ -101,10 +127,10 @@ function parseView(v: unknown, i: number, warn: (m: string) => void): ViewConfig
     type,
     name: typeof o.name === "string" && o.name !== "" ? o.name : `${type[0]!.toUpperCase()}${type.slice(1)}${i > 0 ? ` ${i + 1}` : ""}`,
     filters: parseFilter(o.filters, (m) => warn(`view ${i + 1}: ${m}`)),
-    order: strings(o.order),
+    order,
     sort,
     groupBy: gb ? { property: gb.property as string, direction: direction(gb.direction) } : undefined,
-    groupOrder: strings(o.groupOrder),
+    groupOrder,
     limit,
     columnSize: sizes,
     summaries: stringMap(o.summaries),
