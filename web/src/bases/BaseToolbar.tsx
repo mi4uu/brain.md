@@ -13,7 +13,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
-import { VIEW_TYPES, cap, freshName, nextView } from "./toolbar";
+import { VIEW_TYPES, cap, freshName, isNameTaken, nextView, wasApplied } from "./toolbar";
 
 export { VIEW_TYPES };
 
@@ -30,13 +30,14 @@ interface Props {
   onSwitch(name: string): void;
   // false means the splice was refused; the host has already shown the toast and nothing changed.
   editView(fn: (source: string, viewIndex: number) => string): boolean | void;
+  toast(message: string): void;
   tools?: ReactNode;
 }
 
-export function BaseToolbar({ result, viewIndex, onSwitch, editView, tools }: Props) {
+export function BaseToolbar({ result, viewIndex, onSwitch, editView, toast, tools }: Props) {
   const current = result.views[viewIndex] ?? result.views[0];
   const names = result.views.map((v) => v.name);
-  const applied = (r: boolean | void): boolean => r !== false;
+  const applied = wasApplied;
   return (
     <div className="base-toolbar">
       <DropdownMenu>
@@ -44,7 +45,8 @@ export function BaseToolbar({ result, viewIndex, onSwitch, editView, tools }: Pr
           <button type="button" className="btn base-btn base-switch" aria-label={`View: ${current?.name ?? ""}`}>
             <TypeIcon type={current?.type ?? "table"} />
             <span className="base-switch-name">{current?.name ?? "Table"}</span>
-            <span className="base-count" aria-label={`${result.total} notes`}>{result.total}</span>
+            <span className="base-count" aria-hidden>{result.total}</span>
+            <span className="sr-only">{result.total} notes</span>
             <ChevronDownIcon aria-hidden />
           </button>
         </DropdownMenuTrigger>
@@ -91,6 +93,10 @@ export function BaseToolbar({ result, viewIndex, onSwitch, editView, tools }: Pr
             onSelect={() => {
               const name = window.prompt("View name", current?.name ?? "")?.trim();
               if (!name || name === current?.name) return;
+              if (isNameTaken(names, name, viewIndex)) {
+                toast(`A view named "${name}" already exists.`);
+                return;
+              }
               if (applied(editView((src, i) => renameView(src, i, name)))) onSwitch(name);
             }}
           >

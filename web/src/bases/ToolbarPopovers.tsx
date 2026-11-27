@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ArrowDownIcon, ArrowUpIcon, CaretSortIcon, Cross2Icon, MixerHorizontalIcon, PlusIcon } from "@radix-ui/react-icons";
 import type { ViewConfig } from "@brainmd/shared/base-parse";
 import type { SortSpec } from "@brainmd/shared/base-types";
@@ -23,11 +23,12 @@ import {
   shiftColumn,
   showColumn,
   sortChoices,
+  wasApplied,
 } from "./toolbar";
 
 export type { KeyOption };
 
-type EditView = (fn: (source: string, viewIndex: number) => string) => void;
+type EditView = (fn: (source: string, viewIndex: number) => string) => boolean | void;
 
 interface OpenProps {
   open: boolean;
@@ -35,7 +36,7 @@ interface OpenProps {
 }
 
 export function SortPopover({ view, options, editView, open, onOpenChange }: { view: ViewConfig; options: KeyOption[]; editView: EditView } & OpenProps) {
-  const set = (next: SortSpec[] | null) => next && editView((src, i) => setViewSort(src, i, next));
+  const set = (next: SortSpec[] | null) => { if (next) editView((src, i) => setViewSort(src, i, next)); };
   const canAdd = addSort(view.sort, options) !== null;
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
@@ -93,9 +94,27 @@ export function FilterPopover({ view, options, editView, open, onOpenChange }: {
   const [key, setKey] = useState("");
   const [op, setOp] = useState<FilterOp>("is");
   const [value, setValue] = useState("");
-  const commit = (next: string[]) => editView((src, i) => setViewFilters(src, i, filtersFrom(next)));
+  const [rev, setRev] = useState(0);
+  // Rows are uncontrolled; the ref holds what is typed so Remove and Add act on the latest text.
+  const texts = useRef<string[]>([]);
+  const seen = useRef("");
+  const sig = JSON.stringify(flat);
+  if (seen.current !== sig) {
+    seen.current = sig;
+    texts.current = flat ? [...flat] : [];
+  }
+  const commit = (next: string[]): boolean => {
+    const ok = wasApplied(editView((src, i) => setViewFilters(src, i, filtersFrom(next))));
+    if (!ok) {
+      texts.current = flat ? [...flat] : [];
+      setRev((r) => r + 1);
+    }
+    return ok;
+  };
+  const keepFocus = { onMouseDown: (e: React.MouseEvent) => e.preventDefault(), "data-filter-action": "" };
+  const chosen = props.find((o) => o.key === (key || props[0]?.key));
   const meta = FILTER_OPS.find((o) => o.id === op)!;
-  const built = buildFilter(key || props[0]?.key || "", op, value);
+  const built = buildFilter(chosen?.key ?? "", op, value, chosen?.type);
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
@@ -112,19 +131,23 @@ export function FilterPopover({ view, options, editView, open, onOpenChange }: {
           <>
             <p className="base-hint">All of these must hold. Example: status == "Todo"</p>
             {flat.map((expr, i) => (
-              <div className="base-pop-row" key={`${i}:${expr}`}>
+              <div className="base-pop-row" key={`${rev}:${i}:${expr}`}>
                 <input
                   className="base-input"
                   aria-label={`Filter ${i + 1}`}
                   defaultValue={expr}
                   spellCheck={false}
+                  onChange={(e) => {
+                    texts.current[i] = e.target.value;
+                  }}
                   onBlur={(e) => {
+                    if (e.relatedTarget instanceof HTMLElement && e.relatedTarget.hasAttribute("data-filter-action")) return;
                     const next = replaceFilter(flat, i, e.target.value);
                     if (next) commit(next);
                   }}
                   onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
                 />
-                <button type="button" className="btn base-btn icon" aria-label="Remove filter" onClick={() => commit(flat.filter((_, j) => j !== i))}>
+                <button type="button" className="btn base-btn icon" aria-label="Remove filter" {...keepFocus} onClick={() => commit(texts.current.filter((_, j) => j !== i))}>
                   <Cross2Icon aria-hidden />
                 </button>
               </div>
@@ -149,10 +172,9 @@ export function FilterPopover({ view, options, editView, open, onOpenChange }: {
                   className="btn base-btn icon"
                   aria-label="Add filter from builder"
                   disabled={built === null}
+                  {...keepFocus}
                   onClick={() => {
-                    if (built === null) return;
-                    commit([...flat, built]);
-                    setValue("");
+                    if (built !== null && commit([...texts.current, built])) setValue("");
                   }}
                 >
                   <PlusIcon aria-hidden />
@@ -168,10 +190,7 @@ export function FilterPopover({ view, options, editView, open, onOpenChange }: {
                 spellCheck={false}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && draft.trim()) {
-                    commit([...flat, draft]);
-                    setDraft("");
-                  }
+                  if (e.key === "Enter" && draft.trim() && commit([...texts.current, draft])) setDraft("");
                 }}
               />
               <button
@@ -179,9 +198,9 @@ export function FilterPopover({ view, options, editView, open, onOpenChange }: {
                 className="btn base-btn icon"
                 aria-label="Add filter"
                 disabled={!draft.trim()}
+                {...keepFocus}
                 onClick={() => {
-                  commit([...flat, draft]);
-                  setDraft("");
+                  if (commit([...texts.current, draft])) setDraft("");
                 }}
               >
                 <PlusIcon aria-hidden />
@@ -196,7 +215,7 @@ export function FilterPopover({ view, options, editView, open, onOpenChange }: {
 
 export function PropertiesPopover({ view, options, editView, open, onOpenChange }: { view: ViewConfig; options: KeyOption[]; editView: EditView } & OpenProps) {
   const shown = view.order.length > 0 ? view.order : ["file.name"];
-  const set = (next: string[] | null) => next && editView((src, i) => setViewOrder(src, i, next));
+  const set = (next: string[] | null) => { if (next) editView((src, i) => setViewOrder(src, i, next)); };
   const rest = hiddenOptions(view.order, options);
   return (
     <Popover open={open} onOpenChange={onOpenChange}>

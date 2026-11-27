@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
-  addSort, buildFilter, freshName, hideColumn, hiddenOptions, labelOf, nextView, optionKeyFor,
+  addSort, buildFilter, isNameTaken, wasApplied, literal, freshName, hideColumn, hiddenOptions, labelOf, nextView, optionKeyFor,
   propertyRef, quoteString, replaceFilter, setSortProperty, shiftColumn, showColumn, sortChoices,
 } from "../src/bases/toolbar";
 
@@ -68,5 +68,40 @@ describe("filter building", () => {
     expect(replaceFilter(["a", "b"], 1, " b ")).toBeNull();
     expect(replaceFilter(["a", "b"], 1, "c")).toEqual(["a", "c"]);
     expect(replaceFilter(["a", "b"], 0, "")).toEqual(["", "b"]);
+  });
+});
+
+describe("literals and refusal helpers", () => {
+  test("untyped values", () => {
+    expect(buildFilter("done", "is", "true")).toBe("note.done == true");
+    expect(buildFilter("done", "isNot", "false")).toBe("note.done != false");
+    expect(buildFilter("code", "is", "01234")).toBe('note.code == "01234"');
+    expect(buildFilter("code", "is", "12345678901234567890")).toBe('note.code == "12345678901234567890"');
+    expect(buildFilter("n", "is", "0.5")).toBe("note.n == 0.5");
+    expect(buildFilter("n", "is", "0")).toBe("note.n == 0");
+  });
+  test("registry type decides", () => {
+    expect(buildFilter("zip", "is", "5", "text")).toBe('note.zip == "5"');
+    expect(buildFilter("flag", "is", "true", "text")).toBe('note.flag == "true"');
+    expect(buildFilter("n", "is", "01234", "number")).toBe("note.n == 1234");
+    expect(buildFilter("n", "is", "abc", "number")).toBeNull();
+    expect(buildFilter("n", "is", "12345678901234567890", "number")).toBeNull();
+    expect(buildFilter("done", "is", "true", "checkbox")).toBe("note.done == true");
+    expect(buildFilter("done", "is", "yes", "checkbox")).toBeNull();
+    expect(literal("5", "date")).toBe('"5"');
+  });
+  test("CRLF collapses to one newline escape", () => {
+    expect(quoteString("a\r\nb")).toBe('"a\\nb"');
+    expect(quoteString("a\rb")).toBe('"a\\nb"');
+  });
+  test("name collisions", () => {
+    expect(isNameTaken(["A", "B"], "B", 0)).toBe(true);
+    expect(isNameTaken(["A", "B"], "B", 1)).toBe(false);
+    expect(isNameTaken(["A", "B"], "C", 0)).toBe(false);
+  });
+  test("refusal", () => {
+    expect(wasApplied(false)).toBe(false);
+    expect(wasApplied(true)).toBe(true);
+    expect(wasApplied(undefined)).toBe(true);
   });
 });

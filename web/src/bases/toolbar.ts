@@ -5,7 +5,16 @@ import { effectiveOrder } from "./model";
 export interface KeyOption {
   key: string;
   label: string;
+  // Registry type when known (PropertyType, "file" or "formula"); steers how filter values are quoted.
+  type?: string;
 }
+
+// View names are the lookup key, so a rename must not collide with another view.
+export const isNameTaken = (names: string[], name: string, exceptIndex = -1): boolean =>
+  names.some((n, i) => i !== exceptIndex && n === name);
+
+// A refused splice reports false; undefined and true both mean it was applied.
+export const wasApplied = (r: boolean | void): boolean => r !== false;
 
 export const VIEW_TYPES = ["table", "cards", "list", "kanban"] as const;
 
@@ -79,10 +88,10 @@ export function hiddenOptions(order: string[], options: KeyOption[]): KeyOption[
 // Bases string literals understand \\, \", \n and \t; any other control character would end up raw.
 export function quoteString(s: string): string {
   let out = '"';
-  for (const ch of s) {
+  for (const ch of s.replace(/\r\n?/g, "\n")) {
     if (ch === "\\") out += "\\\\";
     else if (ch === '"') out += '\\"';
-    else if (ch === "\n" || ch === "\r") out += "\\n";
+    else if (ch === "\n") out += "\\n";
     else if (ch === "\t") out += "\\t";
     else if (ch.charCodeAt(0) < 32) out += " ";
     else out += ch;
@@ -114,26 +123,45 @@ export const FILTER_OPS = [
 export type FilterOp = (typeof FILTER_OPS)[number]["id"];
 
 const NUMBER = /^-?(?:\d+(?:\.\d+)?|\.\d+)$/;
-const literal = (v: string): string => (NUMBER.test(v.trim()) ? String(Number(v)) : quoteString(v));
+const digitCount = (v: string): number => v.replace(/\D/g, "").length;
+const TEXTY = new Set(["text", "multitext", "date", "datetime", "tags", "aliases", "file"]);
+
+// A number literal only when it survives the round trip: no leading zeros, at most 15 digits.
+function plainNumber(v: string): boolean {
+  const t = v.trim();
+  return NUMBER.test(t) && digitCount(t) <= 15 && !/^-?0\d/.test(t);
+}
+
+// null: the value cannot be written for that type without changing its meaning.
+export function literal(v: string, type?: string): string | null {
+  const t = v.trim();
+  if (type !== undefined && TEXTY.has(type)) return quoteString(v);
+  if (type === "number") return NUMBER.test(t) && digitCount(t) <= 15 ? String(Number(t)) : null;
+  if (type === "checkbox") return t === "true" || t === "false" ? t : null;
+  if (t === "true" || t === "false") return t;
+  return plainNumber(t) ? String(Number(t)) : quoteString(v);
+}
 
 // The value is data: it only ever becomes a quoted literal or a plain number.
-export function buildFilter(key: string, op: FilterOp, value: string): string | null {
+export function buildFilter(key: string, op: FilterOp, value: string, type?: string): string | null {
   const ref = propertyRef(key);
   if (ref === null) return null;
   const meta = FILTER_OPS.find((o) => o.id === op);
   if (!meta) return null;
   if (meta.needsValue && value.trim() === "") return null;
+  const lit = meta.needsValue ? literal(value, type) : "";
+  if (lit === null) return null;
   switch (op) {
     case "is":
-      return `${ref} == ${literal(value)}`;
+      return `${ref} == ${lit}`;
     case "isNot":
-      return `${ref} != ${literal(value)}`;
+      return `${ref} != ${lit}`;
     case "contains":
       return `${ref}.contains(${quoteString(value)})`;
     case "gt":
-      return `${ref} > ${literal(value)}`;
+      return `${ref} > ${lit}`;
     case "lt":
-      return `${ref} < ${literal(value)}`;
+      return `${ref} < ${lit}`;
     case "empty":
       return `${ref}.isEmpty()`;
     case "notEmpty":
