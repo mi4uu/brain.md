@@ -79,6 +79,7 @@ const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
 
 export function safeFileName(title: string): string {
   const cleaned = title
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are exactly what a file name must lose
     .replace(/[\u0000-\u001f\u007f/\\:*?"<>|]/g, " ")
     .replace(/\s+/g, " ")
     .trim()

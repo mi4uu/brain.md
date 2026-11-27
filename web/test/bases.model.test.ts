@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { BaseQueryResponse } from "@brainmd/shared/base-types";
 import {
+  byColumn,
   candidateKeys,
+  cellCommit,
+  cellInputType,
   canMove,
   clampWidth,
   coerceInput,
@@ -288,5 +291,46 @@ describe("formatScalar", () => {
     expect(formatScalar(col("file.mtime", "file"), iso)).not.toBe(iso);
     expect(formatScalar(col("when", "datetime"), iso)).not.toBe(iso);
     expect(formatScalar(col("file.mtime", "file"), "later")).toBe("later");
+  });
+});
+
+describe("cellCommit", () => {
+  const open = (text: string) => ({ text });
+  test("unchanged raw skips", () => {
+    expect(cellCommit(open("a"), { value: "a" }, "a", "text")).toEqual({ kind: "skip" });
+  });
+  test("a stored value that changed while open conflicts", () => {
+    expect(cellCommit(open("a"), { value: "b" }, "typed", "text")).toEqual({ kind: "conflict" });
+  });
+  test("an untouched cell never overwrites a newer value", () => {
+    expect(cellCommit(open("a"), { value: "b" }, "a", "text")).toEqual({ kind: "skip" });
+  });
+  test("a real edit writes", () => {
+    expect(cellCommit(open("a"), { value: "a" }, "b", "text")).toEqual({ kind: "write", change: { set: "b" } });
+  });
+  test("an equal coerced value skips", () => {
+    expect(cellCommit(open("1.5"), { value: 1.5 }, "1.50", "number")).toEqual({ kind: "skip" });
+    expect(cellCommit(open("x"), { value: "x" }, "x ", "text")).toEqual({ kind: "skip" });
+  });
+  test("clearing writes unset, or skips when already empty", () => {
+    expect(cellCommit(open("a"), { value: "a" }, "", "text")).toEqual({ kind: "write", change: { unset: true } });
+    expect(cellCommit(open(""), { value: null }, " ", "text")).toEqual({ kind: "skip" });
+  });
+  test("a rejected value is an error", () => {
+    expect(cellCommit(open("1"), { value: 1 }, "1e3", "number").kind).toBe("error");
+  });
+});
+
+describe("cellInputType and byColumn", () => {
+  test("native datetime input only for a local datetime or empty", () => {
+    expect(cellInputType("datetime", "2026-01-01T10:00")).toBe("datetime-local");
+    expect(cellInputType("datetime", null)).toBe("datetime-local");
+    expect(cellInputType("datetime", "2026-01-01T10:00:00Z")).toBe("text");
+    expect(cellInputType("date", "2026-01-01")).toBe("date");
+  });
+  test("byColumn matches note.x and x", () => {
+    expect(byColumn({ "note.x": 1 }, "x")).toBe(1);
+    expect(byColumn({ x: 2 }, "note.x")).toBe(2);
+    expect(byColumn({ "file.name": 3 }, "x")).toBeUndefined();
   });
 });

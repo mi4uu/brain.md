@@ -2,6 +2,7 @@ import type { BaseQueryResponse, Direction, FilterNode, SortSpec } from "@brainm
 import type { PropValue } from "@brainmd/shared/frontmatter";
 import type { PropertyType } from "@brainmd/shared/property-types";
 import { DATETIME_RE, DATE_RE } from "@brainmd/shared/property-types";
+import { columnId } from "@brainmd/shared/base-yaml";
 import { cleanItem, fitsType, isListType, isNested } from "../properties/model";
 
 export type ColumnType = PropertyType | "file" | "formula";
@@ -286,4 +287,33 @@ export function formatScalar(col: Pick<BaseQueryResponse["columns"][number], "ke
   }
   if (typeof v === "object") return JSON.stringify(v);
   return String(v);
+}
+
+const LOCAL_DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/;
+
+// A native date or datetime-local input only when the stored text is in its own format; anything else stays text so the original is never rewritten.
+export function cellInputType(type: PropertyType, value: PropValue): "number" | "date" | "datetime-local" | "text" {
+  if (type === "number") return "number";
+  if (type === "date" && (value === null || (typeof value === "string" && DATE_RE.test(value)))) return "date";
+  if (type === "datetime" && (value === null || (typeof value === "string" && LOCAL_DATETIME_RE.test(value)))) return "datetime-local";
+  return "text";
+}
+
+export type CellCommit = { kind: "write"; change: { set: PropValue } | { unset: true } } | { kind: "skip" } | { kind: "conflict" } | { kind: "error"; message: string };
+
+// `opened` is what the editor showed when it opened; `current` is what the row holds now.
+export function cellCommit(opened: { text: string }, current: { value: PropValue }, raw: string, type: PropertyType): CellCommit {
+  if (raw === opened.text) return { kind: "skip" };
+  if (editText(current.value) !== opened.text) return { kind: "conflict" };
+  const c = coerceInput(type, raw);
+  if (c.kind === "error") return { kind: "error", message: c.message };
+  if (c.kind === "unset") return current.value === null ? { kind: "skip" } : { kind: "write", change: { unset: true } };
+  if (JSON.stringify(c.value) === JSON.stringify(current.value)) return { kind: "skip" };
+  return { kind: "write", change: { set: c.value } };
+}
+
+export function byColumn<T>(map: Record<string, T>, key: string): T | undefined {
+  const id = columnId(key);
+  for (const k of Object.keys(map)) if (columnId(k) === id) return map[k];
+  return undefined;
 }
