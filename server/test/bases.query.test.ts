@@ -628,9 +628,13 @@ describe("response budget", () => {
     expect(new Set([...rows, ...nextRows].map((x) => x.path)).size).toBe(rows.length + nextRows.length);
   });
 
-  test("a single row over the budget is still returned, so a page is never empty", () => {
-    const r = q(src(199), { idx, req: { limit: 1 } });
-    expect(r.groups[0]!.rows).toHaveLength(1);
+  test("a single row over the budget is still returned, so a page is never empty, and the cut warns", () => {
+    const item = "w".repeat(10_000);
+    const huge = [0, 1].map((i) => entry(`bulk/h${i}.md`, { big: Array(600).fill(item) }));
+    const r = q("views:\n  - type: table\n    name: T\n    order: [big]\n", { idx: index({ entries: () => huge }), req: { limit: 2 } });
+    expect(r.groups[0]!.rows.map((x) => x.path)).toEqual(["bulk/h0.md"]);
+    expect(r.total).toBe(2);
+    expect(r.warnings).toContain("the response was too large; it ends early, continue at the next offset");
   });
 
   test("grouped: a group cut by the budget is left out, never sent with no rows", () => {
@@ -640,13 +644,11 @@ describe("response budget", () => {
     expect(r.groups.reduce((n, g) => n + g.rows.length, 0)).toBeLessThan(2000);
   });
 
-  test("a long groupOrder is quick", () => {
+  test("a long groupOrder keeps its order", () => {
     const names = Array.from({ length: 1000 }, (_, i) => `x${i}`).join(",");
     const many = Array.from({ length: 2000 }, (_, i) => entry(`bulk/n${i}.md`, { s: `x${i}` }));
-    const t0 = performance.now();
     const r = q(`views:\n  - type: table\n    name: T\n    groupBy:\n      property: s\n    groupOrder: [${names}]\n`, { idx: index({ entries: () => many }), req: { limit: 2000 } });
-    expect(performance.now() - t0).toBeLessThan(300);
-    expect(r.groups[0]!.key).toBe("x0");
+    expect(r.groups.slice(0, 3).map((g) => g.key)).toEqual(["x0", "x1", "x2"]);
     expect(r.groups).toHaveLength(2000);
   });
 

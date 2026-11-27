@@ -63,6 +63,10 @@ describe("query_notes", () => {
     const second = await call({ offset: 50 });
     expect(second.body.rows).toHaveLength(12);
     expect(second.note).toBeNull();
+    const past = await call({ offset: 500 });
+    expect(past.body.rows).toEqual([]);
+    expect(past.body.total).toBe(62);
+    expect(past.note).toBe("No more rows: there are 62 in total.");
   });
 
   test("base form, with groups", async () => {

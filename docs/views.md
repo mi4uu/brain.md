@@ -42,7 +42,7 @@ Every note (`.md`) the viewer may read, except hidden notes and the note that ho
 
 - An empty input unsets the property.
 - A list property edits as comma-separated text, but only when that text round-trips to the same list. Otherwise the cell is read-only.
-- Cells the server shortened or hid are read-only.
+- Cells the server shortened are read-only.
 - Inline maps and lists inside a view are edited in the note source only.
 
 ## Kanban moves

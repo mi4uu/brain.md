@@ -510,18 +510,21 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
   // so the next request continues at offset plus the rows sent.
   type Out = ReturnType<typeof outRow>;
   const sent: Array<{ group: string | null; row: Out }> = [];
+  let full = false;
   for (const it of page) {
-    if (sent.length > 0 && spent > MAX_RESPONSE_CHARS) {
+    if (!full && sent.length > 0 && spent > MAX_RESPONSE_CHARS) full = true;
+    if (full) {
       release(it.row);
       continue;
     }
     const row = outRow(it);
     if (sent.length > 0 && spent > MAX_RESPONSE_CHARS) {
-      warn("the response was too large; it ends early, continue at the next offset");
+      full = true;
       continue;
     }
     sent.push({ group: it.group, row });
   }
+  if (full) warn("the response was too large; it ends early, continue at the next offset");
 
   const groups: BaseQueryResponse["groups"] = [];
   if (!gb) {
