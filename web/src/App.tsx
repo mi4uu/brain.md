@@ -76,6 +76,9 @@ import {
   type SidebarSectionId,
 } from "./hooks/useSidebarSections";
 import { validateBasename } from "./lib/validate";
+import { applyEdit, tableEdit } from "./tables/apply";
+import { dispatchTableEdit } from "./tables/cm";
+import type { LineRange, MdTable } from "./tables/md-table";
 import { extractTagsFromMd, insertFrontmatterTag } from "./lib/tags";
 import { useAuth } from "./hooks/useAuth";
 import { signedInAs } from "./auth/api";
@@ -105,6 +108,7 @@ import "./styles/layout.css";
 import "./styles/tree.css";
 import "./styles/editor.css";
 import "./styles/preview.css";
+import "./styles/tables.css";
 import "./styles/panels.css";
 import "./styles/toolbar.css";
 import "./styles/history.css";
@@ -402,6 +406,21 @@ export function App() {
     v.focus();
     previewHandleRef.current?.setActiveLine(line);
   }, []);
+
+  const onEditTable = useCallback(
+    (range: LineRange, fn: (t: MdTable) => MdTable) => {
+      const v = editorViewRef.current;
+      if (v) {
+        dispatchTableEdit(v, range, fn);
+        return;
+      }
+      editContent((cur) => {
+        const edit = tableEdit(cur, range, fn);
+        return edit ? applyEdit(cur, edit) : cur;
+      });
+    },
+    [editContent],
+  );
 
   const basenames = useMemo(
     () =>
@@ -1659,6 +1678,7 @@ export function App() {
             }}
             onScrollLine={onPreviewScrollLine}
             onSelectLine={onPreviewSelectLine}
+            onEditTable={path ? onEditTable : undefined}
           />
         </section>
         {path && !isMobile && desktopView === "split" ? (

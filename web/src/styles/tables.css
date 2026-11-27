@@ -1,0 +1,36 @@
+.table-tools {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  z-index: 2;
+}
+.table-tools > * {
+  position: absolute;
+}
+
+.tt-input {
+  box-sizing: border-box;
+  padding: 6px 10px;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--text-1);
+  background: var(--bg-surface);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-1);
+  outline: none;
+}
+@media (pointer: coarse) {
+  .tt-input {
+    font-size: 16px;
+    min-height: 40px;
+  }
+}
+
+@media (hover: hover) {
+  .preview .doc table[data-source-end] td,
+  .preview .doc table[data-source-end] th {
+    cursor: text;
+  }
+}
