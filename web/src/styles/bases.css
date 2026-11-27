@@ -510,15 +510,6 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
-@container base-view (max-width: 440px) {
-  .preview .doc .base-card-props {
-    grid-template-columns: minmax(0, 1fr);
-    row-gap: 0;
-  }
-  .preview .doc .base-card-props dd + dt {
-    margin-top: var(--space-1);
-  }
-}
 .preview .doc .base-cover {
   margin: calc(var(--space-2) * -1) calc(var(--space-3) * -1) var(--space-2);
   aspect-ratio: 16 / 9;
