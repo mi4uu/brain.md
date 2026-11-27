@@ -53,11 +53,14 @@ export interface QueryDeps {
   retainCap?: { values?: number; keys?: number };
   stats?: { valuesPeak: number; keysPeak: number };
   stringWorkCap?: number;
+  deadlineMs?: number;
 }
 
 type Row = { e: QueryEntry; scope: Scope; memo: Map<string, Value>; held: number };
 
 type Compiled = { leaf: Node | null } | { op: "and" | "or" | "not"; kids: Compiled[] };
+
+const DEFAULT_DEADLINE_MS = 2000;
 
 const DEFAULT_VIEW: ViewConfig = {
   type: "table",
@@ -228,7 +231,13 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
   let values = 0;
   let keys = 0;
   const busy = new Set<string>();
-  const work = { chars: 0, max: deps.stringWorkCap ?? MAX_STRING_WORK };
+  const work = {
+    chars: 0,
+    max: deps.stringWorkCap ?? MAX_STRING_WORK,
+    ticks: 0,
+    deadline: performance.now() + (deps.deadlineMs ?? DEFAULT_DEADLINE_MS),
+    expired: false,
+  };
   const release = (r: Row): void => {
     values -= r.held;
     r.held = 0;

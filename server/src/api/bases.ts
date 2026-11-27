@@ -3,9 +3,10 @@ import type { Vault } from "../vault/vault";
 import type { VaultIndex } from "../index/index";
 import { runBaseQuery, type QueryIndex } from "../bases/query";
 import { listProperties } from "../properties/registry";
+import type { Visibility } from "../vault/visibility";
 import { readFilterFor } from "./perm-guard";
 
-export function baseRoutes(vault: Vault, index: VaultIndex) {
+export function baseRoutes(vault: Vault, index: VaultIndex, visibility: Visibility) {
   return new Elysia({ prefix: "/api/bases" }).post(
     "/query",
     async ({ body, request }) => {
@@ -15,7 +16,7 @@ export function baseRoutes(vault: Vault, index: VaultIndex) {
         entries: () => index.entries(),
         backlinks: (path, ok) => index.backlinks(path, ok),
         resolveLink: (from, target) => index.resolveLink(from, target),
-        visibility: { isHidden: (path) => index.visibility?.isHidden(path) ?? false },
+        visibility: { isHidden: (path) => visibility.isHidden(path) },
       };
       return runBaseQuery(body, { index: queryIndex, allowed, types });
     },

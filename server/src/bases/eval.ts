@@ -24,7 +24,7 @@ export interface Budget {
   hit: boolean;
   // Characters of text built by operations, shared by every note of one query: per-note steps alone let a
   // view churn gigabytes of short-lived text faster than the GC reclaims it.
-  work?: { chars: number; max: number };
+  work?: { chars: number; max: number; ticks: number; deadline: number; expired: boolean };
   workHit?: boolean;
 }
 
@@ -124,6 +124,12 @@ function chargeBuilt(s: Scope, result: Value): void {
 
 function ev(n: Node, s: Scope): Value {
   if (s.budget.hit) return null;
+  const w = s.budget.work;
+  if (w && (w.expired || ((++w.ticks & 1023) === 0 && performance.now() > w.deadline))) {
+    w.expired = true;
+    s.budget.hit = true;
+    throw new BudgetExceeded();
+  }
   if (++s.budget.steps > s.budget.max) {
     s.budget.hit = true;
     throw new BudgetExceeded();
@@ -230,6 +236,10 @@ export function evaluate(n: Node, s: Scope): Value {
     return s.budget.hit ? null : v;
   } catch (e) {
     if (e instanceof BudgetExceeded) {
+      if (s.budget.work?.expired) {
+        s.warn("the query took too long; results are partial");
+        return null;
+      }
       s.warn(
         s.budget.workHit
           ? "evaluation budget exceeded: the query-wide limit on text built by expressions was reached; remaining expressions were skipped"

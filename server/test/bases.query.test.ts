@@ -550,4 +550,15 @@ describe("robustness, round 4", () => {
     expect(r.total).toBe(16000);
     expect(r.warnings).toEqual([]);
   });
+
+  test("a wall-clock deadline stops a heavy query early with one warning", () => {
+    const desc = "a".repeat(3000);
+    const notes = Array.from({ length: 16000 }, (_, i) => entry(`bulk/n${i}.md`, { n: i, description: desc }));
+    const calls = Array.from({ length: 500 }, (_, i) => `    - description.contains("b${i}")`).join("\n");
+    const src = `filters:\n  or:\n${calls}\n`;
+    const t0 = performance.now();
+    const r = q(src, { idx: index({ entries: () => notes }), deps: { deadlineMs: 1 } });
+    expect(performance.now() - t0).toBeLessThan(1500);
+    expect(r.warnings).toEqual(["the query took too long; results are partial"]);
+  });
 });

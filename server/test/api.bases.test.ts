@@ -101,6 +101,10 @@ describe("POST /api/bases/query", () => {
     expect((await call("POST", "/api/bases/query", {})).status).toBe(422);
   });
 
+  test("a source over 100000 characters is a 422", async () => {
+    expect((await query({ source: "x".repeat(100_001) })).status).toBe(422);
+  });
+
   test("a folder the caller cannot read: rows, link cells and `this` are all closed", async () => {
     const { apiKey } = await lockDown();
     const r = await query({ source: TABLE, thisPath: "work/View.md" }, apiKey);

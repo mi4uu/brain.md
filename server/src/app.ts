@@ -196,7 +196,7 @@ export function createApp(opts: AppOptions = {}) {
     .use(trashRoutes(vault, index))
     .use(tasksRoutes(vault, index))
     .use(tagRoutes(vault, index))
-    .use(baseRoutes(vault, index))
+    .use(baseRoutes(vault, index, visibility))
     .use(propertyRoutes(vault, index))
     .use(gitRoutes(vault, repo, autocommit, settings, (p) => visibility.isHidden(p)))
     .use(metaRoutes(vault))
