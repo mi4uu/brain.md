@@ -197,6 +197,6 @@ export function indent(view: EditorView) {
   toggleLinePrefix(view, "  ", /^(\s{0,2})/, false);
 }
 
-export function formatTableAction(view: EditorView) {
-  formatTable(view);
+export function formatTableAction(view: EditorView): boolean {
+  return formatTable(view);
 }
