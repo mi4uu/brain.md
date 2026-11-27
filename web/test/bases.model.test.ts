@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { BaseQueryResponse } from "@brainmd/shared/base-types";
 import {
   candidateKeys,
+  canMove,
   clampWidth,
   coerceInput,
   columnAt,
@@ -46,6 +47,29 @@ describe("columns and editing", () => {
     expect(isEditable("multitext", "l", ["a", "b"])).toBe(true);
     expect(isEditable("checkbox", "c", "yes")).toBe(false);
     expect(isEditable("text", "t", ["a"])).toBe(false);
+  });
+
+  test("list cells that would not survive a comma-joined edit are read-only", () => {
+    expect(isEditable("aliases", "a", ["Smith, John", "JS"])).toBe(false);
+    expect(isEditable("multitext", "l", [1, 2])).toBe(false);
+    expect(isEditable("multitext", "l", [null, true, "a"])).toBe(false);
+    expect(isEditable("tags", "t", ["my tag"])).toBe(false);
+    expect(isEditable("tags", "t", ["#x"])).toBe(false);
+    expect(isEditable("tags", "t", ["a", "b-c"])).toBe(true);
+    expect(isEditable("tags", "t", [])).toBe(true);
+    expect(isEditable("tags", "t", null)).toBe(true);
+  });
+
+  test("cells the server altered are read-only", () => {
+    expect(isEditable("text", "status", "a", ["status"])).toBe(false);
+    expect(isEditable("text", "status", "a", ["other"])).toBe(true);
+  });
+
+  test("coerceInput is strict about numbers and checkboxes", () => {
+    for (const bad of ["0x10", "0b11", "1e3", "9007199254740993", "--1", "1,5"]) expect(coerceInput("number", bad).kind).toBe("error");
+    expect(coerceInput("number", "-3.50")).toEqual({ kind: "set", value: -3.5 });
+    expect(coerceInput("checkbox", "no")).toEqual({ kind: "set", value: false });
+    expect(coerceInput("checkbox", "maybe").kind).toBe("error");
   });
 
   test("coerceInput by type", () => {
@@ -119,6 +143,14 @@ describe("summaries", () => {
     expect(summarise("Latest", ["2026-12-01", "2026-01-05"])).toBe("2026-12-01");
     expect(summarise("Nope", [1])).toBeNull();
   });
+  test("Earliest and Latest compare instants and skip non-dates", () => {
+    const mixed = ["2026-01-05T10:00:00+05:00", "2026-01-05T08:00:00Z", "later", "12", "2026-01-05"];
+    expect(summarise("Earliest", mixed)).toBe("2026-01-05");
+    expect(summarise("Latest", mixed)).toBe("2026-01-05T08:00:00Z");
+    expect(summarise("Earliest", mixed.slice(0, 2))).toBe("2026-01-05T10:00:00+05:00");
+    expect(summarise("Earliest", ["later", "12"])).toBeNull();
+    expect(summarise("Latest", ["2026-01-05T10:00:00+0100", "2026-01-05"])).toBe("2026-01-05T10:00:00+0100");
+  });
 });
 
 describe("kanban drag", () => {
@@ -134,13 +166,31 @@ describe("kanban drag", () => {
     expect(columnAt(cols, 105, 10)).toBeUndefined();
   });
 
+  test("moveChange keeps text that does not spell back as the typed value", () => {
+    expect(moveChange("number", "007")).toEqual({ set: "007" });
+    expect(moveChange("number", "1e3")).toEqual({ set: "1e3" });
+    expect(moveChange("number", " 3 ")).toEqual({ set: " 3 " });
+    expect(moveChange("checkbox", "yes")).toEqual({ set: "yes" });
+    expect(moveChange("checkbox", "false")).toEqual({ set: false });
+  });
+
+  test("canMove refuses lists, nested values and partial cells", () => {
+    expect(canMove("text", "a")).toBe(true);
+    expect(canMove(undefined, null)).toBe(true);
+    expect(canMove("multitext", "a")).toBe(false);
+    expect(canMove("text", ["a"])).toBe(false);
+    expect(canMove("text", { a: 1 })).toBe(false);
+    expect(canMove("text", "a", true)).toBe(false);
+  });
+
   test("moveChange writes the right type", () => {
     expect(moveChange("text", "Done")).toEqual({ set: "Done" });
     expect(moveChange(undefined, "Done")).toEqual({ set: "Done" });
     expect(moveChange("number", "3")).toEqual({ set: 3 });
     expect(moveChange("number", "x")).toEqual({ set: "x" });
     expect(moveChange("checkbox", "true")).toEqual({ set: true });
-    expect(moveChange("multitext", "a")).toEqual({ set: ["a"] });
+    expect(moveChange("multitext", "a")).toBeNull();
+    expect(moveChange("tags", null)).toBeNull();
     expect(moveChange("text", null)).toEqual({ unset: true });
   });
 });
@@ -207,6 +257,10 @@ describe("formatScalar", () => {
     expect(formatScalar(col("n", "text"), null)).toBe("");
     expect(formatScalar(col("n", "text"), "hi")).toBe("hi");
     expect(formatScalar(col("n", "text"), { a: 1 })).toBe('{"a":1}');
+  });
+  test("only real datetimes are reformatted", () => {
+    expect(formatScalar(col("when", "datetime"), "12")).toBe("12");
+    expect(formatScalar(col("when", "datetime"), "2026-11-26")).toBe("2026-11-26");
   });
   test("timestamps are shown in local time; text that is not a date stays as written", () => {
     const iso = "2026-11-26T10:00:00.000Z";

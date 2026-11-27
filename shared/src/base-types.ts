@@ -26,7 +26,7 @@ export interface BaseQueryResponse {
     key: string | null;
     label: string;
     count: number;
-    rows: Array<{ path: string; title: string; revision: string; values: Record<string, PropValue> }>;
+    rows: Array<{ path: string; title: string; revision: string; values: Record<string, PropValue>; partial?: string[] }>;
   }>;
   total: number;
   warnings: string[];

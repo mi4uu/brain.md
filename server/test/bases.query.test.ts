@@ -222,6 +222,15 @@ describe("groupBy", () => {
     expect(JSON.stringify(r)).not.toContain("secret");
   });
 
+  test("rows flag the cells the server altered", () => {
+    const r = q('filters: file.inFolder("tasks")\nviews:\n  - type: table\n    name: T\n    order: [file.name, owner]\n', { allowed: NO_SECRET });
+    const flagged = r.groups[0]!.rows.filter((x) => x.partial);
+    expect(flagged.length).toBeGreaterThan(0);
+    for (const row of flagged) expect(row.partial).toEqual(["owner"]);
+    const clean = q('filters: file.inFolder("tasks")\nviews:\n  - type: table\n    name: T\n    order: [file.name, owner]\n');
+    expect(clean.groups[0]!.rows.every((x) => x.partial === undefined)).toBe(true);
+  });
+
   test("numbers group numerically ordered", () => {
     const r = q('filters: file.inFolder("tasks")\nviews:\n  - type: table\n    name: T\n    groupBy:\n      property: n\n      direction: ASC\n');
     expect(r.groups.map((g) => g.key)).toEqual(["2", "5", "10", "33"]);
@@ -440,6 +449,9 @@ describe("robustness, round 3", () => {
     expect(r.groups[0]!.rows[0]!.values["formula.c0"]).toHaveLength(10000);
     expect(r.warnings.some((w) => w.includes("too large"))).toBe(true);
     expect(r.warnings.some((w) => w.includes("cut"))).toBe(true);
+    const rows = r.groups[0]!.rows;
+    expect(rows[0]!.partial).toContain("formula.c0");
+    expect(rows.some((x) => x.partial?.length === 20)).toBe(true);
   });
 });
 

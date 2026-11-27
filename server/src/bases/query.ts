@@ -398,13 +398,17 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
     return x.e.path.localeCompare(y.e.path);
   });
 
+  let altered = false;
   const clean = (v: PropValue, from: string, depth = 0): PropValue | typeof DROP => {
     if (typeof v === "string") {
       const m = WIKI.exec(v);
       const target = m?.[1]?.trim();
       if (target) {
         const to = index.resolveLink(from, target);
-        if (to && !allowed(to)) return DROP;
+        if (to && !allowed(to)) {
+          altered = true;
+          return DROP;
+        }
       }
       return v;
     }
@@ -479,6 +483,7 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
   const fit = (v: PropValue, depth = 0): PropValue => {
     if (typeof v === "string") {
       if (v.length > MAX_CELL) {
+        altered = true;
         warn(`a long value was cut to ${MAX_CELL} characters`);
         v = own(v.slice(0, MAX_CELL));
       }
@@ -496,17 +501,21 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
   };
   const outRow = (it: Item) => {
     const values: Record<string, PropValue> = Object.create(null);
+    const partial: string[] = [];
     for (const k of valueKeys) {
       if (spent > MAX_RESPONSE_CHARS) {
         warn("the response was too large; later cells were left empty");
         values[k] = null;
+        partial.push(k);
         continue;
       }
+      altered = false;
       const c = clean(toProp(keyValue(k, it.scope)), it.e.path);
       values[k] = c === DROP ? null : fit(c);
+      if (altered) partial.push(k);
     }
     release(it.row);
-    return { path: it.e.path, title: it.e.title, revision: it.e.revision, values };
+    return { path: it.e.path, title: it.e.title, revision: it.e.revision, values, ...(partial.length ? { partial } : {}) };
   };
 
   const groups: BaseQueryResponse["groups"] = [];

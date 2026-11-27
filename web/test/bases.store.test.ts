@@ -34,6 +34,17 @@ describe("base store", () => {
     expect(getCached("n59.md#0", "f")).toBeDefined();
   });
 
+  test("active view and open tool maps are bounded", () => {
+    for (let i = 0; i < 300; i++) {
+      setActiveView(`m${i}.md#0`, "V");
+      setOpenTool(`m${i}.md#0`, "sort");
+    }
+    expect(getActiveView("m0.md#0")).toBeUndefined();
+    expect(getOpenTool("m0.md#0")).toBeNull();
+    expect(getActiveView("m299.md#0")).toBe("V");
+    expect(getOpenTool("m299.md#0")).toBe("sort");
+  });
+
   test("refresh listeners", () => {
     let n = 0;
     const off = onBaseRefresh(() => n++);

@@ -1,6 +1,13 @@
 import type { BaseQueryResponse } from "@brainmd/shared/base-types";
 
+const STATE_LIMIT = 200;
 const active = new Map<string, string>();
+
+function remember<V>(map: Map<string, V>, key: string, value: V): void {
+  map.delete(key);
+  map.set(key, value);
+  if (map.size > STATE_LIMIT) map.delete(map.keys().next().value as string);
+}
 const cache = new Map<string, { fingerprint: string; result: BaseQueryResponse }>();
 const listeners = new Set<() => void>();
 const CACHE_LIMIT = 40;
@@ -11,7 +18,7 @@ const CACHE_LIMIT = 40;
 export const blockKey = (notePath: string | null, ordinal: number): string => `${notePath ?? ""}#${ordinal}`;
 
 export const getActiveView = (key: string): string | undefined => active.get(key);
-export const setActiveView = (key: string, name: string): void => void active.set(key, name);
+export const setActiveView = (key: string, name: string): void => remember(active, key, name);
 
 export function getCached(key: string, fingerprint: string): BaseQueryResponse | undefined {
   const hit = cache.get(key);
@@ -26,7 +33,7 @@ const openTools = new Map<string, string>();
 export const getOpenTool = (key: string): string | null => openTools.get(key) ?? null;
 export function setOpenTool(key: string, tool: string | null): void {
   if (tool === null) openTools.delete(key);
-  else openTools.set(key, tool);
+  else remember(openTools, key, tool);
 }
 
 export function setCached(key: string, fingerprint: string, result: BaseQueryResponse): void {

@@ -1,7 +1,8 @@
 import type { BaseQueryResponse, Direction, FilterNode, SortSpec } from "@brainmd/shared/base-types";
 import type { PropValue } from "@brainmd/shared/frontmatter";
 import type { PropertyType } from "@brainmd/shared/property-types";
-import { cleanItem, fitsType, isNested } from "../properties/model";
+import { DATETIME_RE, DATE_RE } from "@brainmd/shared/property-types";
+import { cleanItem, fitsType, isListType, isNested } from "../properties/model";
 
 export type ColumnType = PropertyType | "file" | "formula";
 
@@ -22,28 +23,43 @@ export function propNameOf(key: string): string | null {
   return name === "" ? null : name;
 }
 
-export function isEditable(type: ColumnType, key: string, value: PropValue): boolean {
+// A list cell is edited as comma-joined text, so it is editable only when that
+// text reads back as exactly the stored items.
+function listRoundTrips(type: PropertyType, value: PropValue): boolean {
+  if (value === null) return true;
+  return Array.isArray(value) && value.every((x) => typeof x === "string" && x !== "" && !x.includes(",") && cleanItem(type, x) === x);
+}
+
+// `partial` is the row's list of cells the server altered (dropped links, cut
+// text, nulled past the budget); writing one back would persist the loss.
+export function isEditable(type: ColumnType, key: string, value: PropValue, partial?: readonly string[]): boolean {
   if (type === "file" || type === "formula" || propNameOf(key) === null || isNested(value)) return false;
+  if (partial?.includes(key)) return false;
+  if (isListType(type)) return listRoundTrips(type, value);
   if (type === "number" && value !== null && !(typeof value === "number" && Number.isFinite(value))) return false;
   return fitsType(type, value);
 }
 
 export type Coerced = { kind: "set"; value: PropValue } | { kind: "unset" } | { kind: "error"; message: string };
 
-const LIST_TYPES: PropertyType[] = ["multitext", "tags", "aliases"];
-
 export function coerceInput(type: PropertyType, raw: string): Coerced {
   const text = raw.trim();
-  if (LIST_TYPES.includes(type)) {
+  if (isListType(type)) {
     const items = text.split(",").map((s) => cleanItem(type, s)).filter(Boolean);
     return items.length === 0 ? { kind: "unset" } : { kind: "set", value: items };
   }
   if (text === "") return { kind: "unset" };
   if (type === "number") {
+    if (!/^[+-]?(\d+\.?\d*|\.\d+)$/.test(text)) return { kind: "error", message: "Not a number" };
     const n = Number(text);
-    return Number.isFinite(n) ? { kind: "set", value: n } : { kind: "error", message: "Not a number" };
+    if (!Number.isFinite(n) || (!text.includes(".") && !Number.isSafeInteger(n))) return { kind: "error", message: "Number too large to keep exactly" };
+    return { kind: "set", value: n };
   }
-  if (type === "checkbox") return { kind: "set", value: /^(true|yes|1|on)$/i.test(text) };
+  if (type === "checkbox") {
+    if (/^(true|yes|1|on)$/i.test(text)) return { kind: "set", value: true };
+    if (/^(false|no|0|off)$/i.test(text)) return { kind: "set", value: false };
+    return { kind: "error", message: "Not true or false" };
+  }
   return { kind: "set", value: text };
 }
 
@@ -67,13 +83,21 @@ export const SUMMARY_NAMES = ["Average", "Min", "Max", "Sum", "Median", "Range",
 export type SummaryName = (typeof SUMMARY_NAMES)[number];
 
 const isEmptyValue = (v: PropValue): boolean => v === null || v === "" || (Array.isArray(v) && v.length === 0);
+function instant(v: string): number | null {
+  if (!DATE_RE.test(v) && !DATETIME_RE.test(v)) return null;
+  const t = Date.parse(v.replace(/([+-]\d{2})(\d{2})$/, "$1:$2"));
+  return Number.isNaN(t) ? null : t;
+}
 const round = (n: number): string => String(Math.round(n * 100) / 100);
 
 // Computed over the rows the view holds. The query contract has no summary
 // field, so a paged result summarises only the loaded page.
 export function summarise(name: string, values: PropValue[]): string | null {
   const nums = values.filter((v): v is number => typeof v === "number");
-  const strs = values.filter((v): v is string => typeof v === "string" && v !== "").sort();
+  const dated = (): string[] =>
+    values
+      .filter((v): v is string => typeof v === "string" && instant(v) !== null)
+      .sort((a, b) => instant(a)! - instant(b)!);
   switch (name) {
     case "Sum":
       return nums.length ? round(nums.reduce((a, b) => a + b, 0)) : null;
@@ -92,9 +116,9 @@ export function summarise(name: string, values: PropValue[]): string | null {
       return round(s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2);
     }
     case "Earliest":
-      return strs[0] ?? null;
+      return dated()[0] ?? null;
     case "Latest":
-      return strs[strs.length - 1] ?? null;
+      return dated().at(-1) ?? null;
     case "Checked":
       return String(values.filter((v) => v === true).length);
     case "Unchecked":
@@ -160,12 +184,21 @@ export function columnAt(cols: ColumnRect[], x: number, y: number): { key: strin
 }
 
 // What a card dropped on a kanban column writes to the group property.
-export function moveChange(type: PropertyType | undefined, key: string | null): { set: PropValue } | { unset: true } {
+// The typed value is used only when it spells back as the column key, so "007"
+// stays text. null: the property is a list, which a move would flatten.
+export function moveChange(type: PropertyType | undefined, key: string | null): { set: PropValue } | { unset: true } | null {
+  if (type && isListType(type)) return null;
   if (key === null) return { unset: true };
-  if (type === "number" && key.trim() !== "" && Number.isFinite(Number(key))) return { set: Number(key) };
-  if (type === "checkbox") return { set: key === "true" };
-  if (type && LIST_TYPES.includes(type)) return { set: [key] };
+  if (type === "number" && String(Number(key)) === key) return { set: Number(key) };
+  if (type === "checkbox" && (key === "true" || key === "false")) return { set: key === "true" };
   return { set: key };
+}
+
+// Whether a card can be moved by rewriting its group property.
+export function canMove(type: PropertyType | undefined, value: PropValue, partial?: boolean): boolean {
+  if (partial) return false;
+  if (type && isListType(type)) return false;
+  return !Array.isArray(value) && !isNested(value);
 }
 
 // Where a cards view finds a cover image: an external URL, or a file in the
@@ -236,7 +269,7 @@ export function candidateKeys(vaultNames: string[], formulaNames: string[], extr
 
 export function formatScalar(col: Pick<BaseQueryResponse["columns"][number], "key" | "type">, v: PropValue): string {
   if (v === null || v === undefined) return "";
-  if (typeof v === "string" && (col.key === "file.ctime" || col.key === "file.mtime" || col.type === "datetime")) {
+  if (typeof v === "string" && (col.key === "file.ctime" || col.key === "file.mtime" || (col.type === "datetime" && DATETIME_RE.test(v)))) {
     const d = new Date(v);
     return Number.isNaN(d.getTime()) ? v : d.toLocaleString();
   }

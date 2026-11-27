@@ -18,6 +18,16 @@ describe("fenceEdit", () => {
     expect(fenceEdit(note, 5, (s) => s)).toEqual({ from: expect.any(Number), to: expect.any(Number), insert: "" });
   });
 
+  test("a stale expected source refuses the edit", () => {
+    const two = "```base\nviews:\n  - type: table\n    name: A\n```\n\n```base\nviews:\n  - type: table\n    name: B\n```\n";
+    const srcA = "views:\n  - type: table\n    name: A";
+    const mut = (s: string) => s + "\n# x";
+    expect(fenceEdit(two, 1, mut, srcA)).not.toBeNull();
+    const afterDelete = two.slice(two.indexOf("```base", 5));
+    expect(fenceEdit(afterDelete, 1, mut, srcA)).toBeNull();
+    expect(fenceEdit(afterDelete, 1, mut)).not.toBeNull();
+  });
+
   test("CRLF notes keep CRLF", () => {
     const crlf = note.replace(/\n/g, "\r\n");
     const out = applyEdit(crlf, fenceEdit(crlf, 5, (s) => setViewSort(s, 0, [{ property: "a", direction: "DESC" }]))!);
