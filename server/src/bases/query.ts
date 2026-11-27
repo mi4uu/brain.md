@@ -142,10 +142,16 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
     return node;
   };
 
-  // Formula results can be large; they are dropped once a row's sort and group keys are read.
+  // A formula is evaluated and charged once per note per query, so memos live until the row
+  // is dropped or emitted. Only oversized text is evicted early, to bound memory.
   const memos = new Map<Scope, Map<string, Value>>();
   const release = (scope: Scope): void => {
     memos.get(scope)?.clear();
+  };
+  const evictLarge = (scope: Scope): void => {
+    const memo = memos.get(scope);
+    if (!memo) return;
+    for (const [k, v] of memo) if (typeof v === "string" && v.length > MAX_CELL) memo.delete(k);
   };
   const scopeFor = (e: QueryEntry): Scope => {
     const memo = new Map<string, Value>();
@@ -213,8 +219,11 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
       (viewFilter && test(viewFilter, scope) === false) ||
       // A budget hit makes every expression of the note null; a `not` must not turn that into a pass.
       scope.budget.hit;
-    release(scope);
-    if (out) continue;
+    if (out) {
+      release(scope);
+      continue;
+    }
+    evictLarge(scope);
     rows.push({ e, scope });
   }
 
@@ -232,7 +241,7 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
   const sortVals = new Map(
     rows.map((r) => {
       const vals = view.sort.map((s) => slim(keyValue(s.property, r.scope)));
-      release(r.scope);
+      evictLarge(r.scope);
       return [r, vals];
     }),
   );
@@ -289,7 +298,7 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
     const raw = gb ? slim(keyValue(gb.property, r.scope)) : null;
     const it = { ...r, group: gb ? groupKeyOf(raw, r.e.path) : null };
     groupOf.set(it, raw);
-    release(r.scope);
+    evictLarge(r.scope);
     return it;
   });
 
@@ -312,6 +321,8 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
   const limit = Math.min(Math.max(1, wantLimit), MAX_QUERY_LIMIT);
   const offset = Number.isFinite(req.offset) ? Math.max(0, Math.floor(req.offset!)) : 0;
   const page = items.slice(offset, offset + limit);
+  const pageSet = new Set(page);
+  for (const it of items) if (!pageSet.has(it)) release(it.scope);
 
   const colKeys = view.order.length > 0 ? view.order : ["file.name"];
   const display = new Map<string, string>();

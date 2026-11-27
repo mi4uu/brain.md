@@ -420,14 +420,15 @@ describe("robustness, round 3", () => {
     expect(r.warnings.some((w) => w.includes("budget"))).toBe(true);
   });
 
-  test("one budget per note across filter and cells", () => {
+  test("a formula used in the filter and as a column is charged once", () => {
     const ones = Array.from({ length: 300 }, () => "1").join(" + ");
     const parts = Array.from({ length: 12 }, (_, i) => `f${i}`);
     const defs = parts.map((f) => `  ${f}: ${ones}\n`).join("");
     const sum = parts.map((f) => `formula.${f}`).join(" + ");
     const r = q(`formulas:\n${defs}  heavy: ${sum}\nfilters: formula.heavy > 1\nviews:\n  - type: table\n    name: T\n    order: [file.name, formula.heavy]\n`);
     expect(r.total).toBeGreaterThan(0);
-    expect(r.groups[0]!.rows[0]!.values["formula.heavy"]).toBeNull();
+    expect(r.groups[0]!.rows[0]!.values["formula.heavy"]).toBe(3600);
+    expect(r.warnings).toEqual([]);
   });
 
   test("large cells are cut and the response is bounded", () => {
