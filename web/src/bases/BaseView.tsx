@@ -81,8 +81,8 @@ export function BaseView({ source, startLine, ordinal, notePath, host }: BaseVie
   }, []);
 
   // A mount paints the cached result at once but still fetches: Preview keeps
-  // roots across keystrokes, so a fresh mount means the note was reopened or
-  // the fence changed, and other notes may have changed meanwhile.
+  // roots across keystrokes and fence edits, so a fresh mount means the note
+  // was reopened or its blocks changed, and other notes may have changed meanwhile.
   // biome-ignore lint/correctness/useExhaustiveDependencies: tick is the refresh trigger
   useEffect(() => {
     const ctl = new AbortController();

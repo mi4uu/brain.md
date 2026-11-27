@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { applyEdit, fenceEdit } from "../src/bases/edit";
+import { applyEdit, fenceEdit, keepRoot } from "../src/bases/edit";
 import { setViewSort } from "@brainmd/shared/base-yaml";
 
 describe("fenceEdit", () => {
@@ -41,5 +41,24 @@ describe("fenceEdit", () => {
     const out = applyEdit(crlf, fenceEdit(crlf, 5, (s) => setViewSort(s, 0, [{ property: "a", direction: "DESC" }]))!);
     expect(out.replace(/\r\n/g, "")).not.toContain("\n");
     expect(out).toContain("    sort:\r\n      - property: a\r\n        direction: DESC\r\n```");
+  });
+});
+
+describe("keepRoot", () => {
+  test("a block with the same source keeps its root", () => {
+    expect(keepRoot("views: []", "views: []", true)).toBe(true);
+    expect(keepRoot("views: []", "views: []", false)).toBe(true);
+  });
+
+  test("an edited fence keeps its root while the blocks stay the same in number", () => {
+    expect(keepRoot("views: []", "filters: x\nviews: []", true)).toBe(true);
+  });
+
+  test("a block added or removed elsewhere gives a changed fence a new root", () => {
+    expect(keepRoot("views: []", "filters: x\nviews: []", false)).toBe(false);
+  });
+
+  test("no root at that place yet", () => {
+    expect(keepRoot(undefined, "views: []", true)).toBe(false);
   });
 });

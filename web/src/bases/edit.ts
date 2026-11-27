@@ -21,3 +21,10 @@ export function fenceEdit(text: string, startLine: number, mutate: (source: stri
 // live, writing view.
 export const isLiveFence = (text: string, startLine: number, source: string): boolean =>
   fenceEdit(text, startLine, (s) => s, source) !== null;
+
+// Whether the mounted view at an ordinal goes on rendering the block now at
+// that ordinal. An edited fence keeps its root, so open popovers, focus and
+// typed drafts survive the view's own edits. When blocks were added or removed
+// the ordinal may now name another block, so only an unchanged source is kept.
+export const keepRoot = (old: string | undefined, source: string, sameCount: boolean): boolean =>
+  old !== undefined && (old === source || sameCount);

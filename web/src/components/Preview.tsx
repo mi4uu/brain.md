@@ -6,7 +6,7 @@ import { getToken } from "../auth/token";
 import { TableTools } from "./TableTools";
 import type { LineRange, MdTable } from "../tables/md-table";
 import { BaseView } from "../bases/BaseView";
-import { isLiveFence } from "../bases/edit";
+import { isLiveFence, keepRoot } from "../bases/edit";
 import type { BaseHost } from "../bases/host";
 
 const PROTECTED_MEDIA_SELECTOR =
@@ -65,7 +65,7 @@ interface BaseRoot {
   el: HTMLElement;
   root: Root;
   source: string;
-  rendered: { startLine: number; notePath: string | null; host: BaseHost } | null;
+  rendered: { source: string; startLine: number; notePath: string | null; host: BaseHost } | null;
   // Scroll offsets inside the view (table wrap, kanban board). A detached
   // element loses them, so they are put back after each move.
   scroll: Map<HTMLElement, { top: number; left: number }>;
@@ -422,27 +422,27 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
 
   // ```base blocks: a live view in each placeholder. The HTML is replaced on
   // every change, so the root of each block is kept by ordinal and moved into
-  // the new placeholder while its fence source is unchanged; typing elsewhere
-  // in the note does not remount the view. A layout effect, so it runs before
-  // the passive block collector above, which then sees the moved-in elements.
+  // the new placeholder (see keepRoot); typing elsewhere in the note and the
+  // view's own fence edits do not remount it. A layout effect, so it runs
+  // before the passive block collector above, which then sees the moved-in
+  // elements.
   // biome-ignore lint/correctness/useExhaustiveDependencies: html is the trigger, the placeholders were replaced
   useLayoutEffect(() => {
     const prev = baseRootsRef.current;
     const next = new Map<number, BaseRoot>();
     const root = ref.current;
     if (root && baseHost) {
-      const holders = Array.from(root.querySelectorAll<HTMLElement>(".base-block[data-base]")).filter((el) => !el.closest(".embed-body"));
-      let ordinal = 0;
-      for (const holder of holders) {
-        const source = holder.getAttribute("data-base") ?? "";
-        const startLine = Number(holder.getAttribute("data-source-line"));
-        if (!isLiveFence(content, startLine, source)) continue;
-        const n = ordinal++;
+      const holders = Array.from(root.querySelectorAll<HTMLElement>(".base-block[data-base]"))
+        .filter((el) => !el.closest(".embed-body"))
+        .map((el) => ({ el, source: el.getAttribute("data-base") ?? "", startLine: Number(el.getAttribute("data-source-line")) }))
+        .filter((h) => isLiveFence(content, h.startLine, h.source));
+      const sameCount = holders.length === prev.size;
+      for (const [n, { el: holder, source, startLine }] of holders.entries()) {
         const old = prev.get(n);
         let entry: BaseRoot;
-        if (old && old.source === source) {
+        if (old && keepRoot(old.source, source, sameCount)) {
           if (old.el !== holder) {
-            for (const name of ["data-source-line", "data-source-end"]) {
+            for (const name of ["data-base", "data-source-line", "data-source-end"]) {
               const v = holder.getAttribute(name);
               if (v === null) old.el.removeAttribute(name);
               else old.el.setAttribute(name, v);
@@ -451,12 +451,13 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
             restoreScroll(old);
           }
           entry = old;
+          entry.source = source;
         } else {
           entry = newBaseRoot(holder, source);
         }
         const r = entry.rendered;
-        if (!r || r.startLine !== startLine || r.notePath !== notePath || r.host !== baseHost) {
-          entry.rendered = { startLine, notePath, host: baseHost };
+        if (!r || r.source !== source || r.startLine !== startLine || r.notePath !== notePath || r.host !== baseHost) {
+          entry.rendered = { source, startLine, notePath, host: baseHost };
           entry.root.render(<BaseView key={notePath ?? ""} source={source} startLine={startLine} ordinal={n} notePath={notePath} host={baseHost} />);
         }
         next.set(n, entry);

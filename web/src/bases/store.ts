@@ -12,9 +12,9 @@ const cache = new Map<string, { fingerprint: string; result: BaseQueryResponse }
 const listeners = new Set<() => void>();
 const CACHE_LIMIT = 40;
 
-// Preview replaces its HTML on every edit, which destroys the mounted views.
-// What the user picked, the open popover and the last result live here so a
-// fresh mount continues where the old one stopped.
+// A view mounts afresh when its note is reopened or a block is added or
+// removed before it. What the user picked, the open popover and the last
+// result live here so a fresh mount continues where the old one stopped.
 export const blockKey = (notePath: string | null, ordinal: number): string => `${notePath ?? ""}#${ordinal}`;
 
 export const getActiveView = (key: string): string | undefined => active.get(key);
