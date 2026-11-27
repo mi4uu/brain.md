@@ -259,3 +259,45 @@ describe("findBaseFences and replaceFenceBody", () => {
     expect(e.insert).toBe("a: 1\r\nb: 2");
   });
 });
+
+describe("edits never lose data", () => {
+  const code = (fn: () => unknown): string | undefined => {
+    try {
+      fn();
+    } catch (e) {
+      return (e as BaseYamlError).code;
+    }
+    return undefined;
+  };
+  const sort = [{ property: "a", direction: "ASC" as const }];
+
+  test("deleteView refuses inline lists and inline items", () => {
+    expect(code(() => deleteView("views: [{a: 1}, {b: 2}]\n", 0))).toBe("UNSUPPORTED_STYLE");
+    expect(code(() => deleteView("views:\n  - {a: 1}\n  - {b: 2}\n", 5))).toBe("NOT_FOUND");
+  });
+
+  test("a list index is never written into a new node", () => {
+    expect(code(() => setViewSort("views:\n", 0, sort))).toBe("NOT_FOUND");
+    expect(code(() => setViewSort("", 0, sort))).toBe("NOT_FOUND");
+  });
+
+  test("a scalar in the way is never overwritten", () => {
+    expect(code(() => setViewSort("views: x\n", 0, sort))).toBe("UNSUPPORTED_STYLE");
+    expect(code(() => setColumnLabel("properties: x\n", "s", "S"))).toBe("UNSUPPORTED_STYLE");
+    expect(code(() => addView("views: x\n", { type: "table", name: "T" }))).toBe("UNSUPPORTED_STYLE");
+  });
+
+  test("addView on a null views key creates the list", () => {
+    expect(addView("views:\n", { type: "table", name: "T" })).toBe("views:\n  - type: table\n    name: T\n");
+  });
+
+  test("verification refuses a splice that changes the parsed result", () => {
+    expect(code(() => setPath("a: !!str 1\n", ["a"], 2))).toBe("UNSUPPORTED_STYLE");
+  });
+
+  test("__proto__ is an ordinary key", () => {
+    const out = setPath("a: 1\n", ["__proto__", "x"], 1);
+    expect(out).toBe("a: 1\n__proto__:\n  x: 1\n");
+    expect(Object.hasOwn(Object.prototype, "x")).toBe(false);
+  });
+});

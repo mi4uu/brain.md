@@ -86,15 +86,60 @@ function appendToMap(src: string, map: YAMLMap, rest: string[], value: unknown):
   return src.slice(0, at) + eol + text + src.slice(at);
 }
 
+const isEmpty = (v: unknown): boolean => typeof v === "object" && v !== null && Object.keys(v).length === 0;
+
+// Removing the last entry of a map leaves its key with a null value in the source.
+function same(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if ((a === null && isEmpty(b)) || (b === null && isEmpty(a))) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const ka = Object.keys(a);
+  const kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  return ka.every(
+    (k) => Object.hasOwn(b, k) && same((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]),
+  );
+}
+
+// A splice is a text hack; this proves it did what the parsed document says
+// it should, or the edit is refused instead of corrupting the base.
+function verified(src: string, out: string, apply: (doc: ReturnType<typeof parse>) => void): string {
+  const expected = parse(src);
+  apply(expected);
+  const actual = parseDocument(out);
+  if (actual.errors.length > 0 || !same(expected.toJS(), actual.toJS())) {
+    throw new BaseYamlError("UNSUPPORTED_STYLE", "this edit cannot be applied safely to the source as written");
+  }
+  return out;
+}
+
 // Sets, replaces or (value undefined) deletes the node at `path`, touching
 // only the bytes of that pair. Document.toString() would re-indent and
 // re-quote the whole source, so every edit splices by node range instead.
 export function setPath(src: string, path: Path, value: unknown): string {
+  const out = spliceSetPath(src, path, value);
+  return verified(src, out, (doc) => {
+    if (value === undefined) doc.deleteIn(path);
+    else doc.setIn(path, value);
+  });
+}
+
+const isNullNode = (n: unknown): boolean => n === null || n === undefined || (isScalar(n) && n.value === null);
+
+function rejectFabricated(rest: Path): void {
+  if (rest.some((k) => typeof k === "number")) {
+    throw new BaseYamlError("NOT_FOUND", `no list item at ${rest.map(String).join(".")}`);
+  }
+}
+
+function spliceSetPath(src: string, path: Path, value: unknown): string {
   const doc = parse(src);
   const eol = eolOf(src);
   let node: unknown = doc.contents;
-  if (node === null || (isScalar(node) && node.value === null)) {
+  if (isNullNode(node)) {
     if (value === undefined) return src;
+    rejectFabricated(path);
     const body = render(nested(path.map(String), value));
     return body.split("\n").join(eol) + eol + (src.trim() === "" ? "" : src);
   }
@@ -113,6 +158,7 @@ export function setPath(src: string, path: Path, value: unknown): string {
     const pair = map.items.find((p) => keyName(p) === String(key));
     if (!pair) {
       if (value === undefined) return src;
+      rejectFabricated(path.slice(i));
       return appendToMap(src, map, path.slice(i).map(String), value);
     }
     const v = pair.value;
@@ -132,7 +178,11 @@ export function setPath(src: string, path: Path, value: unknown): string {
       if (src[le] === "\n") le += 1;
       return src.slice(0, ls) + src.slice(le);
     }
-    if (!last && value === undefined) return src;
+    if (!last) {
+      if (value === undefined) return src;
+      if (!isNullNode(v)) throw new BaseYamlError("UNSUPPORTED_STYLE", `"${String(key)}" is not a mapping or list`);
+      rejectFabricated(path.slice(i + 1));
+    }
     const indent = " ".repeat(kr[0] - lineStart(src, kr[0]));
     const text = indentLines(render(nested(path.slice(i).map(String), value)), indent, eol, true);
     const vr = rangeOf(v);
@@ -181,10 +231,22 @@ export const setColumnLabel = (src: string, column: string, label: string): stri
   setPath(src, ["properties", column, "displayName"], label);
 
 export function addView(src: string, view: { type: string; name: string }): string {
+  const out = spliceAddView(src, view);
+  return verified(src, out, (doc) => {
+    const views = doc.getIn(["views"]);
+    if (isSeq(views) && views.items.length > 0) views.add(doc.createNode(view));
+    else doc.setIn(["views"], [view]);
+  });
+}
+
+function spliceAddView(src: string, view: { type: string; name: string }): string {
   const doc = parse(src);
   const root = doc.contents;
   const views = isMap(root) ? (root as YAMLMap).items.find((p) => keyName(p) === "views")?.value : null;
-  if (!isSeq(views) || (views.flow && views.items.length === 0)) return setPath(src, ["views"], [view]);
+  if (!isSeq(views) && !isNullNode(views)) {
+    throw new BaseYamlError("UNSUPPORTED_STYLE", "views is not a list");
+  }
+  if (!isSeq(views) || (views.flow && views.items.length === 0)) return spliceSetPath(src, ["views"], [view]);
   const seq = views as YAMLSeq;
   if (seq.flow || seq.items.length === 0) {
     throw new BaseYamlError("UNSUPPORTED_STYLE", "inline view lists cannot be edited here");
@@ -200,14 +262,23 @@ export function addView(src: string, view: { type: string; name: string }): stri
 }
 
 export function deleteView(src: string, index: number): string {
+  const out = spliceDeleteView(src, index);
+  return verified(src, out, (doc) => {
+    doc.deleteIn(["views", index]);
+  });
+}
+
+function spliceDeleteView(src: string, index: number): string {
   const doc = parse(src);
   const root = doc.contents;
   const views = isMap(root) ? (root as YAMLMap).items.find((p) => keyName(p) === "views")?.value : null;
   if (!isSeq(views)) throw new BaseYamlError("NOT_FOUND", "no views list");
+  if ((views as YAMLSeq).flow) throw new BaseYamlError("UNSUPPORTED_STYLE", "inline view lists cannot be edited here");
   const item = (views as YAMLSeq).items[index];
   if (!item) throw new BaseYamlError("NOT_FOUND", `no view ${index}`);
   const r = rangeOf(item)!;
   const ls = lineStart(src, r[0]);
+  if (src.slice(ls, r[0]).trim() !== "-") throw new BaseYamlError("UNSUPPORTED_STYLE", "view does not start on its own list line");
   let le = lineEnd(src, trimEnd(src, r[1]));
   if (src[le] === "\r") le += 1;
   if (src[le] === "\n") le += 1;
