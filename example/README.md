@@ -19,8 +19,11 @@ AI for Agents/
   MCP Server.md
   Folder Permissions.md
 Projects/
+  Projects board.md      (a base block: kanban, table, cards)
   brain.md launch.md
   Q3 roadmap.md
+  Docker image.md, Hybrid search.md, Mobile layout.md,
+  Signed macOS binary.md, Daily-note templates.md
 Daily/
   2026-05-27.md
   2026-05-26.md

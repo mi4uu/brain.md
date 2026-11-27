@@ -1,6 +1,10 @@
 ---
 title: brain.md launch
-status: in-progress
+status: Doing
+priority: high
+owner: Michal
+due: 2026-12-01
+estimate: 8
 tags: [project, launch, ai]
 aliases: [Launch, v3 Launch]
 ---

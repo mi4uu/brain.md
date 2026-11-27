@@ -1,7 +1,11 @@
 ---
 title: Q3 roadmap
 tags: [project, roadmap]
-status: draft
+status: Todo
+priority: low
+owner: Michal
+due: 2027-01-06
+estimate: 1
 ---
 
 # Q3 2026 roadmap
