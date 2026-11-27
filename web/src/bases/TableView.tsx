@@ -1,9 +1,9 @@
 import { memo, useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { ArrowDownIcon, ArrowUpIcon } from "@radix-ui/react-icons";
 import { columnId, setColumnSize, setViewGroupBy, setViewOrder, setViewSort, setViewSummary } from "@brainmd/shared/base-yaml";
 import type { PropValue } from "@brainmd/shared/frontmatter";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
 import { EditableCell } from "./EditableCell";
-import { RowMenu } from "./RowMenu";
 import { DEFAULT_COLUMN_WIDTH, MAX_COLUMN_WIDTH, MIN_COLUMN_WIDTH, SUMMARY_NAMES, byColumn, clampWidth, matchKey, moveColumn, patchRowValues, propNameOf, summarise, toggleColumn } from "./model";
 import type { Column, LayoutProps, PropChange, Row } from "./types";
 
@@ -69,12 +69,12 @@ export function TableView({ result, view, config, host, saveProps, editView }: L
   const sortedBy = (key: string) => view.sort.find((s) => columnId(s.property) === columnId(key))?.direction;
 
   const header = (c: Column) => (
-    <th key={c.key} scope="col" aria-sort={sortedBy(c.key) === "ASC" ? "ascending" : sortedBy(c.key) === "DESC" ? "descending" : "none"}>
+    <th key={c.key} scope="col" className={numClass(c)} aria-sort={sortedBy(c.key) === "ASC" ? "ascending" : sortedBy(c.key) === "DESC" ? "descending" : "none"}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button type="button" className="base-th-btn" aria-label={`Column ${c.label}`}>
             {c.label}
-            {sortedBy(c.key) ? <span aria-hidden>{sortedBy(c.key) === "ASC" ? " ↑" : " ↓"}</span> : null}
+            {sortedBy(c.key) === "ASC" ? <ArrowUpIcon className="base-sort-icon" aria-hidden /> : sortedBy(c.key) === "DESC" ? <ArrowDownIcon className="base-sort-icon" aria-hidden /> : null}
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="base-menu">
@@ -133,21 +133,21 @@ export function TableView({ result, view, config, host, saveProps, editView }: L
           {result.columns.map((c) => (
             <col key={c.key} style={{ width: widthOf(c.key) }} />
           ))}
-          <col className="base-col-menu" />
         </colgroup>
         <thead>
           <tr>
             {result.columns.map(header)}
-            <th aria-label="Row actions" />
           </tr>
         </thead>
         <TableBody result={result} host={host} saveProps={saveProps} />
         {showSummaries ? <TableFoot result={result} viewSummaries={view.summaries} baseSummaries={config.summaries} /> : null}
       </table>
-      {showSummaries ? <p className="base-summary-note">Summaries cover the {rowCount} loaded rows</p> : null}
+      {showSummaries && rowCount < result.total ? <p className="base-summary-note">Summaries cover the first {rowCount} of {result.total} notes</p> : null}
     </div>
   );
 }
+
+const numClass = (c: Column): string | undefined => (c.type === "number" ? "base-num" : undefined);
 
 const summaryOf = (own: Record<string, string>, base: Record<string, string>, c: Column): string | undefined => byColumn(own, c.key) ?? byColumn(base, c.key);
 
@@ -166,7 +166,7 @@ const TableBody = memo(function TableBody({ result, host, saveProps }: Pick<Layo
     <tbody key={g.key ?? "\u0000none"}>
       {grouped ? (
         <tr className="base-group">
-          <td colSpan={result.columns.length + 1}>
+          <td colSpan={result.columns.length}>
             {g.label} <span className="base-count">{g.count}</span>
           </td>
         </tr>
@@ -174,13 +174,10 @@ const TableBody = memo(function TableBody({ result, host, saveProps }: Pick<Layo
       {g.rows.map((r) => (
         <tr key={r.path}>
           {result.columns.map((c) => (
-            <td key={c.key}>
+            <td key={c.key} className={numClass(c)}>
               <EditableCell col={c} value={r.values[c.key] ?? null} row={r} host={host} onCommit={(change) => save(r, change)} />
             </td>
           ))}
-          <td className="base-td-menu">
-            <RowMenu row={r} host={host} />
-          </td>
         </tr>
       ))}
     </tbody>
@@ -195,9 +192,16 @@ const TableFoot = memo(function TableFoot({ result, viewSummaries, baseSummaries
         {result.columns.map((c) => {
           const name = summaryOf(viewSummaries, baseSummaries, c);
           const v = name ? summarise(name, rows.map((r) => r.values[c.key] ?? null)) : null;
-          return <td key={c.key}>{name && v !== null ? `${name} ${v}` : ""}</td>;
+          return (
+            <td key={c.key} className={numClass(c)}>
+              {name && v !== null ? (
+                <>
+                  <span className="base-sum-name">{name}</span> {v}
+                </>
+              ) : null}
+            </td>
+          );
         })}
-        <td />
       </tr>
     </tfoot>
   );

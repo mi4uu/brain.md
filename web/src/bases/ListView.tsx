@@ -1,5 +1,4 @@
 import { CellValue } from "./CellValue";
-import { RowMenu } from "./RowMenu";
 import type { LayoutProps } from "./types";
 
 export function ListView({ result, host }: LayoutProps) {
@@ -32,7 +31,6 @@ export function ListView({ result, host }: LayoutProps) {
                     );
                   })}
                 </span>
-                <RowMenu row={r} host={host} />
               </li>
             ))}
           </ul>

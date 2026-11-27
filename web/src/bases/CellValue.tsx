@@ -29,7 +29,7 @@ function Scalar({ col, value, row, host }: CellProps) {
       );
     }
   }
-  if (typeof value === "boolean") return <input type="checkbox" checked={value} readOnly disabled aria-label={col.label} />;
+  if (typeof value === "boolean") return <input type="checkbox" className="base-check base-check-ro" checked={value} readOnly tabIndex={-1} aria-readonly aria-label={col.label} />;
   return <>{formatScalar(col, value)}</>;
 }
 
