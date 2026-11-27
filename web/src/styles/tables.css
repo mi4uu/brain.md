@@ -92,3 +92,52 @@
     display: none;
   }
 }
+
+.tt-cell-sel {
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-1);
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.table-actionbar {
+  position: sticky;
+  bottom: var(--space-3);
+  display: flex;
+  gap: 4px;
+  width: max-content;
+  max-width: 100%;
+  margin: var(--space-3) auto 0;
+  padding: 6px;
+  overflow-x: auto;
+  color: var(--text-1);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  z-index: 3;
+}
+.table-actionbar button {
+  flex: none;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0 10px;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-2);
+}
+.table-actionbar button:active:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-1);
+}
+.table-actionbar button:disabled {
+  color: var(--text-4);
+}
+
+@media (pointer: coarse) {
+  .tt-menu-item {
+    min-height: 40px;
+  }
+}

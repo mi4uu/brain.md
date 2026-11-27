@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -7,6 +8,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
+import { flushSync } from "react-dom";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { readTable } from "../tables/apply";
 import { boundaryIndex, moveTarget } from "../tables/drag";
@@ -20,7 +22,15 @@ import {
   type LineRange,
   type MdTable,
 } from "../tables/md-table";
-import { PlusIcon } from "./Icons";
+import { ACTION_GROUPS, TABLE_ACTIONS, type TableAction } from "../tables/table-actions";
+import { CloseIcon, PlusIcon } from "./Icons";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "./ui/context-menu";
 import { toast } from "./ui/use-toast";
 
 export interface CellSel {
@@ -55,6 +65,7 @@ interface Geo {
   head: Box[];
   body: Box[];
   edit: Box | null;
+  sel: Box | null;
   limitRight: number;
 }
 
@@ -113,6 +124,16 @@ const cellText = (m: MdTable, row: number, col: number): string =>
 
 const sameCell = (a: CellSel, b: CellSel): boolean => a.line === b.line && a.row === b.row && a.col === b.col;
 
+const editableCell = (t: Element): CellSel | null => (t.closest("a, input, button, summary") ? null : addressOf(t));
+
+// Without this a second "Row down" on the same selection would move the row back.
+const FOLLOW: Record<string, { row: number; col: number }> = {
+  "row-up": { row: -1, col: 0 },
+  "row-down": { row: 1, col: 0 },
+  "col-move-left": { row: 0, col: -1 },
+  "col-move-right": { row: 0, col: 1 },
+};
+
 export function TableTools({ scrollerRef, docRef, content, html, onEditTable, children }: TableToolsProps) {
   const [editing, setEditing] = useState<Editing | null>(null);
   const [geo, setGeo] = useState<Geo | null>(null);
@@ -123,6 +144,8 @@ export function TableTools({ scrollerRef, docRef, content, html, onEditTable, ch
   const [hover, setHover] = useState<TableKey | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const toolsKey: TableKey | null = noHoverUi ? null : (drag ?? hover);
+  const [sel, setSel] = useState<CellSel | null>(null);
+  const [ctx, setCtx] = useState<CellSel | null>(null);
 
   // The end line is read from the rendered table at call time: a stored one
   // goes stale as soon as an edit changes the table's line count.
@@ -135,9 +158,23 @@ export function TableTools({ scrollerRef, docRef, content, html, onEditTable, ch
     return model && matchesModel(table, model) ? range : null;
   };
 
-  const edit = (line: number, fn: (t: MdTable) => MdTable) => {
+  const edit = (line: number, fn: (t: MdTable) => MdTable): boolean => {
     const range = liveRange(line);
-    if (!range || !onEditTable(range, fn)) toast({ description: "Table changed, edit not applied" });
+    if (range && onEditTable(range, fn)) return true;
+    toast({ description: "Table changed, edit not applied" });
+    return false;
+  };
+
+  const liveModel = (line: number): MdTable | null => {
+    const range = liveRange(line);
+    return range ? readTable(content, range) : null;
+  };
+
+  // flushSync mounts and focuses the input inside the tap handler: iOS Safari
+  // only opens the keyboard for a focus() made during the user gesture.
+  const openEditor = (addr: CellSel, model: MdTable) => {
+    flushSync(() => setEditing({ ...addr, text: cellText(model, addr.row, addr.col) }));
+    inputRef.current?.focus();
   };
 
   const close = (target: Editing) => {
@@ -198,53 +235,57 @@ export function TableTools({ scrollerRef, docRef, content, html, onEditTable, ch
   useLayoutEffect(() => {
     const scroller = scrollerRef.current;
     const doc = docRef.current;
-    const key: TableKey | null = editing ?? toolsKey;
+    const selKey = noHoverUi ? sel : null;
+    const key: TableKey | null = editing ?? toolsKey ?? selKey;
     const table = key && doc ? tableByLine(doc, key.line) : null;
     if (!scroller || !table) {
       setGeo(null);
       if (editing && !table) setEditing(null);
       if (drag && !table) setDrag(null);
+      if (key === selKey && selKey && !table) setSel(null);
       return;
     }
-    let editBox: Box | null = null;
-    if (editing) {
-      const tr = editing.row < 0 ? table.rows[0] : table.rows[editing.row + 1];
-      const cell = tr?.cells[editing.col];
-      editBox = cell ? rectIn(scroller, cell) : null;
-    }
+    const cellBox = (c: CellSel | null): Box | null => {
+      if (!c || c.line !== key?.line) return null;
+      const tr = c.row < 0 ? table.rows[0] : table.rows[c.row + 1];
+      const cell = tr?.cells[c.col];
+      return cell ? rectIn(scroller, cell) : null;
+    };
     setGeo({
       table: rectIn(scroller, table),
       head: Array.from(table.rows[0]?.cells ?? [], (c) => rectIn(scroller, c)),
       body: Array.from(table.rows)
         .slice(1)
         .map((r) => rectIn(scroller, r)),
-      edit: editBox,
+      edit: cellBox(editing),
+      sel: cellBox(selKey),
       limitRight: scroller.clientWidth + scroller.scrollLeft - 18,
     });
-  }, [scrollerRef, docRef, editing, toolsKey, drag, html, tick]);
+  }, [scrollerRef, docRef, editing, toolsKey, drag, sel, noHoverUi, html, tick]);
 
   useEffect(() => {
     const doc = docRef.current;
     if (!doc) return;
-    const editable = (t: Element): CellSel | null =>
-      t.closest("a, input, button, summary") ? null : addressOf(t);
     // A press on another cell must not blur the open input: the blur commit
     // would re-render the table before mouseup and the click would miss.
     const onMouseDown = (e: MouseEvent) => {
-      if (editing && e.button === 0 && editable(e.target as Element)) e.preventDefault();
+      if (editing && e.button === 0 && editableCell(e.target as Element)) e.preventDefault();
     };
     const onClick = (e: MouseEvent) => {
-      const addr = editable(e.target as Element);
+      const addr = editableCell(e.target as Element);
       if (!addr) return;
       const selection = window.getSelection();
       if (selection && !selection.isCollapsed) return;
-      const range = liveRange(addr.line);
-      const model = range ? readTable(content, range) : null;
+      const model = liveModel(addr.line);
       if (!model) return;
       e.preventDefault();
       if (editing && sameCell(editing, addr)) return;
       if (editing && inputRef.current) commit(editing, inputRef.current.value);
-      setEditing({ ...addr, text: cellText(model, addr.row, addr.col) });
+      if (noHoverUi && !(sel && sameCell(sel, addr))) {
+        setSel(addr);
+        return;
+      }
+      openEditor(addr, model);
     };
     doc.addEventListener("mousedown", onMouseDown);
     doc.addEventListener("click", onClick);
@@ -292,9 +333,60 @@ export function TableTools({ scrollerRef, docRef, content, html, onEditTable, ch
     }
   };
 
+  const run = (target: CellSel, a: TableAction) => {
+    const applied = edit(target.line, (t) => (a.enabled(t, target) ? a.run(t, target) : t));
+    const step = FOLLOW[a.id];
+    if (applied && step && sel && sameCell(sel, target)) {
+      setSel({ ...target, row: target.row + step.row, col: target.col + step.col });
+    }
+  };
+
+  const ctxModel = ctx ? liveModel(ctx.line) : null;
+  const selModel = noHoverUi && sel ? liveModel(sel.line) : null;
+
+  useLayoutEffect(() => {
+    if (!sel || !selModel) return;
+    const row = Math.min(sel.row, selModel.rows.length - 1);
+    const col = Math.min(sel.col, selModel.header.length - 1);
+    if (row !== sel.row || col !== sel.col) setSel({ ...sel, row, col });
+  }, [sel, selModel]);
+
+  const onPointerDownCapture = (e: ReactPointerEvent<HTMLElement>) => {
+    const addr = editableCell(e.target as Element);
+    setCtx(addr && liveRange(addr.line) ? addr : null);
+  };
+
   return (
     <>
-      {children}
+      <ContextMenu>
+        <ContextMenuTrigger
+          asChild
+          disabled={!ctx || !ctxModel}
+          onPointerDownCapture={onPointerDownCapture}
+          style={{ WebkitTouchCallout: "default" }}
+        >
+          {children}
+        </ContextMenuTrigger>
+        {ctx && ctxModel ? (
+          <ContextMenuContent>
+            {ACTION_GROUPS.map((g, gi) => (
+              <Fragment key={g}>
+                {gi > 0 ? <ContextMenuSeparator /> : null}
+                {TABLE_ACTIONS.filter((a) => a.group === g).map((a) => (
+                  <ContextMenuItem
+                    key={a.id}
+                    className="tt-menu-item"
+                    disabled={!a.enabled(ctxModel, ctx)}
+                    onSelect={() => run(ctx, a)}
+                  >
+                    {a.label}
+                  </ContextMenuItem>
+                ))}
+              </Fragment>
+            ))}
+          </ContextMenuContent>
+        ) : null}
+      </ContextMenu>
       <div className="table-tools">
         {toolsKey && geo && !editing ? (
           <HoverControls
@@ -306,6 +398,12 @@ export function TableTools({ scrollerRef, docRef, content, html, onEditTable, ch
             onGripMove={moveDrag}
             onGripUp={endDrag}
             onGripCancel={() => setDrag(null)}
+          />
+        ) : null}
+        {noHoverUi && geo?.sel && !editing ? (
+          <div
+            className="tt-cell-sel"
+            style={{ left: geo.sel.left, top: geo.sel.top, width: geo.sel.width, height: geo.sel.height }}
           />
         ) : null}
         {editing && geo?.edit ? (
@@ -332,6 +430,21 @@ export function TableTools({ scrollerRef, docRef, content, html, onEditTable, ch
           />
         ) : null}
       </div>
+      {sel && selModel ? (
+        <div className="table-actionbar" role="toolbar" aria-label="Table actions">
+          <button type="button" onClick={() => openEditor(sel, selModel)}>
+            Edit cell
+          </button>
+          {TABLE_ACTIONS.map((a) => (
+            <button key={a.id} type="button" disabled={!a.enabled(selModel, sel)} onClick={() => run(sel, a)}>
+              {a.shortLabel}
+            </button>
+          ))}
+          <button type="button" aria-label="Close table actions" onClick={() => setSel(null)}>
+            <CloseIcon />
+          </button>
+        </div>
+      ) : null}
     </>
   );
 }
