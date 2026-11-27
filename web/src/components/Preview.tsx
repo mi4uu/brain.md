@@ -326,6 +326,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
             isMediaTarget: (t) => isMediaName(t),
             buildMediaUrl: (t) =>
               api.mediaUrl(`${dirOf}.media/${t.split("/").pop()}`),
+            baseViews: false,
           });
           const body = el.querySelector(".embed-body");
           if (body) {

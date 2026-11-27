@@ -117,6 +117,7 @@ function renderDoc(note: Note, data: ViewData | null): HTMLElement {
         : resolveWikilinkIn(list, target),
     isMediaTarget: () => false,
     buildMediaUrl: () => "",
+    baseViews: false,
   });
   const doc = el("article", { className: "doc" });
   doc.innerHTML = html;

@@ -44,4 +44,28 @@ describe("```base fences", () => {
     expect(outsideAttr).not.toMatch(/<img|<[a-z][^>]*\son\w+=/i);
     expect(out.match(/<div/g)).toHaveLength(1);
   });
+
+  test("baseViews false keeps the fence an ordinary code block (embeds, MCP app)", () => {
+    const out = renderMarkdown("```base\nviews: []\n```\n", { ...opts, baseViews: false }).html;
+    expect(out).not.toContain("base-block");
+    expect(out).toContain("views: []");
+  });
+
+  test("two base fences in one note keep their own line ranges", () => {
+    const out = html("```base\na: 1\n```\n\ntext\n\n```base\nb: 2\n```\n");
+    expect(out).toContain('data-source-line="1" data-source-end="3"');
+    expect(out).toContain('data-source-line="7" data-source-end="9"');
+  });
+
+  test("an unclosed fence at end of file still becomes a placeholder", () => {
+    const out = html("```base\nviews: []\n");
+    expect(out).toContain('class="base-block"');
+    expect(out).toContain('data-source-line="1"');
+  });
+
+  test("a base fence beside a table keeps the table range", () => {
+    const out = html("| a | b |\n|---|---|\n| 1 | 2 |\n\n```base\nviews: []\n```\n");
+    expect(out).toMatch(/<table[^>]*data-source-line="1"[^>]*data-source-end="3"/);
+    expect(out).toContain('data-source-line="5" data-source-end="7"');
+  });
 });
