@@ -34,3 +34,61 @@
     cursor: text;
   }
 }
+
+.tt-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  width: 18px;
+  color: var(--text-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+.tt-add-row {
+  height: 18px;
+}
+.tt-add:hover,
+.tt-add:focus-visible {
+  color: var(--text-1);
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.tt-grip {
+  width: 24px;
+  height: 8px;
+  background: var(--border-strong);
+  border-radius: 4px;
+  opacity: 0.6;
+  cursor: grab;
+  touch-action: none;
+}
+.tt-grip-row {
+  width: 8px;
+  height: 24px;
+}
+.tt-grip:hover,
+.tt-grip:active {
+  background: var(--accent);
+  opacity: 1;
+}
+.tt-grip:active {
+  cursor: grabbing;
+}
+
+.tt-drop {
+  background: var(--accent);
+  pointer-events: none;
+}
+
+/* Under 40px, too small for a coarse pointer. */
+@media (hover: none), (pointer: coarse) {
+  .tt-add,
+  .tt-grip,
+  .tt-drop {
+    display: none;
+  }
+}
