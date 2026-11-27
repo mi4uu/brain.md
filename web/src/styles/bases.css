@@ -64,6 +64,10 @@
 .base-select {
   height: 28px;
 }
+/* In the column-flex popover, flex: 1 gives the select a zero height basis, which WebKit keeps. */
+.base-pop > .base-select {
+  flex: none;
+}
 .base-input:focus-visible,
 .base-select:focus-visible {
   outline: 2px solid var(--accent);
