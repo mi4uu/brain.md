@@ -31,8 +31,8 @@
   `docs/views.md`.
 - **`query_notes` (MCP) and `POST /api/bases/query`.** The same query for
   agents and the UI: a `filter` expression with `columns` and `sort`, a `base`
-  YAML, or a note's block by `path` and `view`. 50 rows per page. MCP now has
-  20 tools.
+  YAML, or a note's block by `path` and `view`. MCP: 50 rows per page, with
+  `revision` and `partial` on each row. MCP now has 20 tools.
 
 ### Changed
 

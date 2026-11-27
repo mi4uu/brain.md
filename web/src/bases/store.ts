@@ -25,8 +25,9 @@ export function getCached(key: string, fingerprint: string): BaseQueryResponse |
   return hit && hit.fingerprint === fingerprint ? hit.result : undefined;
 }
 
-// The last result for a block whatever its fingerprint, so a remount after an
-// edit paints the old rows at once while the new query runs.
+// The last result for a block whatever its fingerprint, so a remount (note
+// reopened, block added or removed) paints the old rows at once while the new
+// query runs.
 export const getLast = (key: string): BaseQueryResponse | undefined => cache.get(key)?.result;
 
 const openTools = new Map<string, string>();
