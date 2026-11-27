@@ -122,7 +122,7 @@ Supported in v1: `table`, `cards`, `list`, `kanban`. `map` shows "not supported 
 - `POST /api/bases/query` `{ source: string, view?: string, thisPath?: string, offset?, limit? }` → `{ views: [{ name, type }], view, columns: [{ key, label, type }], groups: [{ key, label, rows: [{ path, title, values }] , count }], total, warnings }`. Rows filtered by the caller's read permission. Default limit 500, max 2000.
 - Evaluation runs over `VaultIndex` entries; no file reads. Backlinks come from the index's inbound map.
 - Visibility: notes with `hidden: true` or matching hidden globs are left out, as in search and `list_notes`; `search: false` notes are included (they are visible in the tree). The `.base`/view note itself is left out of its own results.
-- Permissions: rows are filtered by the caller's read permission, and so are link-valued cells (`file.links`, `file.backlinks`, link properties): a path the caller cannot read is dropped from the cell.
+- Permissions: rows are filtered by the caller's read permission. A link to a note the caller cannot read shows as written, like an unresolved link; its resolved path is never shown, and nothing in rows, groups, filters or formulas (`file.links`, `file.hasLink`, `link()`, link properties) tells it apart from a link to a missing note. `file.backlinks` lists only sources the caller can read. (Amended after the final review: dropping such a link from the cell told the caller that the note exists.)
 - MCP `query_notes` (read): `{ base?: string (YAML), path?: string (a note or .base holding the view), view?: string, filter?: string, sort?, columns?, limit, offset }`. The simple form (`filter` + `columns`) covers agents that do not write YAML. Paged like the other list tools.
 
 ### View UI

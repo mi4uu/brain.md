@@ -26,8 +26,8 @@ export interface FileData {
 }
 
 export interface FileHost {
+  // A note the caller cannot read never resolves: its links read as unresolved.
   resolveLink(fromPath: string, target: string): string | undefined;
-  // Links the caller may see: a link to a note the caller cannot read is gone.
   outLinks(path: string): Array<{ text: string; path: string | null; embed: boolean }>;
   backlinks(path: string): string[];
 }

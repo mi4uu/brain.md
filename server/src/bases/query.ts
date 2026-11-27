@@ -83,7 +83,6 @@ const DEFAULT_VIEW: ViewConfig = {
   summaries: {},
 };
 
-const WIKI = /^\[\[([^\]|#^]*)/;
 const MAX_CELL = 10_000;
 const MAX_RESPONSE_CHARS = 5_000_000;
 const MAX_KEPT_STRING = 1_000;
@@ -91,7 +90,6 @@ const MAX_KEPT_VALUES = 16_000_000;
 const MAX_KEPT_KEYS = 16_000_000;
 const ENTRY_COST = 32;
 const SMALL = ENTRY_COST + MAX_KEPT_STRING;
-const DROP = Symbol("drop");
 const cap = (s: string): string => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
 // JSC keeps a slice's whole parent alive; resolving a fresh rope copies just the kept characters.
 const own = (s: string): string => (s.length < 2 ? s : (s + "\0").slice(0, -1));
@@ -145,12 +143,16 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
 
   const entries = index.entries();
   const byPath = new Map(entries.map((e) => [e.path, e]));
+  // A target the caller cannot read resolves to nothing, exactly like a missing note, so no
+  // output can tell the two apart. The link text itself comes from a note the caller can read.
+  const resolve = (from: string, target: string): string | undefined => {
+    const to = index.resolveLink(from, target);
+    return to !== undefined && allowed(to) ? to : undefined;
+  };
   const host: FileHost = {
-    resolveLink: (from, target) => index.resolveLink(from, target),
+    resolveLink: resolve,
     outLinks: (path) =>
-      (byPath.get(path)?.outLinks ?? [])
-        .map((l) => ({ text: l.target, embed: l.embed, path: index.resolveLink(path, l.target) ?? null }))
-        .filter((l) => l.path === null || allowed(l.path)),
+      (byPath.get(path)?.outLinks ?? []).map((l) => ({ text: l.target, embed: l.embed, path: resolve(path, l.target) ?? null })),
     backlinks: (path) => [...new Set(index.backlinks(path, allowed).map((b) => b.from))],
   };
   const files = new Map<string, FileObject>();
@@ -410,35 +412,10 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
   });
 
   let altered = false;
-  const clean = (v: PropValue, from: string, depth = 0): PropValue | typeof DROP => {
-    if (typeof v === "string") {
-      const m = WIKI.exec(v);
-      const target = m?.[1]?.trim();
-      if (target) {
-        const to = index.resolveLink(from, target);
-        if (to && !allowed(to)) {
-          altered = true;
-          return DROP;
-        }
-      }
-      return v;
-    }
-    if (Array.isArray(v)) return v.map((x) => clean(x, from, depth + 1)).filter((x): x is PropValue => x !== DROP);
-    if (v && typeof v === "object" && depth < 4) {
-      const out: Record<string, PropValue> = Object.create(null);
-      for (const [k, x] of Object.entries(v)) {
-        const c = clean(x, from, depth + 1);
-        out[k] = c === DROP ? null : c;
-      }
-      return out;
-    }
-    return v;
-  };
 
-  const groupKeyOf = (v: Value, from: string): string | null => {
+  const groupKeyOf = (v: Value): string | null => {
     if (isEmpty(v)) return null;
-    const c = clean(toProp(v), from);
-    if (c === DROP) return null;
+    const c = toProp(v);
     const text = Array.isArray(c) ? (c.length === 0 ? null : c.map(String).join(", ")) : String(c);
     return text === null ? null : text.slice(0, MAX_KEPT_STRING);
   };
@@ -450,7 +427,7 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
     let group: string | null = null;
     if (gb) {
       const raw = keyValue(gb.property, r.scope);
-      const key = groupKeyOf(raw, r.e.path);
+      const key = groupKeyOf(raw);
       group = key === null ? null : ((keepKey(key) as string | undefined) ?? null);
       if (!present.has(group)) present.set(group, keepKey(raw) ?? null);
       park(r);
@@ -522,8 +499,7 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
     for (const k of valueKeys) {
       altered = false;
       spent += k.length + 4;
-      const c = clean(toProp(keyValue(k, it.scope)), it.e.path);
-      values[k] = c === DROP ? null : fit(c);
+      values[k] = fit(toProp(keyValue(k, it.scope)));
       if (altered) partial.push(k);
     }
     release(it.row);

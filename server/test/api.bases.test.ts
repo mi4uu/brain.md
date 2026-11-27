@@ -105,17 +105,37 @@ describe("POST /api/bases/query", () => {
     expect((await query({ source: "x".repeat(100_001) })).status).toBe(422);
   });
 
-  test("a folder the caller cannot read: rows, link cells and `this` are all closed", async () => {
+  test("a folder the caller cannot read: rows and `this` are closed; link cells show the link as written", async () => {
     const { apiKey } = await lockDown();
     const r = await query({ source: TABLE, thisPath: "work/View.md" }, apiKey);
     expect(r.status).toBe(200);
     expect(rowPaths(r)).toEqual(["work/A.md", "work/B.md"]);
-    expect(JSON.stringify(r.json)).not.toContain("secret/S");
+    expect(JSON.stringify(r.json)).not.toContain("secret/S.md");
     const a = r.json.groups[0].rows.find((x: { path: string }) => x.path === "work/A.md");
-    expect(a.values.owner).toBeNull();
+    expect(a.values.owner).toBe("[[secret/S]]");
+    expect(a.partial).toBeUndefined();
 
     const sneaky = await query({ source: 'filters: this.status == "Todo"\n', thisPath: "secret/S.md" }, apiKey);
     expect(sneaky.json.total).toBe(0);
     expect(sneaky.json.warnings).toContain("the note holding this view is not readable; `this` was left empty");
+  });
+
+  test("an API key cannot tell a note it cannot read from a missing one", async () => {
+    await h.vault.writeNote("work/A.md", '---\nstatus: Todo\nn: 2\nowner: "[[S]]"\nrefs: ["[[S]]", "[[B]]"]\n---\n# A\n\nSee [[S]], [[secret/S]] and ![[S]].\n');
+    const { apiKey } = await lockDown();
+    const source =
+      'formulas:\n  probe: link("S")\n  path: link("secret/S")\n  links: file.links.length\n  has: file.hasLink("S")\nfilters: file.inFolder("work")\n' +
+      "views:\n  - type: table\n    name: T\n    order: [file.name, owner, refs, file.links, file.embeds, formula.probe, formula.path, formula.links, formula.has]\n" +
+      "  - type: table\n    name: G\n    order: [file.name, owner]\n    groupBy:\n      property: owner\n    sort:\n      - property: refs\n        direction: DESC\n";
+    const run = async () => [
+      JSON.stringify((await query({ source, view: "T" }, apiKey)).json),
+      JSON.stringify((await query({ source, view: "G" }, apiKey)).json),
+      JSON.stringify((await query({ source: 'filters: file.hasLink("secret/S")\n' }, apiKey)).json),
+    ];
+    const denied = await run();
+    expect(denied[0]).toContain('"[[S]]"');
+    await h.vault.deleteNote("secret/S.md");
+    expect(h.index.resolveLink("work/A.md", "S")).toBeUndefined();
+    expect(await run()).toEqual(denied);
   });
 });

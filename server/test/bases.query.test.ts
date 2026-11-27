@@ -216,19 +216,19 @@ describe("groupBy", () => {
     expect(r.groups.map((g) => g.key)).toEqual(["Todo", "Done", "Doing", null]);
   });
 
-  test("a link property cannot leak its target through a group key", () => {
-    const r = q('filters: file.inFolder("tasks")\nviews:\n  - type: table\n    name: T\n    groupBy:\n      property: owner\n', { allowed: NO_SECRET });
-    expect(r.groups.map((g) => [g.key, g.count])).toEqual([["[[people/Ann]]", 2], [null, 2]]);
-    expect(JSON.stringify(r)).not.toContain("secret");
+  test("a link property groups by its text as written, whether or not its target is readable", () => {
+    const src = 'filters: file.inFolder("tasks")\nviews:\n  - type: table\n    name: T\n    groupBy:\n      property: owner\n';
+    const r = q(src, { allowed: NO_SECRET });
+    expect(r.groups.map((g) => [g.key, g.count])).toEqual([["[[people/Ann]]", 1], ["[[people/Ann]], [[secret/S]]", 1], [null, 2]]);
+    expect(JSON.stringify(r)).toBe(JSON.stringify(q(src)));
   });
 
-  test("rows flag the cells the server altered", () => {
-    const r = q('filters: file.inFolder("tasks")\nviews:\n  - type: table\n    name: T\n    order: [file.name, owner]\n', { allowed: NO_SECRET });
+  test("rows flag the cells the server cut, not links to unreadable notes", () => {
+    const long = [...ENTRIES, entry("tasks/L.md", { owner: "x".repeat(12_000) })];
+    const src = 'filters: file.inFolder("tasks")\nviews:\n  - type: table\n    name: T\n    order: [file.name, owner]\n';
+    const r = q(src, { allowed: NO_SECRET, idx: index({ entries: () => long }) });
     const flagged = r.groups[0]!.rows.filter((x) => x.partial);
-    expect(flagged.length).toBeGreaterThan(0);
-    for (const row of flagged) expect(row.partial).toEqual(["owner"]);
-    const clean = q('filters: file.inFolder("tasks")\nviews:\n  - type: table\n    name: T\n    order: [file.name, owner]\n');
-    expect(clean.groups[0]!.rows.every((x) => x.partial === undefined)).toBe(true);
+    expect(flagged.map((x) => [x.title, x.partial])).toEqual([["L", ["owner"]]]);
   });
 
   test("numbers group numerically ordered", () => {
@@ -313,9 +313,10 @@ describe("group property values", () => {
     expect(r.groups[0]!.rows[0]!.values.owner).toBe("[[people/Ann]]");
   });
   test("a cut value is flagged partial", () => {
-    const r = q('filters: file.name == "D.md"\nviews:\n  - type: table\n    name: T\n    order: [file.name]\n    groupBy:\n      property: owner\n      direction: ASC\n', { allowed: NO_SECRET });
+    const long = [...ENTRIES, entry("tasks/L.md", { owner: "x".repeat(12_000) })];
+    const r = q('filters: file.name == "L.md"\nviews:\n  - type: table\n    name: T\n    order: [file.name]\n    groupBy:\n      property: owner\n      direction: ASC\n', { idx: index({ entries: () => long }) });
     const row = r.groups[0]!.rows[0]!;
-    expect(row.values.owner).toEqual(["[[people/Ann]]"]);
+    expect(row.values.owner).toHaveLength(10_000);
     expect(row.partial).toEqual(["owner"]);
   });
 });
@@ -327,13 +328,13 @@ describe("permissions", () => {
     expect(r.total).toBe(2);
   });
 
-  test("link-valued cells drop unreadable targets: file.links, backlinks, link properties", () => {
+  test("link cells show unreadable targets as written; backlinks drop unreadable sources", () => {
     const r = q('filters: file.inFolder("tasks")\nviews:\n  - type: table\n    name: T\n    order: [file.name, file.links, owner]\n    sort:\n      - property: file.name\n        direction: ASC\n', { allowed: NO_SECRET });
     const rows = Object.fromEntries(r.groups[0]!.rows.map((x) => [x.title, x.values]));
-    expect(rows.B!["file.links"]).toEqual(["[[tasks/A]]"]);
+    expect(rows.B!["file.links"]).toEqual(["[[tasks/A]]", "[[secret/S]]"]);
     expect(rows.A!.owner).toBe("[[people/Ann]]");
-    expect(rows.D!.owner).toEqual(["[[people/Ann]]"]);
-    expect(JSON.stringify(r)).not.toContain("secret");
+    expect(rows.D!.owner).toEqual(["[[people/Ann]]", "[[secret/S]]"]);
+    expect(JSON.stringify(r)).not.toContain("secret/S.md");
     const bl = q('filters: file.name == "A.md"\nviews:\n  - type: table\n    name: T\n    order: [file.backlinks]\n', { allowed: (p) => p !== "tasks/B.md" });
     expect(bl.groups[0]!.rows[0]!.values["file.backlinks"]).toEqual([]);
   });
@@ -661,5 +662,47 @@ describe("response budget", () => {
     expect(r.warnings).toEqual(["the query took too long; results are partial"]);
     const inTime = q("views:\n  - type: table\n    name: T\n    sort:\n      - property: n\n        direction: ASC\n", { idx: index({ entries: () => many }), req: { limit: 1 } });
     expect(paths(inTime)).toEqual(["bulk/n15999.md"]);
+  });
+});
+
+describe("a link to a note the caller cannot read reads like a link to a missing note", () => {
+  const withoutS = ENTRIES.filter((e) => e.path !== "secret/S.md");
+  const missing = index({
+    entries: () => withoutS,
+    resolveLink: (_f, t) => withoutS.find((e) => e.path.replace(/\.md$/, "") === t || e.path.endsWith(`/${t}.md`))?.path,
+  });
+  const formulas = 'formulas:\n  probe: link("secret/S")\n  links: file.links.length\n  has: file.hasLink("secret/S")\n  named: file.hasLink("S")\n';
+  const view = (extra: string) =>
+    `${formulas}filters: file.inFolder("tasks")\nviews:\n  - type: table\n    name: T\n    order: [file.name, owner, file.links, formula.probe, formula.links, formula.has, formula.named]\n${extra}`;
+  const sources = [
+    view("    sort:\n      - property: owner\n        direction: ASC\n"),
+    view("    groupBy:\n      property: owner\n      direction: ASC\n"),
+    view("    groupBy:\n      property: formula.probe\n"),
+    'filters: file.hasLink("secret/S")\n',
+    'filters: file.links.contains(link("secret/S"))\n',
+  ];
+
+  test("rows, cells, partial, groups and filters are byte-identical", () => {
+    for (const src of sources) {
+      const denied = q(src, { allowed: NO_SECRET });
+      const gone = q(src, { allowed: ALL, idx: missing });
+      expect(JSON.stringify(denied)).toBe(JSON.stringify(gone));
+    }
+  });
+
+  test("the link shows as written, never as its resolved path, and is not flagged", () => {
+    const r = q(sources[0]!, { allowed: NO_SECRET });
+    const rows = Object.fromEntries(r.groups[0]!.rows.map((x) => [x.title, x]));
+    expect(rows.D!.values.owner).toEqual(["[[people/Ann]]", "[[secret/S]]"]);
+    expect(rows.B!.values["file.links"]).toEqual(["[[tasks/A]]", "[[secret/S]]"]);
+    expect(rows.B!.values["formula.probe"]).toBe("[[secret/S]]");
+    expect(rows.B!.values["formula.has"]).toBe(true);
+    expect(rows.B!.values["formula.named"]).toBe(false);
+    expect(r.groups[0]!.rows.every((x) => x.partial === undefined)).toBe(true);
+    const bare = ENTRIES.map((e) => (e.path === "tasks/B.md" ? { ...e, outLinks: [{ target: "S", embed: false }] } : e));
+    const src = 'filters: file.name == "B.md"\nviews:\n  - type: table\n    name: T\n    order: [file.links]\n';
+    const cell = (allowed: (p: string) => boolean) => q(src, { allowed, idx: index({ entries: () => bare }) }).groups[0]!.rows[0]!.values["file.links"];
+    expect(cell(ALL)).toEqual(["[[secret/S]]"]);
+    expect(cell(NO_SECRET)).toEqual(["[[S]]"]);
   });
 });
