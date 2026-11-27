@@ -33,8 +33,14 @@ function Scalar({ col, value, row, host }: CellProps) {
   return <>{formatScalar(col, value)}</>;
 }
 
-function Inner(p: CellProps) {
-  const { col, value, row, host } = p;
+function PlainText({ col, value }: CellProps) {
+  const text = (v: PropValue): string => (typeof v === "boolean" ? String(v) : formatScalar(col, v));
+  return <>{Array.isArray(value) ? value.map(text).join(", ") : text(value)}</>;
+}
+
+function Inner(p: CellProps & { plain?: boolean }) {
+  const { col, value, row, host, plain } = p;
+  if (plain) return <PlainText {...p} />;
   if (col.key === "file.name" && typeof value === "string") {
     return (
       <button type="button" className="base-link" onClick={(e) => { e.stopPropagation(); host.openNote(row.path); }}>
@@ -60,7 +66,8 @@ export function CellValue(p: CellProps) {
   if (!p.row.partial?.includes(p.col.key)) return <Inner {...p} />;
   return (
     <span className="base-partial" data-partial="" title="Shortened or hidden by the server, read-only">
-      <Inner {...p} />
+      <Inner {...p} plain />
+      <span className="sr-only"> (shortened, read-only)</span>
     </span>
   );
 }
