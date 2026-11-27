@@ -153,10 +153,14 @@ export function TableTools({ scrollerRef, docRef, content, html, onEditTable, no
   const [selModel, setSelModel] = useState<MdTable | null>(null);
   const [ctx, setCtx] = useState<CtxTarget | null>(null);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: noteKey is the trigger, not an input
+  // biome-ignore lint/correctness/useExhaustiveDependencies: noteKey is the trigger; editing is read from this render on purpose
   useLayoutEffect(() => {
     setSel(null);
     setCtx(null);
+    // Back/Forward switches notes without blurring the input; mark it closed
+    // first so the blur on unmount cannot commit into the new note.
+    if (editing) closedRef.current = editing;
+    setEditing(null);
   }, [noteKey]);
 
   // The end line is read from the rendered table at call time: a stored one
@@ -193,7 +197,9 @@ export function TableTools({ scrollerRef, docRef, content, html, onEditTable, no
     close(target);
     const next = escapeCell(value);
     if (next === target.text) return;
-    edit(target.line, (t) => setCell(t, target.row, target.col, next));
+    const live = liveTable(target.line);
+    const unchanged = live && cellText(live.model, target.row, target.col) === target.text;
+    edit(target.line, (t) => setCell(t, target.row, target.col, next), unchanged ? live : null);
   };
 
   useEffect(() => {
