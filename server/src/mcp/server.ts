@@ -468,7 +468,7 @@ function registerHandlers(
               if (typeof v === "string" && v.length > QUERY_CELL_CHARS) {
                 cut++;
                 clipped.add(key);
-                return v.slice(0, QUERY_CELL_CHARS) + "…";
+                return `${v.slice(0, QUERY_CELL_CHARS)}…`;
               }
               return Array.isArray(v) ? v.map((x) => clip(x, key)) : v;
             };

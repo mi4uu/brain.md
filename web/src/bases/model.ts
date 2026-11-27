@@ -1,4 +1,4 @@
-import type { BaseQueryResponse, Direction, FilterNode, SortSpec } from "@brainmd/shared/base-types";
+import type { BaseQueryResponse, FilterNode } from "@brainmd/shared/base-types";
 import type { PropValue } from "@brainmd/shared/frontmatter";
 import type { PropertyType } from "@brainmd/shared/property-types";
 import { DATETIME_RE, DATE_RE } from "@brainmd/shared/property-types";
@@ -136,10 +136,6 @@ export function summarise(name: string, values: PropValue[]): string | null {
     default:
       return null;
   }
-}
-
-export function sortByColumn(key: string, direction: Direction | null): SortSpec[] {
-  return direction === null ? [] : [{ property: key, direction }];
 }
 
 export function toggleColumn(order: string[], key: string): string[] {
