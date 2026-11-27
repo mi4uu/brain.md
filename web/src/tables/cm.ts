@@ -9,11 +9,7 @@ import { enterEdit, formatEdit, tabEdit, type CursorEdit } from "./navigate";
 export type ViewLike = Pick<EditorView, "state" | "dispatch">;
 
 // Tab selects the next cell's text, so every table key must accept a selection that stays on one line.
-function runCursorEdit(
-  view: ViewLike,
-  make: (text: string, pos: number) => CursorEdit | null,
-  opts: { isolate?: boolean } = {},
-): boolean {
+function runCursorEdit(view: ViewLike, make: (text: string, pos: number) => CursorEdit | null): boolean {
   const { state } = view;
   const sel = state.selection.main;
   if (completionStatus(state) !== null) return false;
@@ -28,13 +24,12 @@ function runCursorEdit(
     selection: { anchor: edit.anchor, head: edit.head },
     scrollIntoView: true,
     userEvent: "input.table",
-    annotations: opts.isolate ? isolateHistory.of("full") : undefined,
+    annotations: isolateHistory.of("full"),
   });
   return true;
 }
 
-export const formatTable = (view: ViewLike): boolean =>
-  runCursorEdit(view, formatEdit, { isolate: true });
+export const formatTable = (view: ViewLike): boolean => runCursorEdit(view, formatEdit);
 
 export const tableTab =
   (dir: 1 | -1) =>

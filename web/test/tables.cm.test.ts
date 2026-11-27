@@ -102,6 +102,34 @@ describe("table keys", () => {
     expect(s.state.doc.toString()).toBe("plain\n");
   });
 
+  test("typing, Tab, typing undo as three steps", () => {
+    const s = stub(TABLE, 3);
+    s.view.dispatch({ changes: { from: 3, insert: "x" }, userEvent: "input.type" });
+    const typed = s.state.doc.toString();
+    expect(tableTab(1)(s.view)).toBe(true);
+    const tabbed = s.state.doc.toString();
+    const { from, to } = s.state.selection.main;
+    s.view.dispatch({ changes: { from, to, insert: "Q" }, userEvent: "input.type" });
+    expect(undo(s.view as never)).toBe(true);
+    expect(s.state.doc.toString()).toBe(tabbed);
+    expect(undo(s.view as never)).toBe(true);
+    expect(s.state.doc.toString()).toBe(typed);
+    expect(undo(s.view as never)).toBe(true);
+    expect(s.state.doc.toString()).toBe(TABLE);
+  });
+
+  test("Enter then typing undo as two steps", () => {
+    const s = stub(TABLE, 2);
+    expect(tableEnter(s.view)).toBe(true);
+    const entered = s.state.doc.toString();
+    const { head } = s.state.selection.main;
+    s.view.dispatch({ changes: { from: head, insert: "Q" }, userEvent: "input.type" });
+    expect(undo(s.view as never)).toBe(true);
+    expect(s.state.doc.toString()).toBe(entered);
+    expect(undo(s.view as never)).toBe(true);
+    expect(s.state.doc.toString()).toBe(TABLE);
+  });
+
   test("a selection spanning lines is declined", () => {
     const s = stub(TABLE, 2, 14);
     expect(tableTab(1)(s.view)).toBe(false);
