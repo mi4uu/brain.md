@@ -12,7 +12,6 @@ import { DEFAULT_BUDGET, evaluate, type Scope } from "./eval";
 import {
   FileObject,
   compareValues,
-  kindOf,
   toProp,
   toStr,
   truthy,
@@ -39,7 +38,7 @@ export interface QueryIndex {
   entries(): QueryEntry[];
   backlinks(path: string, allowed?: (path: string) => boolean): Array<{ from: string }>;
   resolveLink(fromPath: string, target: string): string | undefined;
-  visibility?: { isHidden(path: string): boolean };
+  visibility: { isHidden(path: string): boolean };
 }
 
 export interface QueryDeps {
@@ -67,18 +66,23 @@ const DROP = Symbol("drop");
 const cap = (s: string): string => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
 
 export function runBaseQuery(req: BaseQueryRequest, deps: QueryDeps): BaseQueryResponse {
+  const warned: string[] = [];
   try {
-    return run(req, deps);
-  } catch {
-    return { views: [], view: "", columns: [], groups: [], total: 0, warnings: ["the view could not be evaluated"] };
+    return run(req, deps, warned);
+  } catch (e) {
+    console.error("bases query failed:", e);
+    return { views: [], view: "", columns: [], groups: [], total: 0, warnings: [...warned, "the view could not be evaluated"] };
   }
 }
 
-function run(req: BaseQueryRequest, deps: QueryDeps): BaseQueryResponse {
+function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQueryResponse {
   const { index, allowed, types } = deps;
   const now = deps.now ?? new Date();
   const warnings = new Set<string>();
-  const warn = (m: string): void => void warnings.add(m);
+  const warn = (m: string): void => {
+    if (!warnings.has(m)) warned.push(m);
+    warnings.add(m);
+  };
   const done = (r: Omit<BaseQueryResponse, "warnings">): BaseQueryResponse => ({ ...r, warnings: [...warnings] });
   const nothing = { views: [], view: "", columns: [], groups: [], total: 0 };
 
@@ -136,6 +140,12 @@ function run(req: BaseQueryRequest, deps: QueryDeps): BaseQueryResponse {
     return node;
   };
 
+  // Formula results can be large; they are dropped once a row's sort and group keys are read.
+  const memos = new Map<Scope, Map<string, Value>>();
+  const release = (scope: Scope): void => {
+    memos.get(scope)?.clear();
+    scope.budget.steps = 0;
+  };
   const scopeFor = (e: QueryEntry): Scope => {
     const memo = new Map<string, Value>();
     const busy = new Set<string>();
@@ -165,6 +175,7 @@ function run(req: BaseQueryRequest, deps: QueryDeps): BaseQueryResponse {
         return v;
       },
     };
+    memos.set(scope, memo);
     return scope;
   };
 
@@ -194,12 +205,18 @@ function run(req: BaseQueryRequest, deps: QueryDeps): BaseQueryResponse {
   const viewFilter = compile(view.filters);
   const rows: Array<{ e: QueryEntry; scope: Scope }> = [];
   for (const e of entries) {
-    if (!allowed(e.path) || e.path === thisPath || index.visibility?.isHidden(e.path)) continue;
+    if (!allowed(e.path) || e.path === thisPath || index.visibility.isHidden(e.path)) continue;
     const scope = scopeFor(e);
-    if (globalFilter && test(globalFilter, scope) === false) continue;
-    if (viewFilter && test(viewFilter, scope) === false) continue;
-    // A budget hit makes every expression of the note null; a `not` must not turn that into a pass.
-    if (scope.budget.hit) continue;
+    const out =
+      (globalFilter && test(globalFilter, scope) === false) ||
+      (viewFilter && test(viewFilter, scope) === false) ||
+      // A budget hit makes every expression of the note null; a `not` must not turn that into a pass.
+      scope.budget.hit;
+    release(scope);
+    if (out) {
+      memos.delete(scope);
+      continue;
+    }
     rows.push({ e, scope });
   }
 
@@ -213,7 +230,14 @@ function run(req: BaseQueryRequest, deps: QueryDeps): BaseQueryResponse {
   const isEmpty = (v: Value): boolean => v === null || v === "" || (Array.isArray(v) && v.length === 0);
   const order = (a: Value, b: Value): number => compareValues(a, b) ?? toStr(a).localeCompare(toStr(b), undefined, { numeric: true });
 
-  const sortVals = new Map(rows.map((r) => [r, view.sort.map((s) => keyValue(s.property, r.scope))]));
+  const slim = (v: Value): Value => (typeof v === "string" && v.length > 1000 ? v.slice(0, 1000) : v);
+  const sortVals = new Map(
+    rows.map((r) => {
+      const vals = view.sort.map((s) => slim(keyValue(s.property, r.scope)));
+      release(r.scope);
+      return [r, vals];
+    }),
+  );
   rows.sort((x, y) => {
     for (let i = 0; i < view.sort.length; i++) {
       const a = sortVals.get(x)![i]!;
@@ -264,9 +288,10 @@ function run(req: BaseQueryRequest, deps: QueryDeps): BaseQueryResponse {
   type Item = { e: QueryEntry; scope: Scope; group: string | null };
   const groupOf = new Map<Item, Value>();
   let items: Item[] = rows.map((r) => {
-    const raw = gb ? keyValue(gb.property, r.scope) : null;
+    const raw = gb ? slim(keyValue(gb.property, r.scope)) : null;
     const it = { ...r, group: gb ? groupKeyOf(raw, r.e.path) : null };
     groupOf.set(it, raw);
+    release(r.scope);
     return it;
   });
 
@@ -289,6 +314,8 @@ function run(req: BaseQueryRequest, deps: QueryDeps): BaseQueryResponse {
   const limit = Math.min(Math.max(1, wantLimit), MAX_QUERY_LIMIT);
   const offset = Number.isFinite(req.offset) ? Math.max(0, Math.floor(req.offset!)) : 0;
   const page = items.slice(offset, offset + limit);
+  const inPageSet = new Set(page);
+  for (const it of items) if (!inPageSet.has(it)) memos.delete(it.scope);
 
   const colKeys = view.order.length > 0 ? view.order : ["file.name"];
   const display = new Map<string, string>();
@@ -318,10 +345,18 @@ function run(req: BaseQueryRequest, deps: QueryDeps): BaseQueryResponse {
   if (!gb) {
     groups.push({ key: null, label: "", count: total, rows: page.map(outRow) });
   } else {
+    const counts = new Map<string | null, number>();
+    for (const i of items) counts.set(i.group, (counts.get(i.group) ?? 0) + 1);
+    const byGroup = new Map<string | null, Item[]>();
+    for (const i of page) {
+      const list = byGroup.get(i.group);
+      if (list) list.push(i);
+      else byGroup.set(i.group, [i]);
+    }
     for (const key of groupKeys) {
-      const count = items.filter((i) => i.group === key).length;
-      const inPage = page.filter((i) => i.group === key);
-      const declared = key !== null && view.groupOrder.includes(key);
+      const count = counts.get(key) ?? 0;
+      const inPage = byGroup.get(key) ?? [];
+      const declared = key !== null && offset === 0 && view.groupOrder.includes(key);
       if (inPage.length === 0 && !(declared && count === 0)) continue;
       groups.push({ key, label: key ?? "No value", count, rows: inPage.map(outRow) });
     }

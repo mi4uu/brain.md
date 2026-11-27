@@ -36,6 +36,7 @@ export interface Scope extends FnCtx {
 class BudgetExceeded extends Error {}
 
 export const DEFAULT_BUDGET = 10_000;
+export const MAX_STRING = 100_000;
 
 const isPlainObject = (v: Value): v is { [k: string]: Value } => kindOf(v) === "object";
 
@@ -78,7 +79,19 @@ function arith(op: string, a: Value, b: Value, s: Scope): Value {
     }
   }
   if (op === "+" && (typeof a === "string" || typeof b === "string") && a !== null && b !== null) {
-    return `${toStr(a)}${toStr(b)}`;
+    const sa = toStr(a);
+    const sb = toStr(b);
+    const len = sa.length + sb.length;
+    if (len > MAX_STRING) {
+      s.warn(`text longer than ${MAX_STRING} characters was dropped`);
+      return null;
+    }
+    s.budget.steps += len >> 10;
+    if (s.budget.steps > s.budget.max) {
+      s.budget.hit = true;
+      throw new BudgetExceeded();
+    }
+    return sa + sb;
   }
   return null;
 }

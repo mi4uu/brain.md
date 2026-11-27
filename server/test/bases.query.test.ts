@@ -352,8 +352,50 @@ describe("robustness", () => {
   test("null summaries, columnSize and views count as empty; NaN paging falls back", () => {
     const r = q("summaries:\ncolumnSize:\nviews:\n", { req: { limit: Number.NaN, offset: Number.NaN } });
     expect(r.view).toBe("Table");
-    expect(r.total).toBe(6 + 1);
+    expect(paths(r)).toHaveLength(7);
     const v = q("views:\n  - type: table\n    name: T\n    summaries:\n    columnSize:\n");
     expect(v.view).toBe("T");
+  });
+});
+
+describe("robustness, round 2", () => {
+  test("a doubling formula chain over many notes is capped, quick and warns", () => {
+    const many = Array.from({ length: 300 }, (_, i) => entry(`bulk/n${i}.md`, { n: i }));
+    const defs = ["  f0: '\"xxxxxxxxxx\"'"];
+    for (let i = 1; i <= 24; i++) defs.push(`  f${i}: formula.f${i - 1} + formula.f${i - 1}`);
+    const src = `formulas:\n${defs.join("\n")}\nfilters: formula.f24.length > 0\nviews:\n  - type: table\n    name: T\n    order: [file.name, formula.f24]\n`;
+    const t0 = performance.now();
+    const r = q(src, { idx: index({ entries: () => many }) });
+    expect(performance.now() - t0).toBeLessThan(1500);
+    expect(r.total).toBe(0);
+    expect(r.warnings.some((w) => w.includes("dropped"))).toBe(true);
+  });
+
+  test("a budget hit inside a column formula keeps the row with an empty cell", () => {
+    const ones = Array.from({ length: 300 }, () => "1").join(" + ");
+    const parts = Array.from({ length: 20 }, (_, i) => `f${i}`);
+    const defs = parts.map((f) => `  ${f}: ${ones}\n`).join("");
+    const sum = parts.map((f) => `formula.${f}`).join(" + ");
+    const r = q(`formulas:\n${defs}  heavy: ${sum}\nfilters: file.name == "A.md"\nviews:\n  - type: table\n    name: T\n    order: [file.name, formula.heavy]\n`);
+    expect(r.total).toBe(1);
+    expect(r.groups[0]!.rows[0]!.values).toMatchObject({ "file.name": "A.md", "formula.heavy": null });
+  });
+
+  test("an index that throws gives the generic response", () => {
+    const orig = console.error;
+    console.error = () => {};
+    try {
+      const r = q("", { idx: index({ entries: () => { throw new Error("boom"); } }) });
+      expect(r.total).toBe(0);
+      expect(r.warnings).toContain("the view could not be evaluated");
+    } finally {
+      console.error = orig;
+    }
+  });
+
+  test("declared empty groups appear on the first page only", () => {
+    const src = 'filters: file.inFolder("tasks")\nviews:\n  - type: table\n    name: T\n    groupBy:\n      property: status\n    groupOrder: [Blocked]\n';
+    expect(q(src, { req: { offset: 0, limit: 1 } }).groups.some((g) => g.key === "Blocked")).toBe(true);
+    expect(q(src, { req: { offset: 1, limit: 1 } }).groups.some((g) => g.key === "Blocked")).toBe(false);
   });
 });
