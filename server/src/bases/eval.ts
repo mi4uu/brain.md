@@ -4,9 +4,9 @@ import {
   DateValue,
   FileObject,
   FormulaRoot,
-  LinkValue,
   UNSUPPORTED,
   addDuration,
+  coerceDate,
   callGlobal,
   callMethod,
   compareValues,
@@ -50,15 +50,18 @@ function getMember(obj: Value, name: string, s: Scope): Value {
 const fin = (n: number): number | null => (Number.isFinite(n) ? n : null);
 
 function arith(op: string, a: Value, b: Value, s: Scope): Value {
-  const da = a instanceof DateValue ? a : null;
+  const da = a instanceof DateValue ? a : typeof a === "string" && (op === "+" || op === "-") ? coerceDate(a) : null;
   if (da && (op === "+" || op === "-") && typeof b === "string") {
     const r = addDuration(da, b, op === "+" ? 1 : -1);
-    if (!r) s.warn(`invalid duration "${b}"`);
-    return r;
+    if (r) return r;
+    if (a instanceof DateValue) {
+      s.warn(`invalid duration "${b}"`);
+      return null;
+    }
   }
-  if (da && op === "-") {
-    const other = b instanceof DateValue ? b : null;
-    return other ? fin(da.ms - other.ms) : null;
+  if (da && op === "-" && (a instanceof DateValue ? coerceDate(b) : b instanceof DateValue ? b : null)) {
+    const other = coerceDate(b)!;
+    return fin(da.ms - other.ms);
   }
   if (typeof a === "number" && typeof b === "number") {
     switch (op) {
@@ -167,12 +170,15 @@ function ev(n: Node, s: Scope): Value {
       s.warn("unsupported call");
       return null;
     }
+    default:
+      return null;
   }
 }
 
 export function evaluate(n: Node, s: Scope): Value {
   try {
-    return ev(n, s);
+    const v = ev(n, s);
+    return s.budget.hit ? null : v;
   } catch (e) {
     if (e instanceof BudgetExceeded) {
       s.warn("evaluation budget exceeded for a note; its remaining expressions were skipped");

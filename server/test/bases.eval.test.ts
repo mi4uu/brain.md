@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_BUDGET, evaluate, type Scope } from "../src/bases/eval";
 import { parseExpression } from "../src/bases/expr";
-import { DateValue, FileObject, FormulaRoot, toProp, type FileData, type FileHost, type Value } from "../src/bases/functions";
+import { DateValue, addDuration, FileObject, FormulaRoot, toProp, type FileData, type FileHost, type Value } from "../src/bases/functions";
 
 const NOW = new Date(2026, 10, 26, 9, 30);
 
@@ -238,7 +238,7 @@ describe("hardening", () => {
   test("non-finite dates and numbers evaluate to null", () => {
     expect(run('date("2026-11-26T25:99Z")')).toBeNull();
     expect(run('now() + "99999999999999 hours"')).toBeNull();
-    expect(run('now() + "1e999 d"')).toBeNull();
+    expect(run('now() + "99999999999999999999999999999999999999 y"')).toBeNull();
     expect(toProp(new DateValue(Number.NaN, true))).toBeNull();
     expect(run("1e999")).toBeNull();
     expect(run("-1e999")).toBeNull();
@@ -257,9 +257,78 @@ describe("hardening", () => {
   });
 
   test("deepest parsable expression evaluates", () => {
+    let parsed = 0;
     for (let depth = 1; depth < 80; depth++) {
       const p = parseExpression("(".repeat(depth) + "1" + ")".repeat(depth));
-      if (p.ok) expect(evaluate(p.node, scope())).toBe(1);
+      if (p.ok) {
+        parsed++;
+        expect(evaluate(p.node, scope())).toBe(1);
+      }
     }
+    expect(parsed).toBeGreaterThan(10);
+  });
+});
+
+describe("fix round 1", () => {
+  test("I1: a nested evaluate that hits the budget poisons the outer result", () => {
+    const w: string[] = [];
+    const s = scope({}, {}, w);
+    s.budget.max = 20;
+    s.formula = () => {
+      const p = parseExpression(Array.from({ length: 40 }, () => "1").join(" + "));
+      if (!p.ok) throw new Error(p.error);
+      return evaluate(p.node, s);
+    };
+    expect(run("!formula.x", s)).toBeNull();
+    expect(w).toHaveLength(1);
+  });
+
+  test("I2/I3: durations are validated whole", () => {
+    expect(toProp(run('today() + "-1 week"'))).toBe("2026-11-19");
+    expect(toProp(run('today() - "-1 week"'))).toBe("2026-12-03");
+    const w: string[] = [];
+    expect(run('today() + "1          week oops"', scope({}, {}, w))).toBeNull();
+    expect(run('today() + "1 week 2"', scope({}, {}, w))).toBeNull();
+    expect(w).toHaveLength(2);
+    expect(toProp(run('today() + "1 week, 2 days"'))).toBe("2026-12-05");
+    const t0 = performance.now();
+    expect(addDuration(new DateValue(0, false), `${"9".repeat(50000)} d`, 1)).toBeNull();
+    expect(performance.now() - t0).toBeLessThan(200);
+  });
+
+  test("I4: fractional seconds parse and round trip", () => {
+    const d = run('date("2026-11-26T10:00:00.000Z")');
+    expect(d).toBeInstanceOf(DateValue);
+    const iso = toProp(d) as string;
+    expect(iso).toBe("2026-11-26T10:00:00.000Z");
+    expect(run(`date("${iso}") == date("2026-11-26T10:00:00Z")`)).toBe(true);
+    expect(run('date("2026-11-26T10:00:00.5")')).toBeInstanceOf(DateValue);
+  });
+
+  test("I5: date strings and links", () => {
+    expect(toProp(run('due + "1 week"'))).toBe("2026-12-08");
+    expect(run("due - today()")).toBe(5 * 86400000);
+    expect(run('"x" + "1 week"')).toBe("x1 week");
+    const s = scope({ props: { owner: "[[Other|Boss]]", rel: ["[[Elsewhere]]", "[[other]]"] } });
+    expect(run('file.hasLink(link("Other"))', s)).toBe(true);
+    expect(run('file.hasLink(link("Nope"))', s)).toBe(false);
+    expect(run('owner == link("Other")', s)).toBe(true);
+    expect(run('rel.contains(link("Other"))', s)).toBe(true);
+    expect(run('rel.contains(link("Zed"))', s)).toBe(false);
+    expect(run('file.links.contains(link("Other"))', s)).toBe(true);
+    expect(run('link("work/Other.md") == link("Other")', s)).toBe(true);
+  });
+
+  test("minors: ranges, month clamp, ss, compare, root folder", () => {
+    expect(run('date("2026-11-26T24:00")')).toBeNull();
+    expect(run('date("2026-11-26T10:60")')).toBeNull();
+    expect(run('date("0050-01-02")')).toBeInstanceOf(DateValue);
+    expect(toProp(run('date("0050-01-02")'))).toBe("0050-01-02");
+    expect(toProp(run('date("2026-01-31") + "1 month"'))).toBe("2026-02-28");
+    expect(toProp(run('date("2024-02-29") + "1 year"'))).toBe("2025-02-28");
+    expect(run('date("2026-11-26T01:02:03").format("HH:mm:ss")')).toBe("01:02:03");
+    expect(run('"2026-12-02" > "2026-12-01"')).toBe(true);
+    expect(run('"b" > "a"')).toBe(true);
+    expect(run("file.folder", scope({ path: "Root.md" }))).toBe("/");
   });
 });

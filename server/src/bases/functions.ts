@@ -148,21 +148,29 @@ export function formatDate(d: DateValue, fmt: string): string {
     DD: pad(x.getDate()),
     HH: pad(x.getHours()),
     mm: pad(x.getMinutes()),
+    ss: pad(x.getSeconds()),
   };
-  return fmt.replace(/YYYY|MM|DD|HH|mm/g, (t) => parts[t]!);
+  return fmt.replace(/YYYY|MM|DD|HH|mm|ss/g, (t) => parts[t]!);
 }
 
 export function parseDate(s: string): DateValue | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?(Z|[+-]\d{2}:?\d{2})?)?$/.exec(s.trim());
+  const text = s.trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|[+-]\d{2}:?\d{2})?)?$/.exec(text);
   if (!m) return null;
   const [y, mo, da] = [Number(m[1]), Number(m[2]), Number(m[3])];
-  const hasTime = m[4] !== undefined;
-  const probe = new Date(y, mo - 1, da);
+  const probe = new Date(2000, 0, 1);
+  probe.setFullYear(y, mo - 1, da);
   if (probe.getFullYear() !== y || probe.getMonth() !== mo - 1 || probe.getDate() !== da) return null;
-  if (!hasTime) return new DateValue(probe.getTime(), false);
-  const ms = m[7]
-    ? Date.parse(s.trim().replace(" ", "T"))
-    : new Date(y, mo - 1, da, Number(m[4]), Number(m[5]), Number(m[6] ?? 0)).getTime();
+  if (m[4] === undefined) return new DateValue(probe.getTime(), false);
+  const [h, mi, sec] = [Number(m[4]), Number(m[5]), Number(m[6] ?? 0)];
+  if (h > 23 || mi > 59 || sec > 59) return null;
+  let ms: number;
+  if (m[8]) ms = Date.parse(text.replace(" ", "T"));
+  else {
+    const local = new Date(2000, 0, 1, h, mi, sec, Number((m[7] ?? "0").padEnd(3, "0")));
+    local.setFullYear(y, mo - 1, da);
+    ms = local.getTime();
+  }
   return Number.isFinite(ms) ? new DateValue(ms, true) : null;
 }
 
@@ -182,20 +190,28 @@ const UNIT: Record<string, "y" | "M" | "w" | "d" | "h" | "m" | "s"> = {
   s: "s", sec: "s", secs: "s", second: "s", seconds: "s",
 };
 
+const DURATION_RE = /^-?\d+(?:\.\d+)?\s*[A-Za-z]+(?:[\s,]*\d+(?:\.\d+)?\s*[A-Za-z]+)*$/;
+
+function shiftMonths(x: Date, months: number): void {
+  const day = x.getDate();
+  x.setDate(1);
+  x.setMonth(x.getMonth() + months);
+  const last = new Date(x.getFullYear(), x.getMonth() + 1, 0).getDate();
+  x.setDate(Math.min(day, last));
+}
+
 export function addDuration(d: DateValue, spec: string, sign: 1 | -1): DateValue | null {
-  const re = /(\d+(?:\.\d+)?)\s*([A-Za-z]+)/g;
+  const text = spec.trim();
+  if (text.length > 64 || !DURATION_RE.test(text)) return null;
+  const sgn = text.startsWith("-") ? -sign : sign;
   const x = new Date(d.ms);
   let time = d.time;
-  let consumed = 0;
-  let any = false;
-  for (const m of spec.trim().matchAll(re)) {
+  for (const m of text.replace(/^-/, "").matchAll(/(\d+(?:\.\d+)?)\s*([A-Za-z]+)/g)) {
     const unit = UNIT[m[2]!];
     if (!unit) return null;
-    any = true;
-    consumed += m[0].length;
-    const n = Number(m[1]) * sign;
-    if (unit === "y") x.setFullYear(x.getFullYear() + n);
-    else if (unit === "M") x.setMonth(x.getMonth() + n);
+    const n = Number(m[1]) * sgn;
+    if (unit === "y") shiftMonths(x, Math.trunc(n) * 12);
+    else if (unit === "M") shiftMonths(x, Math.trunc(n));
     else if (unit === "w") x.setDate(x.getDate() + n * 7);
     else if (unit === "d") x.setDate(x.getDate() + n);
     else {
@@ -203,7 +219,6 @@ export function addDuration(d: DateValue, spec: string, sign: 1 | -1): DateValue
       x.setTime(x.getTime() + n * (unit === "h" ? 3600000 : unit === "m" ? 60000 : 1000));
     }
   }
-  if (!any || consumed < spec.replace(/[\s,]/g, "").length) return null;
   const ms = x.getTime();
   return Number.isFinite(ms) ? new DateValue(ms, time) : null;
 }
@@ -257,24 +272,47 @@ export function toProp(v: Value, depth = 0): PropValue {
   }
 }
 
+const normLink = (p: string): string => stripMd(p.trim()).toLowerCase();
+
+// "[[target|alias]]" and "[[target#heading]]" reduce to the target.
+function wikiTarget(t: string): string | null {
+  const m = /^\[\[([^\]]*)\]\]$/.exec(t.trim());
+  return m ? m[1]!.split("|")[0]!.split("#")[0]!.trim() : null;
+}
+
 function linkKey(v: Value): string | null {
-  if (v instanceof LinkValue) return v.path;
-  if (v instanceof FileObject) return v.data.path;
+  if (v instanceof LinkValue) return normLink(v.path);
+  if (v instanceof FileObject) return normLink(v.data.path);
+  if (typeof v === "string") {
+    const t = wikiTarget(v);
+    return t === null ? null : normLink(t);
+  }
   return null;
 }
 
+const baseOf = (k: string): string => k.slice(k.lastIndexOf("/") + 1);
+
+function sameLink(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (!a.includes("/")) return a === baseOf(b);
+  if (!b.includes("/")) return b === baseOf(a);
+  return false;
+}
+
+const isLinkObject = (v: Value): boolean => v instanceof LinkValue || v instanceof FileObject;
+
 export function looseEq(a: Value, b: Value): boolean {
   if (a === null || b === null) return a === b;
-  const da = a instanceof DateValue ? a : null;
-  const db = b instanceof DateValue ? b : null;
-  if (da || db) {
+  if (a instanceof DateValue || b instanceof DateValue) {
     const x = coerceDate(a);
     const y = coerceDate(b);
     return x !== null && y !== null && x.ms === y.ms;
   }
-  const la = linkKey(a);
-  const lb = linkKey(b);
-  if (la !== null || lb !== null) return la !== null && la === lb;
+  if (isLinkObject(a) || isLinkObject(b)) {
+    const la = linkKey(a);
+    const lb = linkKey(b);
+    return la !== null && lb !== null && sameLink(la, lb);
+  }
   if (Array.isArray(a) || Array.isArray(b)) {
     return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => looseEq(x, b[i]!));
   }
@@ -283,11 +321,16 @@ export function looseEq(a: Value, b: Value): boolean {
 
 // null: the two values have no order (mixed kinds).
 export function compareValues(a: Value, b: Value): number | null {
-  const x = coerceDate(a);
-  const y = coerceDate(b);
-  if ((a instanceof DateValue || b instanceof DateValue) && x && y) return x.ms - y.ms;
+  if (a instanceof DateValue || b instanceof DateValue) {
+    const x = coerceDate(a);
+    const y = coerceDate(b);
+    return x && y ? x.ms - y.ms : null;
+  }
   if (typeof a === "number" && typeof b === "number") return a - b;
   if (typeof a === "string" && typeof b === "string") {
+    const x = parseDate(a);
+    const y = parseDate(b);
+    if (x && y) return x.ms - y.ms;
     return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
   }
   if (typeof a === "boolean" && typeof b === "boolean") return Number(a) - Number(b);
@@ -364,16 +407,19 @@ const fileMethods = new Map<string, Fn>([
     (r, a) => {
       const file = r as FileObject;
       const arg = a[0] ?? null;
-      let target = linkKey(arg);
       let text: string | null = null;
-      if (target === null && typeof arg === "string") {
-        text = arg.replace(/^\[\[|\]\]$/g, "").split("|")[0]!.trim();
-        target = file.host.resolveLink(file.data.path, text) ?? null;
-      }
-      if (target === null && text === null) return false;
+      if (typeof arg === "string") text = wikiTarget(arg) ?? arg.split("|")[0]!.split("#")[0]!.trim();
+      else if (arg instanceof LinkValue) text = stripMd(arg.path);
+      else if (arg instanceof FileObject) text = stripMd(arg.data.path);
+      if (text === null) return false;
+      const target = file.host.resolveLink(file.data.path, text) ?? null;
+      const key = normLink(text);
       return file.host
         .outLinks(file.data.path)
-        .some((l) => (l.path !== null && l.path === target) || (text !== null && l.text.toLowerCase() === text.toLowerCase()));
+        .some(
+          (l) =>
+            (l.path !== null && (l.path === target || normLink(l.path) === key)) || l.text.toLowerCase() === text.toLowerCase(),
+        );
     },
   ],
   ["hasProperty", (r, a) => typeof a[0] === "string" && Object.hasOwn((r as FileObject).data.props, a[0])],
