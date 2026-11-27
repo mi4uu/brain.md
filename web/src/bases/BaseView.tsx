@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { parseBase, type ViewConfig } from "@brainmd/shared/base-parse";
 import { MAX_QUERY_LIMIT, type BaseQueryResponse } from "@brainmd/shared/base-types";
 import { PlusIcon } from "@radix-ui/react-icons";
@@ -12,7 +12,7 @@ import { KanbanView } from "./KanbanView";
 import { ListView } from "./ListView";
 import { TableView } from "./TableView";
 import type { BaseHost } from "./host";
-import { candidateKeys, optionType, partialHit, patchRowRevision, viewIndexFor } from "./model";
+import { candidateKeys, naturalWidth, optionType, partialHit, patchRowRevision, viewIndexFor } from "./model";
 import { buildNoteContent, planNewNote, uniqueNotePath } from "./new-note";
 import { FilterPopover, PropertiesPopover, SortPopover, type KeyOption } from "./ToolbarPopovers";
 import { blockKey, emitBaseRefresh, getActiveView, getCached, getLast, getOpenTool, onBaseRefresh, setActiveView, setCached, setOpenTool } from "./store";
@@ -210,9 +210,11 @@ export function BaseView({ source, startLine, ordinal, notePath, host }: BaseVie
   const layout: LayoutProps = { result, config: parsed.config, view, vaultTypes, host, saveProps, editView, newNote };
   const type = result.views[viewIndex]?.type ?? "table";
   const warnings = result.warnings;
+  const empty = result.groups.every((g) => g.rows.length === 0) && type !== "kanban";
+  const natural = empty ? null : naturalWidth(type, result, { columnSize: view.columnSize, grouped: !!view.groupBy });
 
   return (
-    <div className="base-view">
+    <div className="base-view" data-layout={type} style={natural === null ? undefined : ({ "--base-natural": `${natural}px` } as CSSProperties)}>
       <BaseToolbar
         result={result}
         viewIndex={viewIndex}
@@ -241,7 +243,7 @@ export function BaseView({ source, startLine, ordinal, notePath, host }: BaseVie
           {warnings.length > 3 ? ` · +${warnings.length - 3} more` : ""}
         </p>
       ) : null}
-      {result.groups.every((g) => g.rows.length === 0) && type !== "kanban" ? (
+      {empty ? (
         <p className="base-empty">No notes match this view.</p>
       ) : type === "table" ? (
         <TableView {...layout} />

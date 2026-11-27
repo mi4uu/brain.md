@@ -103,9 +103,14 @@
 /* Inside the note. The longer selector beats the preview table, list and link rules. */
 .preview .doc .base-block {
   margin: var(--space-4) 0;
-  max-width: 100%;
 }
+/* Prose keeps the reading column; a view grows to the width it asks for
+   (--base-natural, set by BaseView), capped by the pane, and stays centred on
+   the column. In a narrow pane a board or table bleeds to the pane edges. */
 .preview .doc .base-view {
+  --base-w: clamp(100%, var(--base-natural, 100%), min(100cqi, 1600px));
+  width: var(--base-w);
+  margin-inline: calc((100% - var(--base-w)) / 2);
   container: base-view / inline-size;
   border: 1px solid var(--border);
   border-radius: var(--radius-2);
@@ -439,9 +444,46 @@
   overflow-x: auto;
 }
 .preview .doc .base-col {
-  flex: 0 0 min(260px, 85vw);
+  flex: 1 1 240px;
+  min-width: 200px;
+  max-width: 320px;
   border-radius: var(--radius-2);
   background: var(--bg-surface-2);
+}
+/* Stays narrow while dragging too: a column that widens mid-drag would move
+   the drop targets under the pointer. */
+.preview .doc .base-col[data-empty] {
+  flex: 0 0 160px;
+  min-width: 0;
+  background: transparent;
+  border: 1px dashed var(--border-strong);
+}
+.preview .doc .base-col[data-empty] .base-col-head h4 {
+  color: var(--text-3);
+  font-weight: 400;
+}
+@container preview (max-width: 600px) {
+  .preview .doc .base-view:is([data-layout="table"], [data-layout="kanban"]) {
+    --base-w: calc(100% + 2 * var(--preview-gutter));
+    border-inline: 0;
+    border-radius: 0;
+  }
+  .preview .doc .base-view:is([data-layout="table"], [data-layout="kanban"]) :is(.base-toolbar, .base-board, .base-warn, .base-empty, .base-summary-note) {
+    padding-inline: var(--preview-gutter);
+  }
+  /* The switch icon, not its button edge, lines up with the text. */
+  .preview .doc .base-view:is([data-layout="table"], [data-layout="kanban"]) .base-toolbar {
+    padding-inline: calc(var(--preview-gutter) - 8px);
+  }
+  .preview .doc .base-table :is(th:first-child .base-th-btn, td:first-child) {
+    padding-left: var(--preview-gutter);
+  }
+  .preview .doc .base-col {
+    flex: 0 0 min(240px, 78cqi);
+  }
+  .preview .doc .base-col[data-empty] {
+    flex: 0 0 140px;
+  }
 }
 .preview .doc .base-col.over {
   outline: 2px solid var(--accent);

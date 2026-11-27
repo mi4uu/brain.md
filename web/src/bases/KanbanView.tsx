@@ -6,7 +6,7 @@ import { DropdownMenuItem } from "../components/ui/dropdown-menu";
 import { CellValue } from "./CellValue";
 import { RowMenu } from "./RowMenu";
 import type { BaseHost } from "./host";
-import { MAX_MOVE_KEY, columnAt, dragStarted, groupType as groupTypeOf, moveChange, moveRefusal, moveRowInResult, presetValue, propNameOf } from "./model";
+import { MAX_MOVE_KEY, boardColumns, columnAt, dragStarted, groupType as groupTypeOf, moveChange, moveRefusal, moveRowInResult, presetValue, propNameOf } from "./model";
 import type { Column, LayoutProps, Row } from "./types";
 
 type ColumnInfo = { key: string | null; label: string };
@@ -94,10 +94,7 @@ export function KanbanView(props: LayoutProps) {
   const groupProp = groupKey ? propNameOf(groupKey) : null;
   const groupType = groupKey ? groupTypeOf(groupKey, vaultTypes, result) : undefined;
 
-  const columns = useMemo<Array<ColumnInfo & { count: number; rows: Row[] }>>(
-    () => (result.groups.some((g) => g.key === null) ? result.groups : [...result.groups, { key: null, label: "No value", count: 0, rows: [] }]),
-    [result.groups],
-  );
+  const columns = useMemo(() => boardColumns(result.groups), [result.groups]);
   const menuFor = useMemo(() => new Map(columns.map((g) => [g.key, columns.filter((c) => c.key !== g.key).map(({ key, label }) => ({ key, label }))])), [columns]);
   const cols = useMemo(() => result.columns.filter((c) => c.key !== "file.name"), [result.columns]);
 
@@ -277,6 +274,7 @@ export function KanbanView(props: LayoutProps) {
           <section
             key={g.key ?? NO_KEY}
             className={drag?.over && drag.over.key === g.key ? "base-col over" : "base-col"}
+            data-empty={g.rows.length === 0 ? "" : undefined}
             ref={(el) => {
               if (el) colRefs.current.set(g.key, el);
               else colRefs.current.delete(g.key);
@@ -295,7 +293,7 @@ export function KanbanView(props: LayoutProps) {
                 onClick={() => "preset" in plus && void props.newNote(plus.preset)}
               >
                 <PlusIcon aria-hidden />
-                {"why" in plus ? <span style={SR_ONLY}>{plus.why}</span> : null}
+                {"why" in plus ? <span className="sr-only">{plus.why}</span> : null}
               </button>
             </header>
             <div className="base-col-body">
@@ -322,5 +320,3 @@ export function KanbanView(props: LayoutProps) {
 }
 
 const EMPTY: ColumnInfo[] = [];
-
-const SR_ONLY = { position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" } as const;

@@ -393,3 +393,33 @@ export function optionType(key: string, columns: ReadonlyArray<{ key: string; ty
   const name = propNameOf(key);
   return name === null ? undefined : vaultTypes.get(name);
 }
+
+type Group = BaseQueryResponse["groups"][number];
+
+// The board keeps a No value column as a drop target even when no note lacks the property.
+export function boardColumns(groups: Group[]): Group[] {
+  return groups.some((g) => g.key === null) ? groups : [...groups, { key: null, label: "No value", count: 0, rows: [] }];
+}
+
+// Mirrors bases.css: board columns 320 (empty 160) with a 12 gap and padding,
+// cards 240 with a 12 gap and padding, 2 for the view border.
+const BOARD_COL = 320;
+const BOARD_COL_EMPTY = 160;
+const CARD = 240;
+const GAP = 12;
+const BORDER = 2;
+const MAX_CARDS_ACROSS = 5;
+
+// How wide a view wants to be before the pane clamps it; null keeps the reading width.
+export function naturalWidth(type: string, res: BaseQueryResponse, view: { columnSize: Record<string, number>; grouped: boolean }): number | null {
+  if (type === "table") return res.columns.reduce((n, c) => n + (view.columnSize[columnId(c.key)] ?? DEFAULT_COLUMN_WIDTH), 0) + BORDER;
+  if (type === "kanban") {
+    if (!view.grouped) return null;
+    return boardColumns(res.groups).reduce((n, g) => n + (g.rows.length > 0 ? BOARD_COL : BOARD_COL_EMPTY) + GAP, GAP) + BORDER;
+  }
+  if (type === "cards") {
+    const across = Math.min(MAX_CARDS_ACROSS, Math.max(0, ...res.groups.map((g) => g.rows.length)));
+    return across * (CARD + GAP) + GAP + BORDER;
+  }
+  return null;
+}

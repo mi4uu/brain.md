@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import type { BaseQueryResponse } from "@brainmd/shared/base-types";
 import type { PropValue } from "@brainmd/shared/frontmatter";
 import {
+  boardColumns,
+  naturalWidth,
   byColumn,
   matchKey,
   candidateKeys,
@@ -400,5 +402,43 @@ describe("groupType", () => {
 
   test("a number board written with the inferred type keeps numbers", () => {
     expect(moveChange(groupType("n", new Map(), res([7])), "8")).toEqual({ set: 8 });
+  });
+});
+
+describe("naturalWidth", () => {
+  type Group = BaseQueryResponse["groups"][number];
+  const row = (p: string) => ({ path: p, title: p, revision: "r", values: {} });
+  const group = (key: string | null, n: number): Group => ({ key, label: key ?? "No value", count: n, rows: Array.from({ length: n }, (_, i) => row(`${key}${i}.md`)) });
+  const res = (groups: Group[], cols = ["file.name", "status"]): BaseQueryResponse => ({
+    views: [],
+    view: "V",
+    columns: cols.map((key) => ({ key, label: key, type: "text" })),
+    total: groups.reduce((n, g) => n + g.count, 0),
+    warnings: [],
+    groups,
+  });
+
+  test("a board always ends with a No value column unless the query has one", () => {
+    expect(boardColumns([group("a", 1)]).map((g) => g.key)).toEqual(["a", null]);
+    expect(boardColumns([group(null, 2), group("a", 1)]).map((g) => g.key)).toEqual([null, "a"]);
+  });
+
+  test("table: the sum of the stored column widths plus the border", () => {
+    expect(naturalWidth("table", res([group(null, 2)]), { columnSize: { "note.status": 300 }, grouped: false })).toBe(160 + 300 + 2);
+  });
+
+  test("kanban: full columns for cards, narrow ones for empty columns", () => {
+    expect(naturalWidth("kanban", res([group("a", 2), group("b", 0)]), { columnSize: {}, grouped: true })).toBe(12 + 332 + 172 + 172 + 2);
+    expect(naturalWidth("kanban", res([group("a", 2)]), { columnSize: {}, grouped: false })).toBeNull();
+  });
+
+  test("cards: up to five cards side by side", () => {
+    expect(naturalWidth("cards", res([group(null, 2)]), { columnSize: {}, grouped: false })).toBe(2 * 252 + 14);
+    expect(naturalWidth("cards", res([group(null, 40)]), { columnSize: {}, grouped: false })).toBe(5 * 252 + 14);
+  });
+
+  test("list and unknown layouts stay at the reading width", () => {
+    expect(naturalWidth("list", res([group(null, 2)]), { columnSize: {}, grouped: false })).toBeNull();
+    expect(naturalWidth("map", res([group(null, 2)]), { columnSize: {}, grouped: false })).toBeNull();
   });
 });
