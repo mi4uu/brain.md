@@ -67,3 +67,55 @@ describe("parseExpression: refusals", () => {
     expect(parseExpression(`${"1+".repeat(2000)}1`).ok).toBe(false);
   });
 });
+
+describe("parseExpression: never throws", () => {
+  test("non-string input is an error value", () => {
+    for (const bad of [undefined, null, {}, 42]) {
+      const r = parseExpression(bad as any);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toBe("expression must be a string");
+    }
+  });
+});
+
+describe("parseExpression: numbers", () => {
+  test("leading dot, exponents and a bare trailing dot", () => {
+    expect(ast(".5")).toEqual(num(0.5));
+    expect(ast("1e3")).toEqual(num(1000));
+    expect(ast("2.5E-3")).toEqual(num(0.0025));
+    expect(parseExpression("1.").ok).toBe(false);
+  });
+});
+
+describe("parseExpression: escapes", () => {
+  test("backslash, newline and tab", () => {
+    expect(ast('"a\\\\b"')).toEqual({ t: "lit", v: "a\\b" });
+    expect(ast('"a\\nb"')).toEqual({ t: "lit", v: "a\nb" });
+    expect(ast('"a\\tb"')).toEqual({ t: "lit", v: "a\tb" });
+  });
+
+  test("unknown escapes pass the character through", () => {
+    expect(ast('"\\x\\q"')).toEqual({ t: "lit", v: "xq" });
+  });
+});
+
+describe("parseExpression: messages and limits", () => {
+  test("unsupported character is reported as a whole code point", () => {
+    const r = parseExpression("1 😀");
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toContain("\u{1F600}");
+    }
+  });
+
+  test("depth boundary: 60 prefixes parse, 70 are refused", () => {
+    expect(parseExpression(`${"!".repeat(60)}a`).ok).toBe(true);
+    expect(parseExpression(`${"!".repeat(70)}a`).ok).toBe(false);
+  });
+
+  test("a long left-associative chain parses", () => {
+    const src = Array.from({ length: 900 }, () => "a").join("-");
+    expect(src.length).toBeLessThanOrEqual(2000);
+    expect(parseExpression(src).ok).toBe(true);
+  });
+});

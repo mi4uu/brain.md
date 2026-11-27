@@ -19,7 +19,7 @@ const MAX_SOURCE = 2000;
 const MAX_DEPTH = 64;
 const OPS = ["&&", "||", "==", "!=", "<=", ">=", "<", ">", "+", "-", "*", "/", "%", "!", "(", ")", "[", "]", ".", ","];
 const ID_RE = /[\p{L}_$][\p{L}\p{N}_$]*/uy;
-const NUM_RE = /\d+(?:\.\d+)?/y;
+const NUM_RE = /(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?/y;
 
 function tokenize(src: string): Tok[] {
   if (src.length > MAX_SOURCE) throw new ExprError("expression is too long");
@@ -66,7 +66,7 @@ function tokenize(src: string): Tok[] {
       continue;
     }
     const op = OPS.find((o) => src.startsWith(o, i));
-    if (!op) throw new ExprError(`unsupported syntax "${c}" at ${i}`);
+    if (!op) throw new ExprError(`unsupported syntax "${String.fromCodePoint(src.codePointAt(i)!)}" at ${i}`);
     out.push({ k: "op", v: op, pos: i });
     i += op.length;
   }
@@ -187,10 +187,10 @@ class Parser {
 }
 
 export function parseExpression(src: string): { ok: true; node: Node } | { ok: false; error: string } {
+  if (typeof src !== "string") return { ok: false, error: "expression must be a string" };
   try {
     return { ok: true, node: new Parser(tokenize(src)).parseAll() };
   } catch (e) {
-    if (e instanceof ExprError) return { ok: false, error: e.message };
-    throw e;
+    return { ok: false, error: e instanceof ExprError ? e.message : "invalid expression" };
   }
 }
