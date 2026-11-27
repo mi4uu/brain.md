@@ -184,6 +184,19 @@ describe("kanban drag", () => {
     expect(columnAt(cols, 105, 10)).toBeUndefined();
   });
 
+  test("a drop anywhere in a short column's lane counts", () => {
+    const cols = [
+      { key: "Todo", left: 0, right: 100, top: 20, bottom: 400 },
+      { key: "Doing", left: 110, right: 210, top: 20, bottom: 95 },
+    ];
+    const lane = { top: 8, bottom: 412 };
+    expect(columnAt(cols, 150, 130)).toBeUndefined();
+    expect(columnAt(cols, 150, 130, lane)).toEqual({ key: "Doing" });
+    expect(columnAt(cols, 150, 410, lane)).toEqual({ key: "Doing" });
+    expect(columnAt(cols, 150, 420, lane)).toBeUndefined();
+    expect(columnAt(cols, 105, 130, lane)).toBeUndefined();
+  });
+
   test("moveChange keeps text that does not spell back as the typed value", () => {
     expect(moveChange("number", "007")).toEqual({ set: "007" });
     expect(moveChange("number", "1e3")).toEqual({ set: "1e3" });

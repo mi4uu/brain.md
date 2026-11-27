@@ -181,9 +181,10 @@ export interface ColumnRect {
   bottom: number;
 }
 
-// undefined: the pointer is over no column.
-export function columnAt(cols: ColumnRect[], x: number, y: number): { key: string | null } | undefined {
-  const hit = cols.find((c) => x >= c.left && x <= c.right && y >= c.top && y <= c.bottom);
+// undefined: the pointer is over no column. With `lane` (the board's box) a
+// column takes drops over its whole height, so a short column is a full lane.
+export function columnAt(cols: ColumnRect[], x: number, y: number, lane?: { top: number; bottom: number }): { key: string | null } | undefined {
+  const hit = cols.find((c) => x >= c.left && x <= c.right && y >= (lane ?? c).top && y <= (lane ?? c).bottom);
   return hit ? { key: hit.key } : undefined;
 }
 

@@ -163,6 +163,7 @@ export function KanbanView(props: LayoutProps) {
         }),
         x,
         y,
+        boardRef.current?.getBoundingClientRect(),
       );
     // The title is a button: without this the release would also open the note.
     const swallowClick = () => {

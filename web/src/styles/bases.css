@@ -433,7 +433,7 @@
 
 .preview .doc .base-board {
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   gap: var(--space-3);
   padding: var(--space-3);
   overflow-x: auto;
