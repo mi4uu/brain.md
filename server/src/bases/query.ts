@@ -369,12 +369,20 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
     return Object.hasOwn(scope.props, name) ? (scope.props[name] as Value) : null;
   };
 
+  // Phases after the filter run outside `ev`, so they check the same deadline themselves.
+  const late = (): boolean => {
+    if (!work.expired && (++work.ticks & 1023) === 0 && performance.now() > work.deadline) work.expired = true;
+    if (work.expired) warn("the query took too long; results are partial");
+    return work.expired;
+  };
+
   const isEmpty = (v: Value): boolean => v === null || v === "" || (Array.isArray(v) && v.length === 0);
   const order = (a: Value, b: Value): number => compareValues(a, b) ?? toStr(a).localeCompare(toStr(b), undefined, { numeric: true });
 
   const sortVals = new Map(
     rows.map((r) => {
       const vals: Value[] = [];
+      if (view.sort.length > 0 && late()) return [r, vals];
       for (const s of view.sort) {
         const k = keepKey(keyValue(s.property, r.scope));
         if (k === undefined) break;
@@ -385,6 +393,7 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
     }),
   );
   rows.sort((x, y) => {
+    if (view.sort.length > 0 && late()) return x.e.path.localeCompare(y.e.path);
     for (let i = 0; i < view.sort.length; i++) {
       const a = sortVals.get(x)![i] ?? null;
       const b = sortVals.get(y)![i] ?? null;
@@ -451,8 +460,8 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
 
   let groupKeys: Array<string | null> = [null];
   if (gb) {
-    const listed = view.groupOrder.filter((k, i, a) => a.indexOf(k) === i);
-    const rest = [...present.keys()].filter((k): k is string => k !== null && !listed.includes(k));
+    const listed = new Set(view.groupOrder);
+    const rest = [...present.keys()].filter((k): k is string => k !== null && !listed.has(k));
     rest.sort((a, b) => order(present.get(a)!, present.get(b)!));
     if (gb.direction === "DESC") rest.reverse();
     groupKeys = [...listed, ...rest, null];
@@ -468,6 +477,7 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
   const page = items.slice(offset, offset + limit);
   const pageSet = new Set(page);
   for (const it of items) if (!pageSet.has(it)) release(it.row);
+  const declaredGroups = new Set(view.groupOrder);
 
   const display = new Map<string, string>();
   for (const [k, v] of Object.entries(cfg.properties)) if (v.displayName) display.set(k.replace(/^note\./, ""), v.displayName);
@@ -481,6 +491,7 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
   const typeFor = (key: string): PropertyType | "file" | "formula" =>
     key.startsWith("file.") ? "file" : key.startsWith("formula.") ? "formula" : (types.get(key.replace(/^note\./, "")) ?? "text");
 
+  // Counts what the JSON will hold: keys, values and the per-row fields.
   let spent = 0;
   const fit = (v: PropValue, depth = 0): PropValue => {
     if (typeof v === "string") {
@@ -489,14 +500,17 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
         warn(`a long value was cut to ${MAX_CELL} characters`);
         v = own(v.slice(0, MAX_CELL));
       }
-      spent += v.length;
+      spent += v.length + 2;
       return v;
     }
     spent += 8;
     if (Array.isArray(v)) return v.map((x) => fit(x, depth + 1));
     if (v && typeof v === "object" && depth < 4) {
       const out: Record<string, PropValue> = Object.create(null);
-      for (const [k, x] of Object.entries(v)) out[k] = fit(x, depth + 1);
+      for (const [k, x] of Object.entries(v)) {
+        spent += k.length + 4;
+        out[k] = fit(x, depth + 1);
+      }
       return out;
     }
     return v;
@@ -504,14 +518,10 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
   const outRow = (it: Item) => {
     const values: Record<string, PropValue> = Object.create(null);
     const partial: string[] = [];
+    spent += it.e.path.length + it.e.title.length + it.e.revision.length + 64;
     for (const k of valueKeys) {
-      if (spent > MAX_RESPONSE_CHARS) {
-        warn("the response was too large; later cells were left empty");
-        values[k] = null;
-        partial.push(k);
-        continue;
-      }
       altered = false;
+      spent += k.length + 4;
       const c = clean(toProp(keyValue(k, it.scope)), it.e.path);
       values[k] = c === DROP ? null : fit(c);
       if (altered) partial.push(k);
@@ -519,25 +529,42 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
     release(it.row);
     return { path: it.e.path, title: it.e.title, revision: it.e.revision, values, ...(partial.length ? { partial } : {}) };
   };
+  // A page ends at the first row that would take the response over budget; the first row
+  // always goes out, so a page is never empty while there are rows. `total` stays whole,
+  // so the next request continues at offset plus the rows sent.
+  type Out = ReturnType<typeof outRow>;
+  const sent: Array<{ group: string | null; row: Out }> = [];
+  for (const it of page) {
+    if (sent.length > 0 && spent > MAX_RESPONSE_CHARS) {
+      release(it.row);
+      continue;
+    }
+    const row = outRow(it);
+    if (sent.length > 0 && spent > MAX_RESPONSE_CHARS) {
+      warn("the response was too large; it ends early, continue at the next offset");
+      continue;
+    }
+    sent.push({ group: it.group, row });
+  }
 
   const groups: BaseQueryResponse["groups"] = [];
   if (!gb) {
-    groups.push({ key: null, label: "", count: total, rows: page.map(outRow) });
+    groups.push({ key: null, label: "", count: total, rows: sent.map((s) => s.row) });
   } else {
     const counts = new Map<string | null, number>();
     for (const i of items) counts.set(i.group, (counts.get(i.group) ?? 0) + 1);
-    const byGroup = new Map<string | null, Item[]>();
-    for (const i of page) {
-      const list = byGroup.get(i.group);
-      if (list) list.push(i);
-      else byGroup.set(i.group, [i]);
+    const byGroup = new Map<string | null, Out[]>();
+    for (const s of sent) {
+      const list = byGroup.get(s.group);
+      if (list) list.push(s.row);
+      else byGroup.set(s.group, [s.row]);
     }
     for (const key of groupKeys) {
       const count = counts.get(key) ?? 0;
       const inPage = byGroup.get(key) ?? [];
-      const declared = key !== null && offset === 0 && view.groupOrder.includes(key);
+      const declared = key !== null && offset === 0 && declaredGroups.has(key);
       if (inPage.length === 0 && !(declared && count === 0)) continue;
-      groups.push({ key, label: key ?? "No value", count, rows: inPage.map(outRow) });
+      groups.push({ key, label: key ?? "No value", count, rows: inPage });
     }
   }
 

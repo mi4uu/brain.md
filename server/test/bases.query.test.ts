@@ -588,3 +588,78 @@ describe("robustness, round 4", () => {
     expect(r.warnings).toEqual(["the query took too long; results are partial"]);
   });
 });
+
+describe("response budget", () => {
+  const cell = "v".repeat(200);
+  const wideNotes = (n: number, cols: number) =>
+    Array.from({ length: n }, (_, i) => {
+      const props: Record<string, PropValue> = { n: i, g: `g${i % 3}` };
+      for (let c = 0; c < cols; c++) props[`c${c}`] = cell;
+      return entry(`bulk/n${String(i).padStart(5, "0")}.md`, props);
+    });
+  const order = (cols: number) => Array.from({ length: cols }, (_, c) => `c${c}`).join(", ");
+  const src = (cols: number, extra = "") =>
+    `views:\n  - type: table\n    name: T\n    order: [file.name, ${order(cols)}]\n${extra}    sort:\n      - property: n\n        direction: ASC\n`;
+  const notes = wideNotes(2000, 200);
+  const idx = index({ entries: () => notes });
+
+  test("a 12000-column source returns a bounded response", () => {
+    const cols = Array.from({ length: 12000 }, (_, i) => `c${i}`).join(",");
+    const r = q(`views:\n  - type: table\n    name: T\n    order: [${cols}]\n`, { idx: index({ entries: () => wideNotes(2000, 1) }), req: { limit: 2000 } });
+    expect(r.columns).toHaveLength(200);
+    expect(JSON.stringify(r).length).toBeLessThan(6_000_000);
+    expect(r.warnings).toContain('view 1: "order" lists more than 200 columns; the rest were ignored');
+  });
+
+  test("the page ends at the budget: no empty cells, total stays whole, the next offset continues", () => {
+    const r = q(src(199), { idx, req: { limit: 2000 } });
+    const rows = r.groups[0]!.rows;
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.length).toBeLessThan(2000);
+    expect(r.total).toBe(2000);
+    expect(rows.every((x) => x.partial === undefined && Object.values(x.values).every((v) => v !== null))).toBe(true);
+    expect(JSON.stringify(r).length).toBeLessThan(5_500_000);
+    expect(r.warnings).toContain("the response was too large; it ends early, continue at the next offset");
+    const next = q(src(199), { idx, req: { limit: 2000, offset: rows.length } });
+    const nextRows = next.groups[0]!.rows;
+    expect(nextRows[0]!.path).toBe(`bulk/n${String(rows.length).padStart(5, "0")}.md`);
+    expect(rows.length + nextRows.length).toBeLessThan(2000);
+    expect(new Set([...rows, ...nextRows].map((x) => x.path)).size).toBe(rows.length + nextRows.length);
+  });
+
+  test("a single row over the budget is still returned, so a page is never empty", () => {
+    const r = q(src(199), { idx, req: { limit: 1 } });
+    expect(r.groups[0]!.rows).toHaveLength(1);
+  });
+
+  test("grouped: a group cut by the budget is left out, never sent with no rows", () => {
+    const r = q(src(199, "    groupBy:\n      property: g\n"), { idx, req: { limit: 2000 } });
+    expect(r.groups.length).toBeGreaterThan(0);
+    for (const g of r.groups) expect(g.rows.length).toBeGreaterThan(0);
+    expect(r.groups.reduce((n, g) => n + g.rows.length, 0)).toBeLessThan(2000);
+  });
+
+  test("a long groupOrder is quick", () => {
+    const names = Array.from({ length: 1000 }, (_, i) => `x${i}`).join(",");
+    const many = Array.from({ length: 2000 }, (_, i) => entry(`bulk/n${i}.md`, { s: `x${i}` }));
+    const t0 = performance.now();
+    const r = q(`views:\n  - type: table\n    name: T\n    groupBy:\n      property: s\n    groupOrder: [${names}]\n`, { idx: index({ entries: () => many }), req: { limit: 2000 } });
+    expect(performance.now() - t0).toBeLessThan(300);
+    expect(r.groups[0]!.key).toBe("x0");
+    expect(r.groups).toHaveLength(2000);
+  });
+
+  test("sorting stops at the deadline and falls back to path order, with one warning", () => {
+    const many = Array.from({ length: 16000 }, (_, i) => entry(`bulk/n${String(i).padStart(5, "0")}.md`, { n: 16000 - i }));
+    const r = q("views:\n  - type: table\n    name: T\n    sort:\n      - property: n\n        direction: ASC\n", {
+      idx: index({ entries: () => many }),
+      req: { limit: 3 },
+      deps: { deadlineMs: 0 },
+    });
+    expect(r.total).toBe(16000);
+    expect(paths(r)).toEqual(["bulk/n00000.md", "bulk/n00001.md", "bulk/n00002.md"]);
+    expect(r.warnings).toEqual(["the query took too long; results are partial"]);
+    const inTime = q("views:\n  - type: table\n    name: T\n    sort:\n      - property: n\n        direction: ASC\n", { idx: index({ entries: () => many }), req: { limit: 1 } });
+    expect(paths(inTime)).toEqual(["bulk/n15999.md"]);
+  });
+});
