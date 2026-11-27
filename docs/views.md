@@ -34,9 +34,9 @@ Every note (`.md`) the viewer may read, except hidden notes and the note that ho
 `table`, `cards`, `list`, `kanban`. `map` keeps its settings and shows "not supported yet".
 
 - **Table**: click a cell to edit that property; drag a header edge, or use the column menu, to resize; the column menu also sorts, moves, hides and sets a summary. Widths are saved as `columnSize`.
-- **Cards**: title, the chosen properties and an optional cover from the view's `image` property (a note property holding an image link or URL).
+- **Cards**: title, the chosen properties and an optional cover from the view's `image` property (a note property holding an http(s) URL or an image file in the note folder's `.media` directory).
 - **List**: one compact row per note.
-- **Kanban**: columns come from `groupBy` and `groupOrder`. Drag a card to another column to set that property, or use the `...` menu, "Move to <column>". `+` in a column creates a note with the property preset.
+- **Kanban**: columns come from `groupBy` and `groupOrder`. Drag a card to another column to set that property, or use the `...` menu, "Move to" plus the column name. `+` in a column creates a note with the property preset.
 
 ## Editing cells
 
@@ -61,18 +61,18 @@ Filters and formulas are one expression: property names, `note.x`, `note["a b"]`
 
 `file.` values: `name`, `basename`, `fullname`, `path`, `folder`, `ext`, `size`, `ctime`, `mtime`, `tags`, `links`, `backlinks`, `embeds`, `properties`.
 
-Functions: `file.hasTag`, `file.inFolder`, `file.hasLink`, `file.hasProperty`; on text `contains containsAll containsAny startsWith endsWith isEmpty lower upper trim`; on lists `contains containsAll containsAny isEmpty length`; on anything `isTruthy toString`; `if`, `now`, `today`, `date`, `link`; on dates `format` (`YYYY MM DD HH mm`) and `+` / `-` with `"1 week"`, `"3d"`.
+Functions: `file.hasTag`, `file.inFolder`, `file.hasLink`, `file.hasProperty`; on text `contains containsAll containsAny startsWith endsWith isEmpty lower upper trim` and the property `length`; on lists `contains containsAll containsAny isEmpty` and the property `length`; on anything `isTruthy toString`; `if`, `now`, `today`, `date`, `link`; on dates `format` (`YYYY MM DD HH mm ss`) and `+` / `-` with `"1 week"`, `"3d"`.
 
 `now()` and `today()` use the server's local time zone for now.
 
-Anything else (an unknown function, a lambda, `?:`) evaluates to empty and the view shows a quiet warning naming it. It never blanks the view and never fails the note. A filter that cannot be read at all is ignored, with a warning.
+An unknown function evaluates to empty, with a warning naming it. Syntax it cannot parse (a lambda, `?:`) makes a filter be ignored and a formula empty, also with a warning. Neither blanks the view or fails the note.
 
 Expressions come from notes and from agents, so they are sandboxed: they read own properties only, call methods from a fixed table, have a step budget, and cannot build regular expressions.
 
 ## Limits
 
-- A query gets 2 seconds. If it runs out, the result is marked partial and the view shows a warning.
-- Edits made to files outside brain.md reach views within about 60 seconds.
+- A query is checked against a 2 second budget while expressions run, so it is not a hard cap. If it runs over, the view shows a warning that results are partial.
+- brain.md notices edits made outside it within about 60 seconds. An open view refreshes when the window regains focus or when you save a note. The web view does not poll; `query_notes` sees new data after the interval.
 
 ## Permissions
 
@@ -84,4 +84,4 @@ A view only shows notes the viewer may read, including in link cells (`file.link
 
 An agent gets at most about 200 KB per page of results.
 
-A ```` ```base ```` fence indented inside a list item renders as plain code in the preview, but `query_notes` may still run it.
+A ```` ```base ```` fence indented inside a list item, or inside a `%% %%` comment, renders as plain code in the preview, but `query_notes` may still run it.
