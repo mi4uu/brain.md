@@ -10,6 +10,8 @@ import type {
 } from "./types";
 
 import type { PropertyInfo, PropertyType } from "@brainmd/shared/property-types";
+import type { BaseQueryRequest, BaseQueryResponse } from "@brainmd/shared/base-types";
+import type { PropValue } from "@brainmd/shared/frontmatter";
 import type { GraphInput } from "../graph/engine";
 
 const BASE = "";
@@ -123,6 +125,33 @@ export const api = {
   },
   async properties(): Promise<PropertyInfo[]> {
     return jsonOrThrow(await fetch(`${BASE}/api/properties`));
+  },
+  async baseQuery(req: BaseQueryRequest, signal?: AbortSignal): Promise<BaseQueryResponse> {
+    return jsonOrThrow(
+      await fetch(`${BASE}/api/bases/query`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(req),
+        signal,
+      }),
+    );
+  },
+  async patchNoteProperties(
+    path: string,
+    body: { set?: Record<string, PropValue>; unset?: string[]; baseRevision?: string },
+  ): Promise<WriteNoteResult> {
+    const res = await fetch(`${BASE}/api/note-properties/${encodePath(path)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.status === 409) {
+      const err = await res.json().catch(() => ({}) as Record<string, unknown>);
+      throw new ConflictError(typeof err.revision === "string" ? err.revision : "");
+    }
+    const out = await jsonOrThrow<WriteNoteResult>(res);
+    afterMutation();
+    return out;
   },
   // Owner only. Changes how values of this name are edited vault-wide; no
   // note is rewritten.
