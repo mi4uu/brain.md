@@ -21,6 +21,23 @@
   On touch screens a tap selects a cell and shows the same actions in a bar.
   Every action is one undo step, undone from the editor. Tables stay plain
   GFM pipe tables.
+- **Views.** A fenced `base` block in a note renders as a live table, cards,
+  list or kanban over the vault's notes, in the Obsidian Bases format. The
+  toolbar edits sort, filters, columns, view type and column width and writes
+  them back into the block. Table cells edit properties in place; kanban cards
+  move between columns by drag or by a menu; `+` creates a note with the
+  filter's folder and properties. Expressions run in a sandbox with a step
+  budget; unsupported syntax gives a warning, never an error. See
+  `docs/views.md`.
+- **`query_notes` (MCP) and `POST /api/bases/query`.** The same query for
+  agents and the UI: a `filter` expression with `columns` and `sort`, a `base`
+  YAML, or a note's block by `path` and `view`. 50 rows per page. MCP now has
+  20 tools.
+
+### Changed
+
+- The note index stores each note's revision (snapshot version 4); it is
+  rebuilt once at startup.
 
 ## 0.9.0 - 2026-11-18
 

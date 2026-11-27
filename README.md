@@ -27,6 +27,7 @@
 | **Obsidian-compatible markdown** | Wikilinks, embeds, callouts, math, mermaid, tasks, frontmatter, aliases. Open your existing Obsidian vault and it just works. |
 | **Graph view** | Interactive map of your notes and wikilinks: hover to light up neighbours, click to open, drag, zoom, filter by folder or tag, plus a local graph of the current note. Smooth on thousands of notes. |
 | **Live editor + preview** | CodeMirror 6 with cursor-anchored scroll sync, autosave, instant tooltips, command palette, quick switcher. Editor, Preview or Both, one click or **⌘\\**. |
+| **Views over your notes** | A `base` block in any note is a live table, cards, list or kanban over your notes, in Obsidian Bases format: filters, sort, groups, formulas. Edit a cell or drag a card and the note's frontmatter changes. Agents run the same query with `query_notes`. [Views](docs/views.md). |
 | **Semantic search built in** | Per-vault embedded vector store (pure JS, no external DB). Notes are chunked, embedded and indexed on every save. |
 | **Pluggable embedders** | Default: `bge-small-en-v1.5` running locally via **bundled WASM ONNX**, works in the prebuilt single binary, zero native deps. Or point at **Ollama**, **LM Studio**, or **OpenAI**: anything with `/v1/embeddings`. |
 | **MCP server (streamable HTTP)** | 20 tools and 2 resources mounted on the same port. Claude Desktop, Claude Code, Cursor and any MCP-compliant agent can read, search, query and write your notes. List tools return pages, so a small local model never gets the whole vault in one reply. |
