@@ -7,6 +7,7 @@ import {
   type BaseQueryResponse,
   type FilterNode,
 } from "@brainmd/shared/base-types";
+import type { VaultIndex } from "../index/index";
 import { parseExpression, type Node } from "./expr";
 import { DEFAULT_BUDGET, MAX_STRING_WORK, evaluate, type Scope } from "./eval";
 import {
@@ -40,6 +41,16 @@ export interface QueryIndex {
   backlinks(path: string, allowed?: (path: string) => boolean): Array<{ from: string }>;
   resolveLink(fromPath: string, target: string): string | undefined;
   visibility: { isHidden(path: string): boolean };
+}
+
+// Adapts the live VaultIndex; hiding comes from the app's Visibility, never defaulted.
+export function queryIndexFor(index: VaultIndex, visibility: { isHidden(path: string): boolean }): QueryIndex {
+  return {
+    entries: () => index.entries(),
+    backlinks: (path, ok) => index.backlinks(path, ok),
+    resolveLink: (from, target) => index.resolveLink(from, target),
+    visibility: { isHidden: (path) => visibility.isHidden(path) },
+  };
 }
 
 export interface QueryDeps {

@@ -412,3 +412,18 @@ describe("route x principal matrix (MCP transport): search_notes is filtered, no
     });
   }
 });
+
+describe("route x principal matrix (MCP transport): query_notes is filtered, not forbidden", () => {
+  for (const kind of PRINCIPALS) {
+    test(kind, async () => {
+      const f = await makeFixture(kind);
+      const client = await mcpClient(f.handle, f.bearer);
+      const result = (await callTool(client, "query_notes", { columns: ["file.name"] })) as { isError?: boolean };
+      await client.close();
+      expect(result.isError).toBeFalsy();
+      const text = JSON.stringify(result);
+      if (kind === "owner" || kind === "open") expect(text.includes("secret/a.md")).toBe(true);
+      else expect(text.includes("secret/a.md")).toBe(false);
+    });
+  }
+});

@@ -210,6 +210,7 @@ export function createApp(opts: AppOptions = {}) {
     mcp = createMcp({
       vault,
       index,
+      visibility,
       pipeline: ragPipeline,
       ragEnabled: () => settings.get().rag.enabled,
       loadView: opts.mcpViewLoader,

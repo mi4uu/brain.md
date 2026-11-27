@@ -33,9 +33,14 @@ do through this server. Follow them unless the user explicitly overrides them.
   to those folders and their subfolders. Use it when the owner asks about a
   specific area (e.g. `scope: "work"`) instead of searching the whole vault.
 - List tools (`list_notes`, `search_notes`, `get_tasks`, `get_backlinks`,
-  `list_tags`) return one page at a time. Narrow first (`folder`, `scope`, a
-  sharper query, `filter`); fetch the next page with `offset` only when you
-  need it. The reply says how many there are and which `offset` comes next.
+  `list_tags`, `query_notes`) return one page at a time. Narrow first (`folder`,
+  `scope`, a sharper query, `filter`); fetch the next page with `offset` only
+  when you need it. The reply says how many there are and which `offset` comes next.
+- To list notes by their properties (every task with `status: open`, the notes in a
+  folder by date), use `query_notes` instead of reading notes one by one: a `filter`
+  such as `status == "open" && file.hasTag("work")`, `columns` such as
+  `["file.name", "status"]` and a `sort`. It returns rows with values and a
+  `warnings` list for syntax it could not run.
 - To change frontmatter (status, due date, tags, any property) call
   `update_properties` with `set` / `unset` instead of rewriting the note;
   `read_note` returns the parsed `properties`.

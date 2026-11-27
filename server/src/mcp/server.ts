@@ -26,6 +26,11 @@ import {
   type Principal,
 } from "../api/principal";
 import { principalFor } from "../api/auth-middleware";
+import { findBaseFences } from "@brainmd/shared/base-yaml";
+import { parseBase } from "@brainmd/shared/base-parse";
+import { runBaseQuery, queryIndexFor } from "../bases/query";
+import { simpleBase } from "../bases/simple";
+import { listProperties } from "../properties/registry";
 import { loadMcpInstructions } from "./instructions";
 import { readFrontmatter } from "@brainmd/shared/frontmatter";
 import { updateProperties } from "../properties/update";
@@ -137,6 +142,7 @@ function collectTasks(index: VaultIndex): Array<{
 interface McpDeps {
   vault: Vault;
   index: VaultIndex;
+  visibility: { isHidden(path: string): boolean };
   pipeline: RagPipeline;
   ragEnabled: () => boolean;
   loadView?: ViewLoader;
@@ -236,7 +242,7 @@ function registerHandlers(
   principal: Principal,
   views: AppViews,
 ): void {
-  const { vault, index, pipeline, ragEnabled } = deps;
+  const { vault, index, pipeline, ragEnabled, visibility } = deps;
 
   // Shared read-permission predicate for this request: true if `principal`
   // may see `path`, combining its own scope with per-folder MCP perms.
@@ -389,6 +395,74 @@ function registerHandlers(
       };
       logCall("list_notes", { folder, limit, offset }, true);
       return pageContent("list_notes", body, p, "notes");
+    },
+  );
+
+  server.registerTool(
+    "query_notes",
+    {
+      annotations: READ_ONLY_LOCAL,
+      description:
+        "Run a view over the vault's notes: a table of notes with chosen properties, filtered, sorted and optionally grouped, like an Obsidian Base. " +
+        "Pass ONE of: `base` (the YAML of a base; the body of a ```base block works as is), `path` (a note holding a ```base block; `view` picks one by name), " +
+        "or the simple form `filter` + `columns` + `sort`. " +
+        "A filter is an expression: note properties by name, `file.*` values (name, path, folder, tags, links, backlinks, size, ctime, mtime), " +
+        "`==  !=  <  >  &&  ||  !`, and functions such as contains, startsWith, isEmpty, file.hasTag(\"x\"), file.inFolder(\"x\"), today(), now(). " +
+        'Example: status == "open" && file.hasTag("work"). Columns are `file.name`, `file.mtime` or a property name. ' +
+        "Syntax it cannot run comes back as `warnings`, not an error. 50 rows per page (`limit`, `offset`). Hidden notes are skipped.",
+      inputSchema: {
+        base: z.string().max(100_000).optional(),
+        path: z.string().min(1).optional(),
+        view: z.string().optional(),
+        filter: z.string().max(2000).optional(),
+        columns: z.array(z.string()).max(50).optional(),
+        sort: z.array(z.object({ property: z.string(), direction: z.enum(["ASC", "DESC"]) })).max(10).optional(),
+        ...pageArgs(50, 200),
+      },
+    },
+    async ({ base, path, view, filter, columns, sort, limit, offset }) => {
+      const args = { base: base === undefined ? undefined : "(yaml)", path, view, filter, columns, sort, limit, offset };
+      const coded = (code: string, message: string) => Object.assign(new Error(message), { code });
+      try {
+        const simple = filter !== undefined || columns !== undefined || sort !== undefined;
+        if ([base !== undefined, path !== undefined, simple].filter(Boolean).length > 1) {
+          throw coded("INVALID_ARGUMENT", "Pass one of: base, path (with view), or filter / columns / sort.");
+        }
+        let source: string;
+        let thisPath: string | undefined;
+        if (base !== undefined) {
+          source = base;
+        } else if (path !== undefined) {
+          if (!path.toLowerCase().endsWith(".md")) throw coded("INVALID_ARGUMENT", "path must be a .md note that holds a base block");
+          await checkRead(vault, principal, path);
+          const fences = findBaseFences((await vault.readNote(path)).content);
+          if (fences.length === 0) throw coded("NO_BASE_BLOCK", `${path} has no base block`);
+          const hit = view ? fences.find((f) => parseBase(f.source).config.views.some((v) => v.name === view)) : undefined;
+          source = (hit ?? fences[0]!).source;
+          thisPath = path;
+        } else {
+          source = simpleBase({ filter, columns, sort });
+        }
+        const allowed = await readFilter();
+        const types = new Map((await listProperties(vault, index, allowed)).map((p) => [p.name, p.type] as const));
+        const res = runBaseQuery(
+          { source, view: simple ? undefined : view, thisPath, offset: 0, limit: 2000 },
+          { index: queryIndexFor(index, visibility), allowed, types },
+        );
+        const grouped = res.groups.some((g) => g.label !== "");
+        const rows = res.groups.flatMap((g) =>
+          g.rows.map((r) => ({ path: r.path, title: r.title, ...(grouped ? { group: g.label } : {}), values: r.values })),
+        );
+        const p = paginate(rows, limit, offset, 50);
+        const warnings =
+          res.total > rows.length
+            ? [...res.warnings, `Only the first ${rows.length} of ${res.total} rows can be paged; narrow the query.`]
+            : res.warnings;
+        logCall("query_notes", args, true);
+        return pageContent("query_notes", { view: res.view, views: res.views, columns: res.columns, total: res.total, warnings, rows: p.items }, p, "rows");
+      } catch (err) {
+        return toolError("query_notes", args, err);
+      }
     },
   );
 
