@@ -1,4 +1,4 @@
-import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { memo, useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { columnId, setColumnSize, setViewGroupBy, setViewOrder, setViewSort, setViewSummary } from "@brainmd/shared/base-yaml";
 import type { PropValue } from "@brainmd/shared/frontmatter";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
@@ -11,8 +11,7 @@ export function TableView({ result, view, config, host, saveProps, editView }: L
   const [live, setLive] = useState<Record<string, number>>({});
   // biome-ignore lint/correctness/useExhaustiveDependencies: new stored widths are the signal to drop live widths
   useEffect(() => setLive({}), [view.columnSize]);
-  const grouped = result.groups.some((g) => g.label !== "");
-  const allRows = result.groups.flatMap((g) => g.rows);
+  const rowCount = result.groups.reduce((n, g) => n + g.rows.length, 0);
   const widthOf = (key: string): number => live[key] ?? view.columnSize[columnId(key)] ?? DEFAULT_COLUMN_WIDTH;
 
   const commitWidth = (key: string, w: number) => {
@@ -63,15 +62,7 @@ export function TableView({ result, view, config, host, saveProps, editView }: L
     el.addEventListener("pointercancel", cancel);
   };
 
-  const save = (row: Row, change: PropChange) => {
-    const patch: Record<string, PropValue> = {};
-    for (const name of [...Object.keys(change.set ?? {}), ...(change.unset ?? [])]) {
-      for (const c of result.columns) if (propNameOf(c.key) === name) patch[c.key] = change.set && name in change.set ? change.set[name]! : null;
-    }
-    return saveProps(row, change, (r) => patchRowValues(r, row.path, patch));
-  };
-
-  const summaryFor = (c: Column): string | undefined => byColumn(view.summaries, c.key) ?? byColumn(config.summaries, c.key);
+  const summaryFor = (c: Column): string | undefined => summaryOf(view.summaries, config.summaries, c);
   const showSummaries = result.columns.some((c) => summaryFor(c));
   const ownSummaryKey = (c: Column): string => matchKey(view.summaries, c.key) ?? columnId(c.key);
   const inheritedOnly = (c: Column): boolean => matchKey(view.summaries, c.key) === undefined && matchKey(config.summaries, c.key) !== undefined;
@@ -150,47 +141,64 @@ export function TableView({ result, view, config, host, saveProps, editView }: L
             <th aria-label="Row actions" />
           </tr>
         </thead>
-        {result.groups.map((g) => (
-          <tbody key={g.key ?? "\u0000none"}>
-            {grouped ? (
-              <tr className="base-group">
-                <td colSpan={result.columns.length + 1}>
-                  {g.label} <span className="base-count">{g.count}</span>
-                </td>
-              </tr>
-            ) : null}
-            {g.rows.map((r) => (
-              <tr key={r.path}>
-                {result.columns.map((c) => (
-                  <td key={c.key}>
-                    <EditableCell col={c} value={r.values[c.key] ?? null} row={r} host={host} onCommit={(change) => save(r, change)} />
-                  </td>
-                ))}
-                <td className="base-td-menu">
-                  <RowMenu row={r} host={host} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        ))}
-        {showSummaries ? (
-          <tfoot>
-            <tr>
-              {result.columns.map((c) => {
-                const name = summaryFor(c);
-                const v = name ? summarise(name, allRows.map((r) => r.values[c.key] ?? null)) : null;
-                return (
-                  <td key={c.key}>
-                    {name && v !== null ? `${name} ${v}` : ""}
-                  </td>
-                );
-              })}
-              <td />
-            </tr>
-          </tfoot>
-        ) : null}
+        <TableBody result={result} host={host} saveProps={saveProps} />
+        {showSummaries ? <TableFoot result={result} viewSummaries={view.summaries} baseSummaries={config.summaries} /> : null}
       </table>
-      {showSummaries ? <p className="base-summary-note">Summaries cover the {allRows.length} loaded rows</p> : null}
+      {showSummaries ? <p className="base-summary-note">Summaries cover the {rowCount} loaded rows</p> : null}
     </div>
   );
 }
+
+const summaryOf = (own: Record<string, string>, base: Record<string, string>, c: Column): string | undefined => byColumn(own, c.key) ?? byColumn(base, c.key);
+
+// Widths live on <col>, so the rows and the footer are memoised: a live resize
+// re-renders only the colgroup and the header, not every row.
+const TableBody = memo(function TableBody({ result, host, saveProps }: Pick<LayoutProps, "result" | "host" | "saveProps">) {
+  const grouped = result.groups.some((g) => g.label !== "");
+  const save = (row: Row, change: PropChange) => {
+    const patch: Record<string, PropValue> = {};
+    for (const name of [...Object.keys(change.set ?? {}), ...(change.unset ?? [])]) {
+      for (const c of result.columns) if (propNameOf(c.key) === name) patch[c.key] = change.set && name in change.set ? change.set[name]! : null;
+    }
+    return saveProps(row, change, (r) => patchRowValues(r, row.path, patch));
+  };
+  return result.groups.map((g) => (
+    <tbody key={g.key ?? "\u0000none"}>
+      {grouped ? (
+        <tr className="base-group">
+          <td colSpan={result.columns.length + 1}>
+            {g.label} <span className="base-count">{g.count}</span>
+          </td>
+        </tr>
+      ) : null}
+      {g.rows.map((r) => (
+        <tr key={r.path}>
+          {result.columns.map((c) => (
+            <td key={c.key}>
+              <EditableCell col={c} value={r.values[c.key] ?? null} row={r} host={host} onCommit={(change) => save(r, change)} />
+            </td>
+          ))}
+          <td className="base-td-menu">
+            <RowMenu row={r} host={host} />
+          </td>
+        </tr>
+      ))}
+    </tbody>
+  ));
+});
+
+const TableFoot = memo(function TableFoot({ result, viewSummaries, baseSummaries }: { result: LayoutProps["result"]; viewSummaries: Record<string, string>; baseSummaries: Record<string, string> }) {
+  const rows = result.groups.flatMap((g) => g.rows);
+  return (
+    <tfoot>
+      <tr>
+        {result.columns.map((c) => {
+          const name = summaryOf(viewSummaries, baseSummaries, c);
+          const v = name ? summarise(name, rows.map((r) => r.values[c.key] ?? null)) : null;
+          return <td key={c.key}>{name && v !== null ? `${name} ${v}` : ""}</td>;
+        })}
+        <td />
+      </tr>
+    </tfoot>
+  );
+});
