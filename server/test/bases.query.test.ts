@@ -451,8 +451,8 @@ describe("robustness, round 4", () => {
     return defs;
   };
   const wide = (order: string) => {
-    const g = Array.from({ length: 20 }, (_, i) => `  g${i}: (formula.f9 + formula.f9 + "${i}").lower()`);
-    const f = Array.from({ length: 20 }, (_, i) => `    - formula.g${i}.length > 0`);
+    const g = Array.from({ length: 5 }, (_, i) => `  g${i}: (formula.f9 + formula.f9 + "${i}").lower()`);
+    const f = Array.from({ length: 5 }, (_, i) => `    - formula.g${i}.length > 0`);
     return `formulas:\n${[...chain9(), ...g].join("\n")}\nfilters:\n  and:\n${f.join("\n")}\n    - formula.f6.length > 0\nviews:\n  - type: table\n    name: T\n    order: [${order}]\n`;
   };
 
@@ -513,14 +513,32 @@ describe("robustness, round 4", () => {
 
   test("a link built from a long string counts its text and is not kept", () => {
     const defs = ['  f0: \'"xxxxxxxxxx"\''];
-    for (let i = 1; i <= 13; i++) defs.push(`  f${i}: formula.f${i - 1} + formula.f${i - 1}`);
-    const src = `formulas:\n${defs.join("\n")}\n  L: link(formula.f13.lower())\nfilters: formula.L != null\nviews:\n  - type: table\n    name: T\n    order: [file.name, formula.L]\n    sort:\n      - property: formula.L\n`;
+    for (let i = 1; i <= 12; i++) defs.push(`  f${i}: formula.f${i - 1} + formula.f${i - 1}`);
+    const src = `formulas:\n${defs.join("\n")}\n  L: link(formula.f12.lower())\nfilters: formula.L != null\nviews:\n  - type: table\n    name: T\n    order: [file.name, formula.L]\n    sort:\n      - property: formula.L\n`;
     const stats = { valuesPeak: 0, keysPeak: 0 };
     const r = q(src, { idx: index({ entries: () => manyNotes(300) }), req: { limit: 1 }, deps: { stats } });
     expect(r.total).toBe(300);
-    // f0..f6 stay because L reads them; L itself (81920 chars) is not kept.
+    // f0..f6 stay because L reads them; L itself (40960 chars) is not kept.
     expect(stats.valuesPeak).toBeLessThan(300 * 2000);
     expect(stats.keysPeak).toBeGreaterThanOrEqual(300 * 1000);
     expect(stats.keysPeak).toBeLessThan(300 * 1100);
+  });
+
+  test("string work is capped across the whole query", () => {
+    const defs = ['  f0: \'"xxxxxxxxxx"\''];
+    for (let i = 1; i <= 13; i++) defs.push(`  f${i}: formula.f${i - 1} + formula.f${i - 1}`);
+    const head = `formulas:\n${defs.join("\n")}\n  L: formula.f13.lower()\n`;
+    const deps = { stringWorkCap: 5_000_000 };
+    // About 245k chars of string work per note: the first notes pass, the rest get the budget treatment.
+    const filtered = q(`${head}filters: formula.L.length > 0\n`, { idx: index({ entries: () => manyNotes(300) }), deps });
+    expect(filtered.total).toBeGreaterThan(0);
+    expect(filtered.total).toBeLessThan(300);
+    expect(filtered.warnings.some((w) => w.includes("budget"))).toBe(true);
+    const sorted = q(`${head}views:\n  - type: table\n    name: T\n    sort:\n      - property: formula.L\n`, { idx: index({ entries: () => manyNotes(300) }), deps });
+    expect(sorted.total).toBe(300);
+    expect(sorted.warnings.some((w) => w.includes("budget"))).toBe(true);
+    const free = q(`${head}filters: formula.L.length > 0\n`, { idx: index({ entries: () => manyNotes(10) }), deps });
+    expect(free.total).toBe(10);
+    expect(free.warnings).toEqual([]);
   });
 });

@@ -8,7 +8,7 @@ import {
   type FilterNode,
 } from "@brainmd/shared/base-types";
 import { parseExpression, type Node } from "./expr";
-import { DEFAULT_BUDGET, evaluate, type Scope } from "./eval";
+import { DEFAULT_BUDGET, MAX_STRING_WORK, evaluate, type Scope } from "./eval";
 import {
   FileObject,
   LinkValue,
@@ -52,6 +52,7 @@ export interface QueryDeps {
   // computed again, and sort and group keys. Each has its own cap.
   retainCap?: { values?: number; keys?: number };
   stats?: { valuesPeak: number; keysPeak: number };
+  stringWorkCap?: number;
 }
 
 type Row = { e: QueryEntry; scope: Scope; memo: Map<string, Value>; held: number };
@@ -227,6 +228,7 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
   let values = 0;
   let keys = 0;
   const busy = new Set<string>();
+  const work = { chars: 0, max: deps.stringWorkCap ?? MAX_STRING_WORK };
   const release = (r: Row): void => {
     values -= r.held;
     r.held = 0;
@@ -276,7 +278,7 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
       props: e.props,
       thisValue,
       // Per note, so a big vault cannot run one shared budget dry and drop the tail rows.
-      budget: { steps: 0, max: DEFAULT_BUDGET, hit: false },
+      budget: { steps: 0, max: DEFAULT_BUDGET, hit: false, work },
       formula: (name) => {
         if (!Object.hasOwn(cfg.formulas, name)) {
           warn(`unknown formula "${name}"`);

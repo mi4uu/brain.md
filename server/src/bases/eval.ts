@@ -22,6 +22,9 @@ export interface Budget {
   steps: number;
   max: number;
   hit: boolean;
+  // Characters of string work, shared by every note of one query: per-note steps alone let a
+  // view churn gigabytes of short-lived text faster than the GC reclaims it.
+  work?: { chars: number; max: number };
 }
 
 export interface Scope extends FnCtx {
@@ -37,6 +40,7 @@ class BudgetExceeded extends Error {}
 
 export const DEFAULT_BUDGET = 10_000;
 export const MAX_STRING = 100_000;
+export const MAX_STRING_WORK = 128_000_000;
 
 const isPlainObject = (v: Value): v is { [k: string]: Value } => kindOf(v) === "object";
 
@@ -96,7 +100,9 @@ function charge(s: Scope, ...vals: Value[]): void {
   let chars = 0;
   for (const v of vals) if (typeof v === "string") chars += v.length;
   s.budget.steps += chars >> 10;
-  if (s.budget.steps > s.budget.max) {
+  const work = s.budget.work;
+  if (work) work.chars += chars;
+  if (s.budget.steps > s.budget.max || (work && work.chars > work.max)) {
     s.budget.hit = true;
     throw new BudgetExceeded();
   }
