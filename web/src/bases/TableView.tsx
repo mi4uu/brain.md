@@ -4,7 +4,7 @@ import type { PropValue } from "@brainmd/shared/frontmatter";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
 import { EditableCell } from "./EditableCell";
 import { RowMenu } from "./RowMenu";
-import { DEFAULT_COLUMN_WIDTH, MAX_COLUMN_WIDTH, MIN_COLUMN_WIDTH, SUMMARY_NAMES, byColumn, clampWidth, moveColumn, patchRowValues, propNameOf, summarise, toggleColumn } from "./model";
+import { DEFAULT_COLUMN_WIDTH, MAX_COLUMN_WIDTH, MIN_COLUMN_WIDTH, SUMMARY_NAMES, byColumn, clampWidth, matchKey, moveColumn, patchRowValues, propNameOf, summarise, toggleColumn } from "./model";
 import type { Column, LayoutProps, PropChange, Row } from "./types";
 
 export function TableView({ result, view, config, host, saveProps, editView }: LayoutProps) {
@@ -73,6 +73,8 @@ export function TableView({ result, view, config, host, saveProps, editView }: L
 
   const summaryFor = (c: Column): string | undefined => byColumn(view.summaries, c.key) ?? byColumn(config.summaries, c.key);
   const showSummaries = result.columns.some((c) => summaryFor(c));
+  const ownSummaryKey = (c: Column): string => matchKey(view.summaries, c.key) ?? columnId(c.key);
+  const inheritedOnly = (c: Column): boolean => matchKey(view.summaries, c.key) === undefined && matchKey(config.summaries, c.key) !== undefined;
   const sortedBy = (key: string) => view.sort.find((s) => columnId(s.property) === columnId(key))?.direction;
 
   const header = (c: Column) => (
@@ -99,9 +101,11 @@ export function TableView({ result, view, config, host, saveProps, editView }: L
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>Summary</DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
-              <DropdownMenuItem onSelect={() => editView((src, i) => setViewSummary(src, i, columnId(c.key), null))}>None</DropdownMenuItem>
+              <DropdownMenuItem disabled={inheritedOnly(c)} onSelect={() => editView((src, i) => setViewSummary(src, i, ownSummaryKey(c), null))}>
+                {inheritedOnly(c) ? "None (set in the base, edit the source)" : "None"}
+              </DropdownMenuItem>
               {SUMMARY_NAMES.map((n) => (
-                <DropdownMenuItem key={n} onSelect={() => editView((src, i) => setViewSummary(src, i, columnId(c.key), n))}>{n}</DropdownMenuItem>
+                <DropdownMenuItem key={n} onSelect={() => editView((src, i) => setViewSummary(src, i, ownSummaryKey(c), n))}>{n}</DropdownMenuItem>
               ))}
             </DropdownMenuSubContent>
           </DropdownMenuSub>

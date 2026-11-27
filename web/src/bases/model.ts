@@ -289,9 +289,9 @@ export function formatScalar(col: Pick<BaseQueryResponse["columns"][number], "ke
   return String(v);
 }
 
-const LOCAL_DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/;
+const LOCAL_DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
 
-// A native date or datetime-local input only when the stored text is in its own format; anything else stays text so the original is never rewritten.
+// A native date or datetime-local input only when the stored text is in its own format; anything else stays text so the original is never rewritten. A datetime-local input drops zero seconds, so only the exact minute form qualifies.
 export function cellInputType(type: PropertyType, value: PropValue): "number" | "date" | "datetime-local" | "text" {
   if (type === "number") return "number";
   if (type === "date" && (value === null || (typeof value === "string" && DATE_RE.test(value)))) return "date";
@@ -312,8 +312,12 @@ export function cellCommit(opened: { text: string }, current: { value: PropValue
   return { kind: "write", change: { set: c.value } };
 }
 
-export function byColumn<T>(map: Record<string, T>, key: string): T | undefined {
+export function matchKey(map: Record<string, unknown>, key: string): string | undefined {
   const id = columnId(key);
-  for (const k of Object.keys(map)) if (columnId(k) === id) return map[k];
-  return undefined;
+  return Object.keys(map).find((k) => columnId(k) === id);
+}
+
+export function byColumn<T>(map: Record<string, T>, key: string): T | undefined {
+  const k = matchKey(map, key);
+  return k === undefined ? undefined : map[k];
 }

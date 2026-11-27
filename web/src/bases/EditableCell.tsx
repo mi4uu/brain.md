@@ -25,6 +25,7 @@ export function EditableCell({ col, value, row, host, onCommit }: Props) {
   const cancelled = useRef(false);
   const refocus = useRef(false);
   const cellRef = useRef<HTMLDivElement>(null);
+  const initialInput = useRef<string | null>(null);
 
   useEffect(() => {
     if (editing === null && refocus.current) {
@@ -63,7 +64,7 @@ export function EditableCell({ col, value, row, host, onCommit }: Props) {
         className="base-cell-edit"
         role="button"
         tabIndex={0}
-        aria-label={`Edit ${col.label}, ${row.title}`}
+        aria-label={`Edit ${col.label}, ${row.title}: ${editText(value) || "empty"}`}
         onClick={open}
         onKeyDown={(e) => {
           if (e.target !== e.currentTarget) return;
@@ -86,13 +87,16 @@ export function EditableCell({ col, value, row, host, onCommit }: Props) {
       cancelled.current = false;
       return;
     }
-    if (input.validity.badInput) return;
+    const initial = initialInput.current;
+    initialInput.current = null;
+    if (input.validity.badInput || raw === initial) return;
     const r = cellCommit({ text: opened }, { value }, raw, type);
     if (r.kind === "error") host.toast(`${col.label}: ${r.message}`);
     else if (r.kind === "conflict") host.toast(`${col.label}: changed meanwhile, not saved`);
     else if (r.kind === "write") {
       void onCommit("set" in r.change ? { set: { [name]: r.change.set } } : { unset: [name] }).then((ok) => {
-        if (!ok) setEditing({ opened, draft: raw });
+        const active = document.activeElement;
+        if (!ok && (active === null || active === document.body || cellRef.current?.contains(active))) setEditing({ opened, draft: raw });
       });
     }
   };
@@ -103,6 +107,9 @@ export function EditableCell({ col, value, row, host, onCommit }: Props) {
       type={cellInputType(type, value)}
       step={type === "number" ? "any" : undefined}
       defaultValue={editing.draft}
+      ref={(el) => {
+        if (el && initialInput.current === null) initialInput.current = el.value;
+      }}
       aria-label={`${col.label}, ${row.title}`}
       // biome-ignore lint/a11y/noAutofocus: the input appears because the user just activated the cell
       autoFocus

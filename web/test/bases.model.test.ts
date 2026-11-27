@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { BaseQueryResponse } from "@brainmd/shared/base-types";
 import {
   byColumn,
+  matchKey,
   candidateKeys,
   cellCommit,
   cellInputType,
@@ -325,6 +326,7 @@ describe("cellInputType and byColumn", () => {
   test("native datetime input only for a local datetime or empty", () => {
     expect(cellInputType("datetime", "2026-01-01T10:00")).toBe("datetime-local");
     expect(cellInputType("datetime", null)).toBe("datetime-local");
+    expect(cellInputType("datetime", "2026-01-01T10:00:00")).toBe("text");
     expect(cellInputType("datetime", "2026-01-01T10:00:00Z")).toBe("text");
     expect(cellInputType("date", "2026-01-01")).toBe("date");
   });
@@ -332,5 +334,7 @@ describe("cellInputType and byColumn", () => {
     expect(byColumn({ "note.x": 1 }, "x")).toBe(1);
     expect(byColumn({ x: 2 }, "note.x")).toBe(2);
     expect(byColumn({ "file.name": 3 }, "x")).toBeUndefined();
+    expect(matchKey({ status: 1 }, "status")).toBe("status");
+    expect(matchKey({}, "status")).toBeUndefined();
   });
 });
