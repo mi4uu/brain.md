@@ -58,6 +58,8 @@ export function parseFilter(v: unknown, warn: (m: string) => void, depth = 0): F
       warn(`filter "${op}" must be a list`);
       return undefined;
     }
+    const extra = ["and", "or", "not"].filter((k) => k !== op && own(v, k) !== undefined);
+    if (extra.length > 0) warn(`filter uses "${op}"; ignored: ${extra.join(", ")}`);
     const kids = list.map((k) => parseFilter(k, warn, depth + 1)).filter((k): k is FilterNode => k !== undefined);
     return { [op]: kids } as FilterNode;
   }
@@ -72,11 +74,20 @@ function stringMap(v: unknown): Record<string, string> {
 }
 
 function parseView(v: unknown, i: number, warn: (m: string) => void): ViewConfig {
+  const pre = `view ${i + 1}:`;
+  if (!isRecord(v)) warn(`${pre} must be a mapping`);
   const o = isRecord(v) ? v : {};
-  const type = typeof o.type === "string" ? o.type : "table";
+  if (o.type !== undefined && (typeof o.type !== "string" || o.type === "")) warn(`${pre} "type" must be a non-empty string, using table`);
+  const type = typeof o.type === "string" && o.type !== "" ? o.type : "table";
+  for (const k of ["order", "groupOrder", "sort"] as const) {
+    if (o[k] !== undefined && !Array.isArray(o[k])) warn(`${pre} "${k}" must be a list`);
+  }
+  if (o.groupBy !== undefined && !(isRecord(o.groupBy) && typeof o.groupBy.property === "string")) warn(`${pre} "groupBy" needs a property`);
+  if (o.limit !== undefined && !(typeof o.limit === "number" && Number.isFinite(o.limit) && o.limit > 0)) warn(`${pre} "limit" must be a positive number`);
   const sort: SortSpec[] = [];
   for (const s of Array.isArray(o.sort) ? o.sort : []) {
     if (isRecord(s) && typeof s.property === "string") sort.push({ property: s.property, direction: direction(s.direction) });
+    else warn(`${pre} a "sort" entry needs a property`);
   }
   const gb = isRecord(o.groupBy) && typeof o.groupBy.property === "string" ? o.groupBy : null;
   const sizes: Record<string, number> = Object.create(null);
@@ -129,7 +140,7 @@ export function parseBase(source: string): ParsedBase {
 
   const viewsRaw = own(raw, "views");
   const views = Array.isArray(viewsRaw) ? viewsRaw.map((v, i) => parseView(v, i, warn)) : [];
-  if (viewsRaw !== undefined && !Array.isArray(viewsRaw)) warn('"views" must be a list');
+  if (viewsRaw !== undefined && viewsRaw !== null && !Array.isArray(viewsRaw)) warn('"views" must be a list');
 
   return {
     config: {

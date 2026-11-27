@@ -92,6 +92,16 @@ views:
     expect(v.summaries.n).toBe("Average");
   });
 
+  test("empty type becomes table without throwing", () => {
+    const r = parseBase('views:\n  - type: ""\n');
+    expect(r.config.views[0]).toMatchObject({ type: "table", name: "Table" });
+  });
+
+  test("null views is quiet; extra filter operators warn", () => {
+    expect(parseBase("views:\n").warnings).toEqual([]);
+    expect(parseBase("filters:\n  and: [a]\n  or: [b]\n").warnings).toEqual(['filter uses "and"; ignored: or']);
+  });
+
   test("empty source is a valid base with no views", () => {
     expect(parseBase("")).toMatchObject({ fatal: false, warnings: [], config: { views: [] } });
   });
@@ -103,7 +113,16 @@ views:
     expect(parseBase("- a\n- b").fatal).toBe(true);
     const odd = parseBase("filters: 5\nviews:\n  - type: 7\n    order: nope\n    sort: [1, {property: x}]\n");
     expect(odd.fatal).toBe(false);
-    expect(odd.warnings.length).toBeGreaterThan(0);
+    expect(odd.warnings).toEqual(expect.arrayContaining([
+      expect.stringContaining("a filter must be"),
+      expect.stringContaining('view 1: "type"'),
+      expect.stringContaining('view 1: "order" must be a list'),
+      expect.stringContaining('view 1: a "sort" entry'),
+    ]));
+    expect(parseBase("views:\n  - 3\n  - { limit: x }\n").warnings).toEqual(expect.arrayContaining([
+      "view 1: must be a mapping",
+      'view 2: "limit" must be a positive number',
+    ]));
     expect(odd.config.views[0]).toMatchObject({ type: "table", order: [], sort: [{ property: "x", direction: "ASC" }] });
   });
 
