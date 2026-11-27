@@ -22,9 +22,10 @@ export interface Budget {
   steps: number;
   max: number;
   hit: boolean;
-  // Characters of string work, shared by every note of one query: per-note steps alone let a
+  // Characters of text built by operations, shared by every note of one query: per-note steps alone let a
   // view churn gigabytes of short-lived text faster than the GC reclaims it.
   work?: { chars: number; max: number };
+  workHit?: boolean;
 }
 
 export interface Scope extends FnCtx {
@@ -100,10 +101,23 @@ function charge(s: Scope, ...vals: Value[]): void {
   let chars = 0;
   for (const v of vals) if (typeof v === "string") chars += v.length;
   s.budget.steps += chars >> 10;
-  const work = s.budget.work;
-  if (work) work.chars += chars;
-  if (s.budget.steps > s.budget.max || (work && work.chars > work.max)) {
+  if (s.budget.steps > s.budget.max) {
     s.budget.hit = true;
+    throw new BudgetExceeded();
+  }
+}
+
+// Only text an operation builds counts toward the query-wide cap; reading an operand is free there.
+function chargeBuilt(s: Scope, result: Value): void {
+  const work = s.budget.work;
+  if (!work) return;
+  let chars = 0;
+  if (typeof result === "string") chars = result.length;
+  else if (Array.isArray(result)) for (const v of result) if (typeof v === "string") chars += v.length;
+  work.chars += chars;
+  if (work.chars > work.max) {
+    s.budget.hit = true;
+    s.budget.workHit = true;
     throw new BudgetExceeded();
   }
 }
@@ -162,8 +176,11 @@ function ev(n: Node, s: Scope): Value {
           if (c === null) return false;
           return n.op === "<" ? c < 0 : n.op === "<=" ? c <= 0 : n.op === ">" ? c > 0 : c >= 0;
         }
-        default:
-          return arith(n.op, a, b, s);
+        default: {
+          const r = arith(n.op, a, b, s);
+          chargeBuilt(s, r);
+          return r;
+        }
       }
     }
     case "call": {
@@ -184,6 +201,7 @@ function ev(n: Node, s: Scope): Value {
           s.warn(`unsupported function "${callee.name}"`);
           return null;
         }
+        chargeBuilt(s, r);
         return r;
       }
       if (callee.t === "member") {
@@ -195,6 +213,7 @@ function ev(n: Node, s: Scope): Value {
           s.warn(`unsupported function "${callee.name}"`);
           return null;
         }
+        chargeBuilt(s, r);
         return r;
       }
       s.warn("unsupported call");
@@ -211,7 +230,11 @@ export function evaluate(n: Node, s: Scope): Value {
     return s.budget.hit ? null : v;
   } catch (e) {
     if (e instanceof BudgetExceeded) {
-      s.warn("evaluation budget exceeded for a note; its remaining expressions were skipped");
+      s.warn(
+        s.budget.workHit
+          ? "evaluation budget exceeded: the query-wide limit on text built by expressions was reached; remaining expressions were skipped"
+          : "evaluation budget exceeded for a note; its remaining expressions were skipped",
+      );
       return null;
     }
     s.warn("expression could not be evaluated");

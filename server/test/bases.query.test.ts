@@ -541,4 +541,13 @@ describe("robustness, round 4", () => {
     expect(free.total).toBe(10);
     expect(free.warnings).toEqual([]);
   });
+
+  test("reading long text is free against the query-wide cap; only built text counts", () => {
+    const desc = "a".repeat(2999) + "y";
+    const notes = Array.from({ length: 16000 }, (_, i) => entry(`bulk/n${i}.md`, { n: i, description: desc }));
+    const src = 'filters:\n  and:\n    - description.lower().contains("y")\n    - description.contains("y")\nviews:\n  - type: table\n    name: T\n    order: [file.name]\n    sort:\n      - property: n\n        direction: DESC\n    groupBy:\n      property: n\n';
+    const r = q(src, { idx: index({ entries: () => notes }), req: { limit: 5 } });
+    expect(r.total).toBe(16000);
+    expect(r.warnings).toEqual([]);
+  });
 });
