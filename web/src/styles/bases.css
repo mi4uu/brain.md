@@ -462,9 +462,24 @@
 .preview .doc .base-card:has(:focus-visible) {
   border-color: var(--border-strong);
 }
+@media (hover: hover) and (pointer: fine) {
+  .preview .doc .base-card {
+    transition: border-color var(--dur-fast) var(--ease);
+  }
+  .preview .doc .base-card:hover {
+    border-color: var(--border-strong);
+  }
+}
+/* Lighter than the column in both themes, so a board card reads as a sheet on it. */
+.preview .doc .base-col .base-card {
+  background: var(--bg-elev);
+}
+.preview .doc .base-card .base-more {
+  margin: -4px -8px -4px 0;
+}
 .preview .doc .base-card-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
 }
@@ -474,26 +489,32 @@
   overflow-wrap: anywhere;
 }
 .preview .doc .base-card-props {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px var(--space-2);
   margin: var(--space-1) 0 0;
-}
-.preview .doc .base-card-props div {
-  display: flex;
-  gap: var(--space-2);
-  min-width: 0;
   font-size: var(--text-xs);
   color: var(--text-2);
 }
+.preview .doc .base-card-props div {
+  display: contents;
+}
 .preview .doc .base-card-props dt {
-  flex: 0 0 auto;
   color: var(--text-3);
 }
 .preview .doc .base-card-props dd {
   margin: 0;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+@container base-view (max-width: 440px) {
+  .preview .doc .base-card-props {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0;
+  }
+  .preview .doc .base-card-props dd + dt {
+    margin-top: var(--space-1);
+  }
 }
 .preview .doc .base-cover {
   margin: calc(var(--space-2) * -1) calc(var(--space-3) * -1) var(--space-2);
@@ -512,7 +533,16 @@
   border-radius: 0;
 }
 .preview .doc .base-cover-ph {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
   background: var(--bg-surface-2);
+  color: var(--text-4);
+}
+.preview .doc .base-cover-ph svg {
+  width: 16px;
+  height: 16px;
 }
 
 .preview .doc .base-list {

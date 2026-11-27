@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { ImageIcon } from "@radix-ui/react-icons";
 import { api } from "../api/client";
 import { CellValue } from "./CellValue";
 import { RowMenu } from "./RowMenu";
@@ -57,14 +58,22 @@ function MediaImg({ path }: { path: string }) {
   }, [path, near]);
   return (
     <div ref={ref} className="base-cover-media">
-      {url ? <img src={url} alt="" /> : <div className="base-cover-ph" />}
+      {url ? <img src={url} alt="" /> : <CoverPlaceholder />}
+    </div>
+  );
+}
+
+function CoverPlaceholder() {
+  return (
+    <div className="base-cover-ph">
+      <ImageIcon aria-hidden />
     </div>
   );
 }
 
 function ExternalImg({ src }: { src: string }) {
   const [failed, setFailed] = useState(false);
-  if (failed) return <div className="base-cover-ph" />;
+  if (failed) return <CoverPlaceholder />;
   return <img src={src} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} />;
 }
 
