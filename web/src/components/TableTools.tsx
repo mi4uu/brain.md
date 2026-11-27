@@ -119,9 +119,10 @@ export function TableTools({ scrollerRef, docRef, content, html, onEditTable, ch
   const [tick, setTick] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const closedRef = useRef<Editing | null>(null);
-  const coarse = useMediaQuery("(hover: none)");
+  const noHoverUi = useMediaQuery("(hover: none), (pointer: coarse)");
   const [hover, setHover] = useState<TableKey | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
+  const toolsKey: TableKey | null = noHoverUi ? null : (drag ?? hover);
 
   // The end line is read from the rendered table at call time: a stored one
   // goes stale as soon as an edit changes the table's line count.
@@ -197,11 +198,12 @@ export function TableTools({ scrollerRef, docRef, content, html, onEditTable, ch
   useLayoutEffect(() => {
     const scroller = scrollerRef.current;
     const doc = docRef.current;
-    const key: TableKey | null = editing ?? drag ?? (coarse ? null : hover);
+    const key: TableKey | null = editing ?? toolsKey;
     const table = key && doc ? tableByLine(doc, key.line) : null;
     if (!scroller || !table) {
       setGeo(null);
       if (editing && !table) setEditing(null);
+      if (drag && !table) setDrag(null);
       return;
     }
     let editBox: Box | null = null;
@@ -219,7 +221,7 @@ export function TableTools({ scrollerRef, docRef, content, html, onEditTable, ch
       edit: editBox,
       limitRight: scroller.clientWidth + scroller.scrollLeft - 18,
     });
-  }, [scrollerRef, docRef, editing, drag, hover, coarse, html, tick]);
+  }, [scrollerRef, docRef, editing, toolsKey, drag, html, tick]);
 
   useEffect(() => {
     const doc = docRef.current;
@@ -253,51 +255,54 @@ export function TableTools({ scrollerRef, docRef, content, html, onEditTable, ch
   });
 
   const startDrag = (e: ReactPointerEvent<HTMLElement>, line: number, kind: "row" | "col", from: number) => {
+    if (e.button !== 0) return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     setDrag({ line, kind, from, boundary: from });
   };
 
-  const moveDrag = (e: ReactPointerEvent<HTMLElement>) => {
+  const boundaryAt = (d: DragState, e: ReactPointerEvent<HTMLElement>): number => {
     const scroller = scrollerRef.current;
-    if (!drag || !geo || !scroller) return;
+    if (!geo || !scroller) return d.boundary;
     const s = scroller.getBoundingClientRect();
-    const boundary =
-      drag.kind === "col"
-        ? boundaryIndex(
-            geo.head.map((c) => c.left + c.width / 2),
-            e.clientX - s.left + scroller.scrollLeft,
-          )
-        : boundaryIndex(
-            geo.body.map((r) => r.top + r.height / 2),
-            e.clientY - s.top + scroller.scrollTop,
-          );
+    return d.kind === "col"
+      ? boundaryIndex(
+          geo.head.map((c) => c.left + c.width / 2),
+          e.clientX - s.left + scroller.scrollLeft,
+        )
+      : boundaryIndex(
+          geo.body.map((r) => r.top + r.height / 2),
+          e.clientY - s.top + scroller.scrollTop,
+        );
+  };
+
+  const moveDrag = (e: ReactPointerEvent<HTMLElement>) => {
+    if (!drag) return;
+    const boundary = boundaryAt(drag, e);
     if (boundary !== drag.boundary) setDrag({ ...drag, boundary });
   };
 
-  const endDrag = () => {
+  const endDrag = (e: ReactPointerEvent<HTMLElement>) => {
     if (!drag) return;
     const d = drag;
-    const to = moveTarget(d.from, d.boundary);
+    const to = moveTarget(d.from, boundaryAt(d, e));
     setDrag(null);
     if (to !== d.from) {
       edit(d.line, (t) => (d.kind === "col" ? moveColumn(t, d.from, to) : moveRow(t, d.from, to)));
     }
   };
 
-  const key = hover ?? drag;
-
   return (
     <>
       {children}
       <div className="table-tools">
-        {!coarse && geo && !editing && key ? (
+        {toolsKey && geo && !editing ? (
           <HoverControls
             geo={geo}
             drag={drag}
-            onAddColumn={() => edit(key.line, (t) => insertColumn(t, t.header.length))}
-            onAddRow={() => edit(key.line, (t) => insertRow(t, t.rows.length))}
-            onGripDown={(e, kind, from) => startDrag(e, key.line, kind, from)}
+            onAddColumn={() => edit(toolsKey.line, (t) => insertColumn(t, t.header.length))}
+            onAddRow={() => edit(toolsKey.line, (t) => insertRow(t, t.rows.length))}
+            onGripDown={(e, kind, from) => startDrag(e, toolsKey.line, kind, from)}
             onGripMove={moveDrag}
             onGripUp={endDrag}
             onGripCancel={() => setDrag(null)}
@@ -338,7 +343,7 @@ interface HoverControlsProps {
   onAddRow: () => void;
   onGripDown: (e: ReactPointerEvent<HTMLElement>, kind: "row" | "col", from: number) => void;
   onGripMove: (e: ReactPointerEvent<HTMLElement>) => void;
-  onGripUp: () => void;
+  onGripUp: (e: ReactPointerEvent<HTMLElement>) => void;
   onGripCancel: () => void;
 }
 
@@ -358,6 +363,7 @@ function HoverControls({
     onPointerMove: onGripMove,
     onPointerUp: onGripUp,
     onPointerCancel: onGripCancel,
+    onLostPointerCapture: onGripCancel,
   });
   let drop: Box | null = null;
   if (drag?.kind === "col") {
