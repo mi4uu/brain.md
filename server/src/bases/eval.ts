@@ -86,14 +86,20 @@ function arith(op: string, a: Value, b: Value, s: Scope): Value {
       s.warn(`text longer than ${MAX_STRING} characters was dropped`);
       return null;
     }
-    s.budget.steps += len >> 10;
-    if (s.budget.steps > s.budget.max) {
-      s.budget.hit = true;
-      throw new BudgetExceeded();
-    }
     return sa + sb;
   }
   return null;
+}
+
+// Walking a long string costs steps in proportion to its length.
+function charge(s: Scope, ...vals: Value[]): void {
+  let chars = 0;
+  for (const v of vals) if (typeof v === "string") chars += v.length;
+  s.budget.steps += chars >> 10;
+  if (s.budget.steps > s.budget.max) {
+    s.budget.hit = true;
+    throw new BudgetExceeded();
+  }
 }
 
 function ev(n: Node, s: Scope): Value {
@@ -136,6 +142,7 @@ function ev(n: Node, s: Scope): Value {
       if (n.op === "||") return truthy(ev(n.l, s)) || truthy(ev(n.r, s));
       const a = ev(n.l, s);
       const b = ev(n.r, s);
+      charge(s, a, b);
       switch (n.op) {
         case "==":
           return looseEq(a, b);
@@ -164,7 +171,9 @@ function ev(n: Node, s: Scope): Value {
           if (truthy(ev(n.args[0]!, s))) return ev(n.args[1]!, s);
           return n.args[2] ? ev(n.args[2], s) : null;
         }
-        const r = callGlobal(callee.name, n.args.map((a) => ev(a, s)), s);
+        const args = n.args.map((a) => ev(a, s));
+        charge(s, ...args);
+        const r = callGlobal(callee.name, args, s);
         if (r === UNSUPPORTED) {
           s.warn(`unsupported function "${callee.name}"`);
           return null;
@@ -173,7 +182,9 @@ function ev(n: Node, s: Scope): Value {
       }
       if (callee.t === "member") {
         const recv = ev(callee.obj, s);
-        const r = callMethod(recv, callee.name, n.args.map((a) => ev(a, s)), s);
+        const args = n.args.map((a) => ev(a, s));
+        charge(s, recv, ...args);
+        const r = callMethod(recv, callee.name, args, s);
         if (r === UNSUPPORTED) {
           s.warn(`unsupported function "${callee.name}"`);
           return null;

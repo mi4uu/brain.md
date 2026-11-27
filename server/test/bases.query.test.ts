@@ -399,3 +399,45 @@ describe("robustness, round 2", () => {
     expect(q(src, { req: { offset: 1, limit: 1 } }).groups.some((g) => g.key === "Blocked")).toBe(false);
   });
 });
+
+describe("robustness, round 3", () => {
+  const manyNotes = (n: number) => Array.from({ length: n }, (_, i) => entry(`bulk/n${i}.md`, { n: i }));
+
+  const bigChain = () => {
+    const defs = ['  f0: \'"xxxxxxxxxx"\''];
+    for (let i = 1; i <= 13; i++) defs.push(`  f${i}: formula.f${i - 1} + formula.f${i - 1}`);
+    return defs;
+  };
+
+  test("string functions cost steps by input length", () => {
+    const calls = Array.from({ length: 230 }, (_, i) => (i % 2 ? ".upper()" : ".lower()")).join("");
+    const defs = [...bigChain(), `  s: formula.f13${calls}`];
+    const src = `formulas:\n${defs.join("\n")}\nfilters: formula.s.length > 0\nviews:\n  - type: table\n    name: T\n`;
+    const t0 = performance.now();
+    const r = q(src, { idx: index({ entries: () => manyNotes(200) }) });
+    expect(performance.now() - t0).toBeLessThan(2000);
+    expect(r.total).toBe(0);
+    expect(r.warnings.some((w) => w.includes("budget"))).toBe(true);
+  });
+
+  test("one budget per note across filter and cells", () => {
+    const ones = Array.from({ length: 300 }, () => "1").join(" + ");
+    const parts = Array.from({ length: 12 }, (_, i) => `f${i}`);
+    const defs = parts.map((f) => `  ${f}: ${ones}\n`).join("");
+    const sum = parts.map((f) => `formula.${f}`).join(" + ");
+    const r = q(`formulas:\n${defs}  heavy: ${sum}\nfilters: formula.heavy > 1\nviews:\n  - type: table\n    name: T\n    order: [file.name, formula.heavy]\n`);
+    expect(r.total).toBeGreaterThan(0);
+    expect(r.groups[0]!.rows[0]!.values["formula.heavy"]).toBeNull();
+  });
+
+  test("large cells are cut and the response is bounded", () => {
+    const cols = Array.from({ length: 20 }, (_, i) => `  c${i}: formula.f13 + "${i}"`);
+    const defs = [...bigChain(), ...cols];
+    const src = `formulas:\n${defs.join("\n")}\nviews:\n  - type: table\n    name: T\n    order: [${cols.map((_, i) => `formula.c${i}`).join(", ")}]\n`;
+    const r = q(src, { idx: index({ entries: () => manyNotes(1000) }), req: { limit: 1000 } });
+    expect(JSON.stringify(r).length).toBeLessThan(8_000_000);
+    expect(r.groups[0]!.rows[0]!.values["formula.c0"]).toHaveLength(10000);
+    expect(r.warnings.some((w) => w.includes("too large"))).toBe(true);
+    expect(r.warnings.some((w) => w.includes("cut"))).toBe(true);
+  });
+});

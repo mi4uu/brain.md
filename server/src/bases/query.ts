@@ -62,6 +62,8 @@ const DEFAULT_VIEW: ViewConfig = {
 };
 
 const WIKI = /^\[\[([^\]|#^]*)/;
+const MAX_CELL = 10_000;
+const MAX_RESPONSE_CHARS = 5_000_000;
 const DROP = Symbol("drop");
 const cap = (s: string): string => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
 
@@ -144,7 +146,6 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
   const memos = new Map<Scope, Map<string, Value>>();
   const release = (scope: Scope): void => {
     memos.get(scope)?.clear();
-    scope.budget.steps = 0;
   };
   const scopeFor = (e: QueryEntry): Scope => {
     const memo = new Map<string, Value>();
@@ -213,10 +214,7 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
       // A budget hit makes every expression of the note null; a `not` must not turn that into a pass.
       scope.budget.hit;
     release(scope);
-    if (out) {
-      memos.delete(scope);
-      continue;
-    }
+    if (out) continue;
     rows.push({ e, scope });
   }
 
@@ -280,8 +278,8 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
     if (isEmpty(v)) return null;
     const c = clean(toProp(v), from);
     if (c === DROP) return null;
-    if (Array.isArray(c)) return c.length === 0 ? null : c.map(String).join(", ");
-    return String(c);
+    const text = Array.isArray(c) ? (c.length === 0 ? null : c.map(String).join(", ")) : String(c);
+    return text === null ? null : text.slice(0, 1000);
   };
 
   const gb = view.groupBy;
@@ -314,8 +312,6 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
   const limit = Math.min(Math.max(1, wantLimit), MAX_QUERY_LIMIT);
   const offset = Number.isFinite(req.offset) ? Math.max(0, Math.floor(req.offset!)) : 0;
   const page = items.slice(offset, offset + limit);
-  const inPageSet = new Set(page);
-  for (const it of items) if (!inPageSet.has(it)) memos.delete(it.scope);
 
   const colKeys = view.order.length > 0 ? view.order : ["file.name"];
   const display = new Map<string, string>();
@@ -332,12 +328,37 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
 
   // The cover property of a cards view rides along in `values` without being a column.
   const valueKeys = view.image && !colKeys.includes(view.image) ? [...colKeys, view.image] : colKeys;
+  let spent = 0;
+  const fit = (v: PropValue, depth = 0): PropValue => {
+    if (typeof v === "string") {
+      if (v.length > MAX_CELL) {
+        warn(`a long value was cut to ${MAX_CELL} characters`);
+        v = v.slice(0, MAX_CELL);
+      }
+      spent += v.length;
+      return v;
+    }
+    spent += 8;
+    if (Array.isArray(v)) return v.map((x) => fit(x, depth + 1));
+    if (v && typeof v === "object" && depth < 4) {
+      const out: Record<string, PropValue> = Object.create(null);
+      for (const [k, x] of Object.entries(v)) out[k] = fit(x, depth + 1);
+      return out;
+    }
+    return v;
+  };
   const outRow = (it: Item) => {
     const values: Record<string, PropValue> = Object.create(null);
     for (const k of valueKeys) {
+      if (spent > MAX_RESPONSE_CHARS) {
+        warn("the response was too large; later cells were left empty");
+        values[k] = null;
+        continue;
+      }
       const c = clean(toProp(keyValue(k, it.scope)), it.e.path);
-      values[k] = c === DROP ? null : c;
+      values[k] = c === DROP ? null : fit(c);
     }
+    release(it.scope);
     return { path: it.e.path, title: it.e.title, revision: it.e.revision, values };
   };
 
