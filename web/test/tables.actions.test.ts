@@ -40,16 +40,39 @@ describe("table actions", () => {
     expect(act("delete-column").run(t, { row: 0, col: 0 }).header).toEqual(["b"]);
   });
 
-  test("follow points at where the selected cell lands", () => {
+  test("follow lands on the moved cell, or on the new row or column", () => {
     const big = parseTable(["| a | b | c |", "|---|---|---|", "| 1 | 2 | 3 |", "| 4 | 5 | 6 |", "| 7 | 8 | 9 |"])!;
     const at = { row: 1, col: 1 };
     const cell = (m: typeof big, r: number, c: number) => (r < 0 ? m.header[c] : m.rows[r]?.[c]);
     const following = TABLE_ACTIONS.filter((a) => a.follow).map((a) => a.id);
-    expect(following).toEqual(["row-up", "row-down", "col-move-left", "col-move-right"]);
-    for (const a of TABLE_ACTIONS.filter((x) => x.follow)) {
+    expect(following).toEqual([
+      "row-above",
+      "row-below",
+      "col-left",
+      "col-right",
+      "row-up",
+      "row-down",
+      "col-move-left",
+      "col-move-right",
+    ]);
+    for (const a of TABLE_ACTIONS.filter((x) => x.group === "move")) {
       const next = a.run(big, at);
       expect(cell(next, at.row + a.follow!.row, at.col + a.follow!.col)).toBe("5");
     }
+    for (const a of TABLE_ACTIONS.filter((x) => x.group === "insert")) {
+      const next = a.run(big, at);
+      const r = at.row + a.follow!.row;
+      const c = at.col + a.follow!.col;
+      const line = a.id.startsWith("row") ? next.rows[r] : next.rows.map((row) => row[c]);
+      expect({ id: a.id, line }).toEqual({ id: a.id, line: Array(line?.length ?? 0).fill("") });
+      expect(line?.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("Row below from the header lands on the first body row", () => {
+    const a = TABLE_ACTIONS.find((x) => x.id === "row-below")!;
+    const next = a.run(t, { row: -1, col: 0 });
+    expect(next.rows[-1 + a.follow!.row]).toEqual(["", ""]);
   });
 
   test("align and delete row", () => {

@@ -22,7 +22,7 @@ export interface TableAction {
   group: ActionGroup;
   enabled: (t: MdTable, at: CellRef) => boolean;
   run: (t: MdTable, at: CellRef) => MdTable;
-  /** Where the acted-on cell ends up, relative to `at`; set only when it moves. */
+  /** Where the selection goes, relative to `at`: the moved cell, or the new row or column. */
   follow?: CellRef;
 }
 
@@ -42,21 +42,25 @@ export const TABLE_ACTIONS: TableAction[] = [
     id: "row-above", label: "Insert row above", shortLabel: "Row above", group: "insert",
     enabled: (_t, at) => at.row >= 0,
     run: (t, at) => insertRow(t, at.row),
+    follow: { row: 0, col: 0 },
   },
   {
     id: "row-below", label: "Insert row below", shortLabel: "Row below", group: "insert",
     enabled: () => true,
     run: (t, at) => insertRow(t, at.row + 1),
+    follow: { row: 1, col: 0 },
   },
   {
     id: "col-left", label: "Insert column left", shortLabel: "Col left", group: "insert",
     enabled: () => true,
     run: (t, at) => insertColumn(t, at.col),
+    follow: { row: 0, col: 0 },
   },
   {
     id: "col-right", label: "Insert column right", shortLabel: "Col right", group: "insert",
     enabled: () => true,
     run: (t, at) => insertColumn(t, at.col + 1),
+    follow: { row: 0, col: 1 },
   },
   {
     id: "row-up", label: "Move row up", shortLabel: "Row up", group: "move",
