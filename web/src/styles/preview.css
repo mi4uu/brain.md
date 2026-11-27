@@ -1,9 +1,11 @@
 .preview {
+  container: preview / inline-size;
+  --preview-gutter: var(--space-5);
   position: relative;
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: var(--space-5) var(--space-5) var(--space-7);
+  padding: var(--space-5) var(--preview-gutter) var(--space-7);
 }
 
 .preview .doc {

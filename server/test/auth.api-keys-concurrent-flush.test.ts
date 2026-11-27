@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Vault } from "../src/vault/vault";
 import { APIKeyStore } from "../src/auth/api-keys";
+import { waitForJson } from "./wait-for-json";
 
 let dir!: string;
 
@@ -25,11 +26,8 @@ describe("APIKeyStore: concurrent flushes", () => {
 
     // Each create() schedules a debounced flush; firing them back to back
     // used to race on a fixed, non-exclusive "<abs>.tmp" path.
-    await new Promise((r) => setTimeout(r, 300));
-
     const abs = join(dir, ".brain", "api-keys.json");
-    const raw = await readFile(abs, "utf8");
-    const parsed = JSON.parse(raw); // throws if the file is half-written/corrupt
+    const parsed = await waitForJson(abs, (v) => v.keys?.length === 10);
     expect(parsed.version).toBe(1);
     expect(parsed.keys.length).toBe(10);
     const ids = new Set(parsed.keys.map((k: { id: string }) => k.id));
@@ -51,10 +49,8 @@ describe("APIKeyStore: concurrent flushes", () => {
     // first flush is still in flight.
     store.revoke(k2.id);
 
-    await new Promise((r) => setTimeout(r, 300));
-
     const abs = join(dir, ".brain", "api-keys.json");
-    const parsed = JSON.parse(await readFile(abs, "utf8"));
+    const parsed = await waitForJson(abs, (v) => v.keys?.length === 1);
     expect(parsed.keys.length).toBe(1);
     expect(parsed.keys[0].id).toBe(k1.id);
 

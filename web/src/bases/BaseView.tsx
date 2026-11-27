@@ -1,0 +1,278 @@
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { parseBase, type ViewConfig } from "@brainmd/shared/base-parse";
+import { MAX_QUERY_LIMIT, type BaseQueryResponse } from "@brainmd/shared/base-types";
+import { ExclamationTriangleIcon, PlusIcon } from "@radix-ui/react-icons";
+import { BaseYamlError, addView } from "@brainmd/shared/base-yaml";
+import { setProperties, type PropValue } from "@brainmd/shared/frontmatter";
+import type { PropertyType } from "@brainmd/shared/property-types";
+import { ConflictError, api } from "../api/client";
+import { BaseToolbar } from "./BaseToolbar";
+import { CardsView } from "./CardsView";
+import { KanbanView } from "./KanbanView";
+import { ListView } from "./ListView";
+import { TableView } from "./TableView";
+import type { BaseHost } from "./host";
+import { candidateKeys, naturalWidth, optionType, partialHit, patchRowRevision, plainError, viewIndexFor } from "./model";
+import { buildNoteContent, planNewNote, uniqueNotePath } from "./new-note";
+import { FilterPopover, PropertiesPopover, SortPopover, type KeyOption } from "./ToolbarPopovers";
+import { blockKey, emitBaseRefresh, getActiveView, getCached, getLast, getOpenTool, onBaseRefresh, setActiveView, setCached, setOpenTool } from "./store";
+import type { LayoutProps, PropChange, Row } from "./types";
+
+export interface BaseViewProps {
+  source: string;
+  startLine: number;
+  ordinal: number;
+  notePath: string | null;
+  host: BaseHost;
+}
+
+let typesCache: { at: number; value: Promise<Map<string, PropertyType>> } | null = null;
+function loadVaultTypes(): Promise<Map<string, PropertyType>> {
+  if (!typesCache || Date.now() - typesCache.at > 30_000) {
+    typesCache = {
+      at: Date.now(),
+      value: api
+        .properties()
+        .then((list) => new Map(list.map((p) => [p.name, p.type] as [string, PropertyType])))
+        .catch(() => new Map<string, PropertyType>()),
+    };
+  }
+  return typesCache.value;
+}
+
+const DEFAULT_VIEW: ViewConfig = { type: "table", name: "Table", order: [], sort: [], groupOrder: [], columnSize: {}, summaries: {} };
+
+export function BaseView({ source, startLine, ordinal, notePath, host }: BaseViewProps) {
+  const key = blockKey(notePath, ordinal);
+  const parsed = useMemo(() => parseBase(source), [source]);
+  const [activeName, setActiveName] = useState<string | undefined>(() => getActiveView(key));
+  const fingerprint = `${source}\u0000${notePath ?? ""}\u0000${activeName ?? ""}`;
+  const fingerprintRef = useRef(fingerprint);
+  fingerprintRef.current = fingerprint;
+  const [result, setResult] = useState<BaseQueryResponse | null>(() => getCached(key, fingerprint) ?? getLast(key) ?? null);
+  const resultRef = useRef(result);
+  resultRef.current = result;
+  const [openTool, setOpenToolState] = useState<string | null>(() => getOpenTool(key));
+  const toolOpen = (name: string) => ({
+    open: openTool === name,
+    onOpenChange: (o: boolean) => {
+      const next = o ? name : null;
+      setOpenToolState(next);
+      setOpenTool(key, next);
+    },
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+  const [vaultTypes, setVaultTypes] = useState<Map<string, PropertyType>>(new Map());
+
+  useEffect(() => onBaseRefresh(() => setTick((t) => t + 1)), []);
+  useEffect(() => {
+    const refresh = () => setTick((t) => t + 1);
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, []);
+  useEffect(() => {
+    let live = true;
+    void loadVaultTypes().then((m) => live && setVaultTypes(m));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // A mount paints the cached result at once but still fetches: Preview keeps
+  // roots across keystrokes and fence edits, so a fresh mount means the note
+  // was reopened or its blocks changed, and other notes may have changed meanwhile.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: tick is the refresh trigger
+  useEffect(() => {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => {
+      api
+        .baseQuery({ source, view: activeName, thisPath: notePath ?? undefined, limit: MAX_QUERY_LIMIT }, ctl.signal)
+        .then((r) => {
+          setCached(key, fingerprint, r);
+          setResult(r);
+          setError(null);
+        })
+        .catch((e: unknown) => {
+          if (ctl.signal.aborted || (e instanceof Error && e.name === "AbortError")) return;
+          setError(plainError(e));
+        });
+    }, 200);
+    return () => {
+      clearTimeout(timer);
+      ctl.abort();
+    };
+  }, [key, fingerprint, tick, source, activeName, notePath]);
+
+  const views = parsed.config.views;
+  const viewIndex = viewIndexFor(
+    views.map((v) => v.name),
+    activeName ?? result?.view,
+  );
+  const view = views[viewIndex] ?? DEFAULT_VIEW;
+
+  const editView = useCallback(
+    (fn: (src: string, idx: number) => string): boolean => {
+      try {
+        const ok = host.editFence(
+          startLine,
+          (src) => {
+            const withView = parseBase(src).config.views.length > 0 ? src : addView(src, { type: "table", name: "Table" });
+            return fn(withView, viewIndex);
+          },
+          source,
+        );
+        if (!ok) host.toast("Could not find this block in the note");
+        return ok;
+      } catch (e) {
+        host.toast(e instanceof BaseYamlError ? `Edit the block in the source: ${e.message}` : `Edit failed: ${plainError(e)}`);
+        return false;
+      }
+    },
+    [host, startLine, viewIndex, source],
+  );
+
+  const saveProps = useCallback(
+    async (row: Row, change: PropChange, optimistic?: (r: BaseQueryResponse) => BaseQueryResponse): Promise<boolean> => {
+      const cut = partialHit(row, change);
+      if (cut !== null) {
+        host.toast(`${cut} was shortened for display, so it cannot be edited here`);
+        return false;
+      }
+      if (optimistic) setResult((r) => (r ? optimistic(r) : r));
+      if (row.path === host.currentPath()) {
+        try {
+          host.edit((text) => setProperties(text, change.set ?? {}, change.unset));
+          return true;
+        } catch (e) {
+          host.toast(`Property edit refused: ${plainError(e)}`);
+          setTick((t) => t + 1);
+          return false;
+        }
+      }
+      try {
+        const res = await api.patchNoteProperties(row.path, { set: change.set, unset: change.unset, baseRevision: row.revision });
+        const revision = res.revision;
+        if (revision) {
+          setResult((r) => (r ? patchRowRevision(r, row.path, revision) : r));
+          const shown = resultRef.current;
+          if (shown) setCached(key, fingerprintRef.current, patchRowRevision(shown, row.path, revision));
+        }
+        emitBaseRefresh();
+        return true;
+      } catch (e) {
+        host.toast(e instanceof ConflictError ? `${row.title} changed meanwhile, refreshed` : `Save failed: ${plainError(e)}`);
+        emitBaseRefresh();
+        return false;
+      }
+    },
+    [host, key],
+  );
+
+  const newNote = useCallback(
+    async (preset?: Record<string, PropValue>): Promise<void> => {
+      const plan = planNewNote([parsed.config.filters, view.filters], preset);
+      const tried = new Set<string>();
+      for (let attempt = 0; attempt < 5; attempt++) {
+        let path: string;
+        try {
+          path = uniqueNotePath(plan.folder, (p) => host.noteExists(p) || tried.has(p.toLowerCase()));
+        } catch {
+          break;
+        }
+        const title = path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/, "");
+        if ((await host.createNote(path, buildNoteContent(title, plan.props))) !== "exists") return;
+        tried.add(path.toLowerCase());
+      }
+      host.toast("Could not find a free note name");
+    },
+    [host, parsed.config.filters, view.filters],
+  );
+
+  if (!result) {
+    return (
+      <div className="base-view" aria-busy={!error}>
+        {error ? <Problem kind="error">Could not run this view: {error}</Problem> : <p className="base-empty">Loading…</p>}
+      </div>
+    );
+  }
+
+  const options: KeyOption[] = candidateKeys(
+    [...vaultTypes.keys()],
+    Object.keys(parsed.config.formulas),
+    result.columns.map((c) => c.key),
+  ).map((k) => ({
+    key: k,
+    label: result.columns.find((c) => c.key === k)?.label ?? k.replace(/^(file|note)\./, ""),
+    type: optionType(k, result.columns, vaultTypes),
+  }));
+  const layout: LayoutProps = { result, config: parsed.config, view, vaultTypes, host, saveProps, editView, newNote };
+  const type = result.views[viewIndex]?.type ?? "table";
+  const warnings = result.warnings;
+  const empty = result.groups.every((g) => g.rows.length === 0) && type !== "kanban";
+  const natural = empty ? null : naturalWidth(type, result, { columnSize: view.columnSize, grouped: !!view.groupBy });
+
+  return (
+    <div className="base-view" data-layout={type} style={natural === null ? undefined : ({ "--base-natural": `${natural}px` } as CSSProperties)}>
+      <BaseToolbar
+        result={result}
+        viewIndex={viewIndex}
+        onSwitch={(name) => {
+          setActiveView(key, name);
+          setActiveName(name);
+        }}
+        editView={editView}
+        toast={host.toast}
+        tools={
+          <>
+            <SortPopover view={view} options={options} editView={editView} {...toolOpen("sort")} />
+            <FilterPopover view={view} options={options} editView={editView} {...toolOpen("filter")} />
+            <PropertiesPopover view={view} options={options} editView={editView} {...toolOpen("properties")} />
+            <button type="button" className="btn base-btn" aria-label="New note" onClick={() => void newNote()}>
+              <PlusIcon aria-hidden />
+              <span className="base-btn-text">New</span>
+            </button>
+          </>
+        }
+      />
+      {error ? <Problem kind="error">Could not refresh: {error}</Problem> : null}
+      {warnings.length > 0 ? (
+        <Problem kind="warn">
+          {warnings[0]}
+          {warnings.length > 1 ? (
+            <details className="base-warn-more">
+              <summary>{warnings.length - 1} more</summary>
+              <ul>
+                {warnings.slice(1).map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+        </Problem>
+      ) : null}
+      {empty ? (
+        <p className="base-empty">{view.filters ? "No notes match this view. Check Filter." : "No notes match this view."}</p>
+      ) : type === "table" ? (
+        <TableView {...layout} />
+      ) : type === "cards" ? (
+        <CardsView {...layout} />
+      ) : type === "list" ? (
+        <ListView {...layout} />
+      ) : type === "kanban" ? (
+        <KanbanView {...layout} />
+      ) : (
+        <p className="base-empty">The {type} layout is not supported yet. The view keeps its settings.</p>
+      )}
+    </div>
+  );
+}
+
+function Problem({ kind, children }: { kind: "error" | "warn"; children: ReactNode }) {
+  return (
+    <div className={`base-warn base-warn-${kind}`} role={kind === "error" ? "alert" : "status"}>
+      <ExclamationTriangleIcon className="base-warn-icon" aria-hidden />
+      <div className="base-warn-body">{children}</div>
+    </div>
+  );
+}

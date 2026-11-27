@@ -11,7 +11,7 @@ The endpoint shares auth with the rest of the HTTP API: when a password
 or a login provider is configured, every request needs a bearer token
 (session, API key or OAuth access token).
 
-## Tools (19)
+## Tools (20)
 
 | Tool                  | Read-only | Folder perm | What it does                                                       |
 |-----------------------|-----------|-------------|--------------------------------------------------------------------|
@@ -19,6 +19,7 @@ or a login provider is configured, every request needs a bearer token
 | `similar_notes`       | yes       | read        | Semantic RAG search, top-k chunks (needs RAG enabled)              |
 | `read_note`           | yes       | read        | Note body, mtime, revision, parsed `properties`; links the MCP Apps note view |
 | `list_notes`          | yes       | read        | Notes and folders, 100 notes per page (`limit`, `offset`, `folder`, `include_hidden`) |
+| `query_notes`         | yes       | read        | Notes as a table: a `filter` expression, `columns`, `sort`, or a `base` / `path` view; 50 rows per page, `warnings` for syntax it cannot run |
 | `get_backlinks`       | yes       | read        | Inbound wikilinks with line and context, 50 per page               |
 | `graph_view`          | yes       | read        | Notes and wikilinks: vault, `folder`, or `center` + `depth` hops   |
 | `list_tags`           | yes       | read        | Tags with counts, most used first, 100 per page                    |
@@ -56,6 +57,30 @@ prompt:
 
 Annotations are hints for the host. Access is enforced by brain.md: the
 caller's scope (owner, API key, OAuth grant) plus per-folder permissions.
+
+### query_notes
+
+Runs a view over the notes, like an Obsidian Base. Pass one of `base` (the YAML
+of a base), `path` (a `.md` note holding a ```` ```base ```` fence; `view` picks
+the fence by view name, else the first one is used, and `this` is that note), or
+the simple form `filter`, `columns` and `sort`. Combining forms is an
+`INVALID_ARGUMENT` error; a note without a fence is `NO_BASE_BLOCK`. Syntax the
+engine cannot run comes back in `warnings`, not as an error. Rows respect the
+caller's per-folder read permissions and skip hidden notes.
+
+Each row is `{ path, title, revision, values, partial? }`, plus `group` (the
+label) and `group_key` (the raw key, `null` for "No value") when the view is
+grouped. `revision` is what `update_properties` takes as `base_revision`.
+`partial` lists the keys whose value is not the whole stored value: a cell cut
+at 500 characters by `query_notes`, or cut or shortened by the engine. Never
+write such a value back. Pages are 50 rows by default and stop early at about
+200 KB; the engine also ends a page early when a very wide view would make the
+response too large. In both cases `next_offset` continues where the page
+stopped, and `total` counts every matching row.
+
+`path` also runs fences indented inside a list item. The note preview renders
+only top-level fences, so such a fence shows as plain code there but still runs
+through `query_notes`.
 
 ### Paging
 

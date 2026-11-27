@@ -28,6 +28,10 @@ import { SyncConnector } from "./components/SyncConnector";
 import { gitApi, type GitStatus } from "./api/git";
 import { metaApi, type FolderMeta } from "./api/meta";
 import { isMediaName } from "./renderer/render";
+import type { BaseHost } from "./bases/host";
+import { fenceEdit } from "./bases/edit";
+import { caseInsensitiveExists } from "./bases/new-note";
+import { emitBaseRefresh } from "./bases/store";
 import {
   MenuIcon,
   MoonIcon,
@@ -115,6 +119,7 @@ import "./styles/history.css";
 import "./styles/graph.css";
 import "./styles/changes.css";
 import "./styles/properties.css";
+import "./styles/bases.css";
 import "./styles/hljs.css";
 import "katex/dist/katex.min.css";
 
@@ -769,6 +774,7 @@ export function App() {
       try {
         const result = await api.writeNote(p, c, noteRevisionRef.current);
         noteRevisionRef.current = result.revision;
+        emitBaseRefresh();
       } catch (e) {
         if (e instanceof ConflictError) showConflictToast(p, c);
         else setToast(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -866,6 +872,54 @@ export function App() {
       }
     },
     [openNote, refreshTree],
+  );
+
+  // What ```base views in the preview need from the app. The ref keeps the
+  // host stable, so Preview mounts views without re-rendering them, while it
+  // still reads the latest path, tree and callbacks.
+  const noteExists = useMemo(() => caseInsensitiveExists([...tree.notes, ...(tree.hiddenNotes ?? [])]), [tree]);
+  const baseLatest = useRef({ path, noteExists, openNote, resolveWikilink, refreshTree });
+  baseLatest.current = { path, noteExists, openNote, resolveWikilink, refreshTree };
+  const baseHost = useMemo<BaseHost>(
+    () => ({
+      currentPath: () => baseLatest.current.path,
+      edit: editContent,
+      editFence: (startLine, mutate, expected) => {
+        let found = false;
+        editContent((text) => {
+          const edit = fenceEdit(text, startLine, mutate, expected);
+          if (!edit) return text;
+          found = true;
+          return applyEdit(text, edit);
+        });
+        return found;
+      },
+      openNote: (p) => void baseLatest.current.openNote(p),
+      openLink: (target, from) => {
+        const p = baseLatest.current.resolveWikilink(target, from);
+        if (p) void baseLatest.current.openNote(p);
+        else setToast(`No note named ${target}`);
+      },
+      noteExists: (p) => baseLatest.current.noteExists(p),
+      createNote: async (p, c) => {
+        try {
+          await api.writeNote(p, c, undefined, { createOnly: true });
+        } catch (e) {
+          if (e instanceof ConflictError) return "exists";
+          setToast(`Create failed: ${e instanceof Error ? e.message : String(e)}`);
+          return "failed";
+        }
+        try {
+          await baseLatest.current.refreshTree();
+          await baseLatest.current.openNote(p, { edit: true });
+        } catch (e) {
+          setToast(`Created ${p}, but could not open it: ${e instanceof Error ? e.message : String(e)}`);
+        }
+        return "created";
+      },
+      toast: (m) => setToast(m),
+    }),
+    [editContent],
   );
 
   // [[link]] to a note that doesn't exist: ask, then create it. A bare name
@@ -1678,6 +1732,7 @@ export function App() {
             }}
             onScrollLine={onPreviewScrollLine}
             onSelectLine={onPreviewSelectLine}
+            baseHost={baseHost}
             onEditTable={path ? onEditTable : undefined}
           />
         </section>

@@ -1,0 +1,302 @@
+import { useLayoutEffect, useRef, useState } from "react";
+import { ArrowDownIcon, ArrowUpIcon, CaretSortIcon, Cross2Icon, EyeNoneIcon, EyeOpenIcon, MixerHorizontalIcon, PlusIcon } from "@radix-ui/react-icons";
+import type { ViewConfig } from "@brainmd/shared/base-parse";
+import type { SortSpec } from "@brainmd/shared/base-types";
+import { setViewFilters, setViewOrder, setViewSort } from "@brainmd/shared/base-yaml";
+import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
+import { filtersFrom, flatFilters } from "./model";
+import {
+  FILTER_OPS,
+  type FilterOp,
+  type KeyOption,
+  addSort,
+  buildFilter,
+  flipSort,
+  hiddenOptions,
+  hideColumn,
+  labelOf,
+  optionKeyFor,
+  refocusIndex,
+  removeSort,
+  replaceFilter,
+  setSortProperty,
+  shiftColumn,
+  showColumn,
+  sortChoices,
+  wasApplied,
+} from "./toolbar";
+
+export type { KeyOption };
+
+type EditView = (fn: (source: string, viewIndex: number) => string) => boolean | void;
+
+const CONTROLS = "button, input, select";
+const isOff = (el: Element): boolean => (el as HTMLButtonElement).disabled === true;
+
+// An edit can remove or disable the focused control (a removed filter row, a
+// column moved to the end), and focus then drops to the page. Put it on the
+// nearest control so the keyboard stays where the user was.
+function useKeepFocus(view: ViewConfig) {
+  const ref = useRef<HTMLDivElement>(null);
+  const last = useRef<{ el: HTMLElement; index: number } | null>(null);
+  const onFocus = (e: React.FocusEvent<HTMLDivElement>) => {
+    const el = e.target as HTMLElement;
+    const index = [...(ref.current?.querySelectorAll(CONTROLS) ?? [])].indexOf(el);
+    last.current = index >= 0 ? { el, index } : null;
+  };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new view is the edit that may have taken the focused control
+  useLayoutEffect(() => {
+    const box = ref.current;
+    const lost = last.current;
+    if (!box || !lost || (lost.el.isConnected && !isOff(lost.el))) return;
+    const active = document.activeElement;
+    if (active && active !== lost.el && active !== document.body) return;
+    const list = [...box.querySelectorAll<HTMLElement>(CONTROLS)];
+    const own = list.indexOf(lost.el);
+    const rowEl = own >= 0 ? lost.el.closest(".base-pop-row") : null;
+    const row = rowEl ? list.flatMap((el, i) => (rowEl.contains(el) ? [i] : [])) : [];
+    const i = refocusIndex(list.map((el) => !isOff(el)), own >= 0 ? own : lost.index, row);
+    (i === null ? box : list[i]!).focus({ preventScroll: true });
+  }, [view]);
+  return { ref, onFocus };
+}
+
+// Radix focuses the first field on open, which after a mouse click shows a
+// focus ring and invites overwriting a filter. Focus the popover itself
+// instead, so Tab still starts inside it.
+function focusBox(e: Event, box: HTMLElement | null, field?: HTMLElement | null) {
+  e.preventDefault();
+  const coarse = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+  (field && !coarse ? field : box)?.focus({ preventScroll: true });
+}
+
+const POP = { align: "end", collisionPadding: 16 } as const;
+
+interface OpenProps {
+  open: boolean;
+  onOpenChange(open: boolean): void;
+}
+
+export function SortPopover({ view, options, editView, open, onOpenChange }: { view: ViewConfig; options: KeyOption[]; editView: EditView } & OpenProps) {
+  const set = (next: SortSpec[] | null) => { if (next) editView((src, i) => setViewSort(src, i, next)); };
+  const canAdd = addSort(view.sort, options) !== null;
+  const keep = useKeepFocus(view);
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger asChild>
+        <button type="button" className={view.sort.length > 0 ? "btn base-btn base-btn-on" : "btn base-btn"} aria-label="Sort">
+          <CaretSortIcon aria-hidden />
+          <span className="base-btn-text">Sort</span>
+          {view.sort.length > 0 ? <span className="base-count">{view.sort.length}</span> : null}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent {...POP} className="base-pop" ref={keep.ref} onFocus={keep.onFocus} onOpenAutoFocus={(e) => focusBox(e, keep.ref.current)}>
+        {view.sort.length === 0 ? <p className="base-hint">No sort. Rows follow file name.</p> : null}
+        {view.sort.map((s, i) => {
+          const value = optionKeyFor(options, s.property);
+          const choices = sortChoices(view.sort, options, i);
+          return (
+            <div className="base-pop-row" key={`${s.property}-${i}`}>
+              <select
+                className="base-select"
+                aria-label="Sort property"
+                value={value}
+                onChange={(e) => set(setSortProperty(view.sort, i, e.target.value))}
+              >
+                {!choices.some((o) => o.key === value) ? <option value={value}>{labelOf(options, s.property)}</option> : null}
+                {choices.map((o) => (
+                  <option key={o.key} value={o.key}>{o.label}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="btn base-btn icon"
+                aria-label={`Direction ${s.direction === "ASC" ? "ascending" : "descending"}, switch`}
+                onClick={() => set(flipSort(view.sort, i))}
+              >
+                {s.direction === "ASC" ? <ArrowUpIcon aria-hidden /> : <ArrowDownIcon aria-hidden />}
+              </button>
+              <button type="button" className="btn base-btn icon" aria-label="Remove sort" onClick={() => set(removeSort(view.sort, i))}>
+                <Cross2Icon aria-hidden />
+              </button>
+            </div>
+          );
+        })}
+        <button type="button" className="btn base-btn" disabled={!canAdd} onClick={() => set(addSort(view.sort, options))}>
+          <PlusIcon aria-hidden /> Add sort
+        </button>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+export function FilterPopover({ view, options, editView, open, onOpenChange }: { view: ViewConfig; options?: KeyOption[]; editView: EditView } & OpenProps) {
+  const flat = flatFilters(view.filters);
+  const props = options ?? [];
+  const [draft, setDraft] = useState("");
+  const [key, setKey] = useState("");
+  const [op, setOp] = useState<FilterOp>("is");
+  const [value, setValue] = useState("");
+  const [rev, setRev] = useState(0);
+  // Rows are uncontrolled; the ref holds what is typed so Remove and Add act on the latest text.
+  const texts = useRef<string[]>([]);
+  const seen = useRef("");
+  const sig = JSON.stringify(flat);
+  if (seen.current !== sig) {
+    seen.current = sig;
+    texts.current = flat ? [...flat] : [];
+  }
+  const commit = (next: string[]): boolean => {
+    const ok = wasApplied(editView((src, i) => setViewFilters(src, i, filtersFrom(next))));
+    if (!ok) {
+      texts.current = flat ? [...flat] : [];
+      setRev((r) => r + 1);
+    }
+    return ok;
+  };
+  const keepFocus = { onMouseDown: (e: React.MouseEvent) => e.preventDefault(), "data-filter-action": "" };
+  const chosen = props.find((o) => o.key === (key || props[0]?.key));
+  const meta = FILTER_OPS.find((o) => o.id === op)!;
+  const built = buildFilter(chosen?.key ?? "", op, value, chosen?.type);
+  const keep = useKeepFocus(view);
+  const newFilter = useRef<HTMLInputElement>(null);
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger asChild>
+        <button type="button" className={flat === null || flat.length > 0 ? "btn base-btn base-btn-on" : "btn base-btn"} aria-label="Filter">
+          <MixerHorizontalIcon aria-hidden />
+          <span className="base-btn-text">Filter</span>
+          {flat === null || flat.length > 0 ? <span className="base-count">{flat === null ? "…" : flat.length}</span> : null}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent {...POP} className="base-pop base-pop-wide" ref={keep.ref} onFocus={keep.onFocus} onOpenAutoFocus={(e) => focusBox(e, keep.ref.current, newFilter.current)}>
+        {flat === null ? (
+          <p className="base-hint">This filter uses nested and / or / not groups. Edit it in the block source.</p>
+        ) : (
+          <>
+            <p className="base-hint">All of these must hold. Example: status == "Todo"</p>
+            {flat.map((expr, i) => (
+              <div className="base-pop-row" key={`${rev}:${i}:${expr}`}>
+                <input
+                  className="base-input"
+                  aria-label={`Filter ${i + 1}`}
+                  defaultValue={expr}
+                  spellCheck={false}
+                  onChange={(e) => {
+                    texts.current[i] = e.target.value;
+                  }}
+                  onBlur={(e) => {
+                    if (e.relatedTarget instanceof HTMLElement && e.relatedTarget.hasAttribute("data-filter-action")) return;
+                    const next = replaceFilter(flat, i, e.target.value);
+                    if (next) commit(next);
+                  }}
+                  onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                />
+                <button type="button" className="btn base-btn icon" aria-label="Remove filter" {...keepFocus} onClick={() => commit(texts.current.filter((_, j) => j !== i))}>
+                  <Cross2Icon aria-hidden />
+                </button>
+              </div>
+            ))}
+            {props.length > 0 ? (
+              <div className="base-pop-row base-pop-wrap">
+                <select className="base-select" aria-label="Filter property" value={key || props[0]!.key} onChange={(e) => setKey(e.target.value)}>
+                  {props.map((o) => (
+                    <option key={o.key} value={o.key}>{o.label}</option>
+                  ))}
+                </select>
+                <select className="base-select" aria-label="Filter operator" value={op} onChange={(e) => setOp(e.target.value as FilterOp)}>
+                  {FILTER_OPS.map((o) => (
+                    <option key={o.id} value={o.id}>{o.label}</option>
+                  ))}
+                </select>
+                {meta.needsValue ? (
+                  <input className="base-input" aria-label="Filter value" value={value} onChange={(e) => setValue(e.target.value)} />
+                ) : null}
+                <button
+                  type="button"
+                  className="btn base-btn icon"
+                  aria-label="Add filter from builder"
+                  disabled={built === null}
+                  {...keepFocus}
+                  onClick={() => {
+                    if (built !== null && commit([...texts.current, built])) setValue("");
+                  }}
+                >
+                  <PlusIcon aria-hidden />
+                </button>
+              </div>
+            ) : null}
+            <div className="base-pop-row">
+              <input
+                ref={newFilter}
+                className="base-input"
+                aria-label="New filter"
+                placeholder='file.hasTag("work")'
+                value={draft}
+                spellCheck={false}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && draft.trim() && commit([...texts.current, draft])) setDraft("");
+                }}
+              />
+              <button
+                type="button"
+                className="btn base-btn icon"
+                aria-label="Add filter"
+                disabled={!draft.trim()}
+                {...keepFocus}
+                onClick={() => {
+                  if (commit([...texts.current, draft])) setDraft("");
+                }}
+              >
+                <PlusIcon aria-hidden />
+              </button>
+            </div>
+          </>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+export function PropertiesPopover({ view, options, editView, open, onOpenChange }: { view: ViewConfig; options: KeyOption[]; editView: EditView } & OpenProps) {
+  const shown = view.order.length > 0 ? view.order : ["file.name"];
+  const set = (next: string[] | null) => { if (next) editView((src, i) => setViewOrder(src, i, next)); };
+  const rest = hiddenOptions(view.order, options);
+  const keep = useKeepFocus(view);
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger asChild>
+        <button type="button" className="btn base-btn" aria-label="Properties">
+          <EyeOpenIcon aria-hidden />
+          <span className="base-btn-text">Properties</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent {...POP} className="base-pop" ref={keep.ref} onFocus={keep.onFocus} onOpenAutoFocus={(e) => focusBox(e, keep.ref.current)}>
+        {shown.map((key, i) => {
+          const label = labelOf(options, key);
+          return (
+            <div className="base-pop-row" key={key}>
+              <span className="base-pop-label">{label}</span>
+              <button type="button" className="btn base-btn icon" aria-label={`Move ${label} up`} disabled={i === 0} onClick={() => set(shiftColumn(view.order, key, -1))}>
+                <ArrowUpIcon aria-hidden />
+              </button>
+              <button type="button" className="btn base-btn icon" aria-label={`Move ${label} down`} disabled={i === shown.length - 1} onClick={() => set(shiftColumn(view.order, key, 1))}>
+                <ArrowDownIcon aria-hidden />
+              </button>
+              <button type="button" className="btn base-btn icon" aria-label={`Hide ${label}`} disabled={shown.length === 1} onClick={() => set(hideColumn(view.order, key))}>
+                <EyeNoneIcon aria-hidden />
+              </button>
+            </div>
+          );
+        })}
+        <select className="base-select" aria-label="Add property" value="" onChange={(e) => e.target.value && set(showColumn(view.order, e.target.value))}>
+          <option value="">Add property…</option>
+          {rest.map((o) => (
+            <option key={o.key} value={o.key}>{o.label}</option>
+          ))}
+        </select>
+      </PopoverContent>
+    </Popover>
+  );
+}

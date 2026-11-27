@@ -1,9 +1,13 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, type ReactNode } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { renderMarkdown, isMediaName } from "../renderer/render";
 import { api } from "../api/client";
 import { getToken } from "../auth/token";
 import { TableTools } from "./TableTools";
 import type { LineRange, MdTable } from "../tables/md-table";
+import { BaseView } from "../bases/BaseView";
+import { isLiveFence, keepRoot } from "../bases/edit";
+import type { BaseHost } from "../bases/host";
 
 const PROTECTED_MEDIA_SELECTOR =
   'img[src^="/api/media-raw/"]:not([data-blob-protected]), video[src^="/api/media-raw/"]:not([data-blob-protected]), audio[src^="/api/media-raw/"]:not([data-blob-protected]), source[src^="/api/media-raw/"]:not([data-blob-protected])';
@@ -54,6 +58,41 @@ interface PreviewProps {
   onScrollLine?: (line: number) => void;
   onSelectLine?: (line: number) => void;
   onEditTable?: (range: LineRange, fn: (t: MdTable) => MdTable) => boolean;
+  baseHost?: BaseHost;
+}
+
+interface BaseRoot {
+  el: HTMLElement;
+  root: Root;
+  source: string;
+  rendered: { source: string; startLine: number; notePath: string | null; host: BaseHost } | null;
+  // Scroll offsets inside the view (table wrap, kanban board). A detached
+  // element loses them, so they are put back after each move.
+  scroll: Map<HTMLElement, { top: number; left: number }>;
+}
+
+function newBaseRoot(el: HTMLElement, source: string): BaseRoot {
+  const scroll = new Map<HTMLElement, { top: number; left: number }>();
+  el.addEventListener(
+    "scroll",
+    (e) => {
+      const t = e.target;
+      if (t instanceof HTMLElement && t !== el) scroll.set(t, { top: t.scrollTop, left: t.scrollLeft });
+    },
+    { capture: true, passive: true },
+  );
+  return { el, root: createRoot(el), source, rendered: null, scroll };
+}
+
+function restoreScroll(entry: BaseRoot): void {
+  for (const [t, pos] of entry.scroll) {
+    if (!entry.el.contains(t)) {
+      entry.scroll.delete(t);
+      continue;
+    }
+    t.scrollTop = pos.top;
+    t.scrollLeft = pos.left;
+  }
 }
 
 export interface PreviewHandle {
@@ -62,7 +101,7 @@ export interface PreviewHandle {
 }
 
 export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
-  { content, notePath, header, resolveByBasename, onOpenNote, onMissingNote, onOpenTag, onScrollLine, onSelectLine, onEditTable },
+  { content, notePath, header, resolveByBasename, onOpenNote, onMissingNote, onOpenTag, onScrollLine, onSelectLine, onEditTable, baseHost },
   forwardedRef,
 ) {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -71,6 +110,8 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
   const activeLineRef = useRef<number>(-1);
   const suppressScrollRef = useRef<number>(0);
   const mediaBlobUrlsRef = useRef<string[]>([]);
+  const baseRootsRef = useRef(new Map<number, BaseRoot>());
+  const baseAliveRef = useRef(false);
 
   const { html } = useMemo(() => {
     const dirOf = notePath ? notePath.replace(/[^/]+$/, "") : "";
@@ -199,6 +240,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
     const root = ref.current;
     if (!root) return;
     const handler = (e: MouseEvent) => {
+      if ((e.target as HTMLElement | null)?.closest?.(".base-view")) return;
       // The Properties panel is the header. Its clicks are its own: canceling
       // one would fight its checkboxes, and none of them is a cursor move.
       if ((e.target as Element).closest?.(".props-panel")) return;
@@ -326,6 +368,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
             isMediaTarget: (t) => isMediaName(t),
             buildMediaUrl: (t) =>
               api.mediaUrl(`${dirOf}.media/${t.split("/").pop()}`),
+            baseViews: false,
           });
           const body = el.querySelector(".embed-body");
           if (body) {
@@ -376,6 +419,72 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
       cancelled = true;
     };
   }, [html]);
+
+  // ```base blocks: a live view in each placeholder. The HTML is replaced on
+  // every change, so the root of each block is kept by ordinal and moved into
+  // the new placeholder (see keepRoot); typing elsewhere in the note and the
+  // view's own fence edits do not remount it. A layout effect, so it runs
+  // before the passive block collector above, which then sees the moved-in
+  // elements.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: html is the trigger, the placeholders were replaced
+  useLayoutEffect(() => {
+    const prev = baseRootsRef.current;
+    const next = new Map<number, BaseRoot>();
+    const root = ref.current;
+    if (root && baseHost) {
+      const holders = Array.from(root.querySelectorAll<HTMLElement>(".base-block[data-base]"))
+        .filter((el) => !el.closest(".embed-body"))
+        .map((el) => ({ el, source: el.getAttribute("data-base") ?? "", startLine: Number(el.getAttribute("data-source-line")) }))
+        .filter((h) => isLiveFence(content, h.startLine, h.source));
+      const sameCount = holders.length === prev.size;
+      for (const [n, { el: holder, source, startLine }] of holders.entries()) {
+        const old = prev.get(n);
+        let entry: BaseRoot;
+        if (old && keepRoot(old.source, source, sameCount)) {
+          if (old.el !== holder) {
+            for (const name of ["data-base", "data-source-line", "data-source-end"]) {
+              const v = holder.getAttribute(name);
+              if (v === null) old.el.removeAttribute(name);
+              else old.el.setAttribute(name, v);
+            }
+            holder.replaceWith(old.el);
+            restoreScroll(old);
+          }
+          entry = old;
+          entry.source = source;
+        } else {
+          entry = newBaseRoot(holder, source);
+        }
+        const r = entry.rendered;
+        if (!r || r.source !== source || r.startLine !== startLine || r.notePath !== notePath || r.host !== baseHost) {
+          entry.rendered = { source, startLine, notePath, host: baseHost };
+          entry.root.render(<BaseView key={notePath ?? ""} source={source} startLine={startLine} ordinal={n} notePath={notePath} host={baseHost} />);
+        }
+        next.set(n, entry);
+      }
+    }
+    baseRootsRef.current = next;
+    const reused = new Set(next.values());
+    const stale = [...prev.values()].filter((e) => !reused.has(e));
+    // React refuses a synchronous unmount while it is rendering.
+    if (stale.length > 0) queueMicrotask(() => {
+      for (const e of stale) e.root.unmount();
+    });
+  }, [html, content, notePath, baseHost]);
+
+  // StrictMode runs cleanup and setup back to back; the flag turns that into a
+  // reuse, and only a real unmount drops the roots.
+  useEffect(() => {
+    baseAliveRef.current = true;
+    return () => {
+      baseAliveRef.current = false;
+      queueMicrotask(() => {
+        if (baseAliveRef.current) return;
+        for (const e of baseRootsRef.current.values()) e.root.unmount();
+        baseRootsRef.current = new Map();
+      });
+    };
+  }, []);
 
   const docEl = (
     <div className="doc" ref={docRef}>

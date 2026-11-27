@@ -1,0 +1,253 @@
+import type { PropValue } from "@brainmd/shared/frontmatter";
+import type { Node } from "./expr";
+import {
+  DateValue,
+  FileObject,
+  FormulaRoot,
+  UNSUPPORTED,
+  addDuration,
+  coerceDate,
+  callGlobal,
+  callMethod,
+  compareValues,
+  kindOf,
+  looseEq,
+  toStr,
+  truthy,
+  type FnCtx,
+  type Value,
+} from "./functions";
+
+export interface Budget {
+  steps: number;
+  max: number;
+  hit: boolean;
+  // Characters of text built by operations, shared by every note of one query: per-note steps alone let a
+  // view churn gigabytes of short-lived text faster than the GC reclaims it.
+  work?: { chars: number; max: number; ticks: number; deadline: number; expired: boolean };
+  workHit?: boolean;
+}
+
+export interface Scope extends FnCtx {
+  file: FileObject;
+  props: Record<string, PropValue>;
+  // `this.x` reads the note holding the view: its properties plus `file`.
+  thisValue: Value;
+  formula(name: string): Value;
+  budget: Budget;
+}
+
+class BudgetExceeded extends Error {}
+
+export const DEFAULT_BUDGET = 10_000;
+export const MAX_STRING = 100_000;
+export const MAX_STRING_WORK = 128_000_000;
+
+const isPlainObject = (v: Value): v is { [k: string]: Value } => kindOf(v) === "object";
+
+function getMember(obj: Value, name: string, s: Scope): Value {
+  if (obj instanceof FileObject) return obj.get(name);
+  if (obj instanceof FormulaRoot) return s.formula(name);
+  if (isPlainObject(obj)) return Object.hasOwn(obj, name) ? (obj[name] ?? null) : null;
+  if (name === "length" && (typeof obj === "string" || Array.isArray(obj))) return obj.length;
+  return null;
+}
+
+const fin = (n: number): number | null => (Number.isFinite(n) ? n : null);
+
+function arith(op: string, a: Value, b: Value, s: Scope): Value {
+  const da = a instanceof DateValue ? a : typeof a === "string" && (op === "+" || op === "-") ? coerceDate(a) : null;
+  if (da && (op === "+" || op === "-") && typeof b === "string") {
+    const r = addDuration(da, b, op === "+" ? 1 : -1);
+    if (r) return r;
+    if (a instanceof DateValue) {
+      s.warn(`invalid duration "${b}"`);
+      return null;
+    }
+  }
+  if (da && op === "-" && (a instanceof DateValue ? coerceDate(b) : b instanceof DateValue ? b : null)) {
+    const other = coerceDate(b)!;
+    return fin(da.ms - other.ms);
+  }
+  if (typeof a === "number" && typeof b === "number") {
+    switch (op) {
+      case "+":
+        return fin(a + b);
+      case "-":
+        return fin(a - b);
+      case "*":
+        return fin(a * b);
+      case "/":
+        return b === 0 ? null : fin(a / b);
+      case "%":
+        return b === 0 ? null : fin(a % b);
+    }
+  }
+  if (op === "+" && (typeof a === "string" || typeof b === "string") && a !== null && b !== null) {
+    const sa = toStr(a);
+    const sb = toStr(b);
+    const len = sa.length + sb.length;
+    if (len > MAX_STRING) {
+      s.warn(`text longer than ${MAX_STRING} characters was dropped`);
+      return null;
+    }
+    return sa + sb;
+  }
+  return null;
+}
+
+// Walking a long string costs steps in proportion to its length.
+function charge(s: Scope, ...vals: Value[]): void {
+  let chars = 0;
+  for (const v of vals) if (typeof v === "string") chars += v.length;
+  s.budget.steps += chars >> 10;
+  if (s.budget.steps > s.budget.max) {
+    s.budget.hit = true;
+    throw new BudgetExceeded();
+  }
+}
+
+// Only text an operation builds counts toward the query-wide cap; reading an operand is free there.
+function chargeBuilt(s: Scope, result: Value): void {
+  const work = s.budget.work;
+  if (!work) return;
+  let chars = 0;
+  if (typeof result === "string") chars = result.length;
+  else if (Array.isArray(result)) for (const v of result) if (typeof v === "string") chars += v.length;
+  work.chars += chars;
+  if (work.chars > work.max) {
+    s.budget.hit = true;
+    s.budget.workHit = true;
+    throw new BudgetExceeded();
+  }
+}
+
+function ev(n: Node, s: Scope): Value {
+  if (s.budget.hit) return null;
+  const w = s.budget.work;
+  if (w && (w.expired || ((++w.ticks & 1023) === 0 && performance.now() > w.deadline))) {
+    w.expired = true;
+    s.budget.hit = true;
+    throw new BudgetExceeded();
+  }
+  if (++s.budget.steps > s.budget.max) {
+    s.budget.hit = true;
+    throw new BudgetExceeded();
+  }
+  switch (n.t) {
+    case "lit":
+      return typeof n.v === "number" ? fin(n.v) : n.v;
+    case "id":
+      switch (n.name) {
+        case "file":
+          return s.file;
+        case "note":
+          return s.props as Value;
+        case "formula":
+          return new FormulaRoot();
+        case "this":
+          return s.thisValue;
+        default:
+          return Object.hasOwn(s.props, n.name) ? (s.props[n.name] as Value) : null;
+      }
+    case "member":
+      return getMember(ev(n.obj, s), n.name, s);
+    case "index": {
+      const obj = ev(n.obj, s);
+      const key = ev(n.key, s);
+      if (typeof key === "string") return getMember(obj, key, s);
+      if (typeof key === "number" && Array.isArray(obj)) return obj[key] ?? null;
+      return null;
+    }
+    case "unary": {
+      const v = ev(n.arg, s);
+      return n.op === "!" ? !truthy(v) : typeof v === "number" ? fin(-v) : null;
+    }
+    case "bin": {
+      if (n.op === "&&") return truthy(ev(n.l, s)) && truthy(ev(n.r, s));
+      if (n.op === "||") return truthy(ev(n.l, s)) || truthy(ev(n.r, s));
+      const a = ev(n.l, s);
+      const b = ev(n.r, s);
+      charge(s, a, b);
+      switch (n.op) {
+        case "==":
+          return looseEq(a, b);
+        case "!=":
+          return !looseEq(a, b);
+        case "<":
+        case "<=":
+        case ">":
+        case ">=": {
+          const c = compareValues(a, b);
+          if (c === null) return false;
+          return n.op === "<" ? c < 0 : n.op === "<=" ? c <= 0 : n.op === ">" ? c > 0 : c >= 0;
+        }
+        default: {
+          const r = arith(n.op, a, b, s);
+          chargeBuilt(s, r);
+          return r;
+        }
+      }
+    }
+    case "call": {
+      const callee = n.callee;
+      if (callee.t === "id") {
+        if (callee.name === "if") {
+          if (n.args.length < 2) {
+            s.warn('"if" needs a condition and a value');
+            return null;
+          }
+          if (truthy(ev(n.args[0]!, s))) return ev(n.args[1]!, s);
+          return n.args[2] ? ev(n.args[2], s) : null;
+        }
+        const args = n.args.map((a) => ev(a, s));
+        charge(s, ...args);
+        const r = callGlobal(callee.name, args, s);
+        if (r === UNSUPPORTED) {
+          s.warn(`unsupported function "${callee.name}"`);
+          return null;
+        }
+        chargeBuilt(s, r);
+        return r;
+      }
+      if (callee.t === "member") {
+        const recv = ev(callee.obj, s);
+        const args = n.args.map((a) => ev(a, s));
+        charge(s, recv, ...args);
+        const r = callMethod(recv, callee.name, args, s);
+        if (r === UNSUPPORTED) {
+          s.warn(`unsupported function "${callee.name}"`);
+          return null;
+        }
+        chargeBuilt(s, r);
+        return r;
+      }
+      s.warn("unsupported call");
+      return null;
+    }
+    default:
+      return null;
+  }
+}
+
+export function evaluate(n: Node, s: Scope): Value {
+  try {
+    const v = ev(n, s);
+    return s.budget.hit ? null : v;
+  } catch (e) {
+    if (e instanceof BudgetExceeded) {
+      if (s.budget.work?.expired) {
+        s.warn("the query took too long; results are partial");
+        return null;
+      }
+      s.warn(
+        s.budget.workHit
+          ? "evaluation budget exceeded: the query-wide limit on text built by expressions was reached; remaining expressions were skipped"
+          : "evaluation budget exceeded for a note; its remaining expressions were skipped",
+      );
+      return null;
+    }
+    s.warn("expression could not be evaluated");
+    return null;
+  }
+}

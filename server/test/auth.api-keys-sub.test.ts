@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, rm, writeFile, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { Vault } from "../src/vault/vault";
 import { APIKeyStore } from "../src/auth/api-keys";
 import { LOCAL_SUB } from "../src/auth/identity";
+import { waitForJson } from "./wait-for-json";
 
 let dir!: string;
 
@@ -64,8 +65,7 @@ describe("APIKeyStore: sub plumbing", () => {
     const rec = s.validate(token);
     expect(rec?.sub).toBe(LOCAL_SUB);
 
-    await new Promise((r) => setTimeout(r, 250));
-    const raw = JSON.parse(await readFile(join(dir, ".brain", "api-keys.json"), "utf8"));
+    const raw = await waitForJson(join(dir, ".brain", "api-keys.json"), (v) => v.keys?.[0]?.sub !== undefined);
     expect(raw.keys[0].sub).toBe(LOCAL_SUB);
   });
 

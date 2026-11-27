@@ -27,9 +27,12 @@
 | **Obsidian-compatible markdown** | Wikilinks, embeds, callouts, math, mermaid, tasks, frontmatter, aliases. Open your existing Obsidian vault and it just works. |
 | **Graph view** | Interactive map of your notes and wikilinks: hover to light up neighbours, click to open, drag, zoom, filter by folder or tag, plus a local graph of the current note. Smooth on thousands of notes. |
 | **Live editor + preview** | CodeMirror 6 with cursor-anchored scroll sync, autosave, instant tooltips, command palette, quick switcher. Editor, Preview or Both, one click or **⌘\\**. |
+| **Typed properties** | A Properties panel above the note edits frontmatter as rows: text, number, date, checkbox, list, tags. Types are shared across the vault in Obsidian's `types.json` shape, and an edit touches only the lines it changes. |
+| **Visual table editing** | Pipe tables stay plain Markdown, but you edit them like a spreadsheet: Tab between cells, click a cell in the preview, add, move and delete rows and columns. |
+| **Views over your notes** | A `base` block in any note is a live table, cards, list or kanban over your notes, in Obsidian Bases format: filters, sort, groups, formulas. Edit a cell or drag a card and the note's frontmatter changes. Agents run the same query with `query_notes`. [Views](docs/views.md). |
 | **Semantic search built in** | Per-vault embedded vector store (pure JS, no external DB). Notes are chunked, embedded and indexed on every save. |
 | **Pluggable embedders** | Default: `bge-small-en-v1.5` running locally via **bundled WASM ONNX**, works in the prebuilt single binary, zero native deps. Or point at **Ollama**, **LM Studio**, or **OpenAI**: anything with `/v1/embeddings`. |
-| **MCP server (streamable HTTP)** | 19 tools and 2 resources mounted on the same port. Claude Desktop, Claude Code, Cursor and any MCP-compliant agent can read, search, query and write your notes. List tools return pages, so a small local model never gets the whole vault in one reply. |
+| **MCP server (streamable HTTP)** | 20 tools and 2 resources mounted on the same port. Claude Desktop, Claude Code, Cursor and any MCP-compliant agent can read, search, query and write your notes. List tools return pages, so a small local model never gets the whole vault in one reply. |
 | **MCP Apps note view** | In hosts that support MCP Apps (tested with OpenClaw), `read_note` opens an interactive view of the note: clickable wikilinks, Back, backlinks, light and dark. Other clients get the same text as before. |
 | **Per-folder agent permissions** | Right-click a folder → set `{read, write}` for the MCP surface. Keep `Journal/Private/` out of agent reach without locking down the vault. |
 | **Optional password auth** | argon2id, bearer tokens, 24-hour TTL, gates both HTTP API and MCP. Off by default, on with one click. |
@@ -77,7 +80,7 @@ files you can open in any editor at any time.
 | License                                 | Proprietary             | AGPL-3.0        | Proprietary        | **AGPL-3.0**           |
 | Local-first vault on disk               | ✓                       | ✓               | ✗ (cloud)          | **✓**                  |
 | Plain `.md` files (no proprietary db)   | ✓                       | ✓ (block model) | ✗                  | **✓**                  |
-| Built-in MCP server                     | ✗ (3rd-party plugin)    | ✗               | ✗                  | **✓ (19 tools)**       |
+| Built-in MCP server                     | ✗ (3rd-party plugin)    | ✗               | ✗                  | **✓ (20 tools)**       |
 | Vector RAG built-in                     | ✗ (paid plugin)         | ✗               | ✓ (cloud only)     | **✓ (embedded, local)** |
 | Per-folder agent permissions            | n/a                     | n/a             | n/a                | **✓**                  |
 | Single binary, no Electron              | ✗ (Electron)            | ✗ (Electron)    | n/a                | **✓ (`bun --compile`)** |
@@ -96,6 +99,9 @@ Model Context Protocol.
 - [Install](#install)
 - [The interface](#the-interface)
   - [Editor + preview](#editor--preview)
+  - [Properties](#properties)
+  - [Tables](#tables)
+  - [Views: table, cards, list, kanban](#views-table-cards-list-kanban)
   - [Markdown that actually does things](#markdown-that-actually-does-things)
   - [Command palette + quick switcher](#command-palette--quick-switcher)
   - [Tasks across the vault](#tasks-across-the-vault)
@@ -287,19 +293,6 @@ type, *Saving*, *Saved*, then *Saved, not in history* until the
 autocommit picks it up. Click it to record the change in history right
 away, retry a failed save, or open History.
 
-**Tables.** Pipe tables are edited visually or from the keyboard and always
-stay plain Markdown. In the editor, <kbd>Tab</kbd> / <kbd>Shift-Tab</kbd> move
-between cells and re-pad the table, <kbd>Enter</kbd> moves down (and adds a
-row at the end), <kbd>Shift-Enter</kbd> then <kbd>Enter</kbd> leaves it with
-a blank line, <kbd>Mod</kbd>+<kbd>Alt</kbd>+<kbd>T</kbd> formats it. In the
-preview, click a cell to edit it, use the `+` on the right and bottom edge to
-add a column or row, drag the grips to reorder, and right click for insert,
-delete, move and align. Each preview edit is one undo step in the editor;
-with the preview alone on screen, switch to the editor to undo. On a phone,
-tap a cell for the action bar. On iPhone the long-press menu may not open on
-the first press; the tap action bar has every action. A literal pipe inside a cell, including inside code or a
-`[[link|alias]]`, must be written `\|`, as GFM requires.
-
 ![Editor + preview, sidebar with backlinks](docs/img/project-with-sidebar.png)
 
 The right rail collects **Bookmarks · Vault · Tags · Outline ·
@@ -316,6 +309,83 @@ It marks the selection, the active block and the new-change dots, and
 nothing else.
 
 ![Settings, Editor, accent colour](docs/img/settings-accent.png)
+
+### Properties
+
+Frontmatter shows as a Properties panel at the top of the note, in the
+editor and in the preview. Each row has a type icon, a name and a value
+editor that fits the type: a date picker, a number field, a checkbox,
+chips for lists and tags. Names and values are suggested from what the
+rest of the vault uses. Change a type once and every note with that
+property follows; types live in `.brain/types.json`, the same shape as
+Obsidian's `types.json` (an existing `.obsidian/types.json` is read too).
+
+An edit in the panel rewrites only the lines it changes; the rest of
+the YAML, comments and key order included, stays as you wrote it. Agents get the
+same properties from `read_note` and change them with
+`update_properties`, without rewriting the note.
+
+![Properties panel next to the YAML it edits](docs/img/properties-panel.png)
+
+### Tables
+
+Pipe tables are edited visually or from the keyboard and always stay
+plain Markdown. In the editor, <kbd>Tab</kbd> / <kbd>Shift-Tab</kbd> move
+between cells and re-pad the table, <kbd>Enter</kbd> moves down (and adds
+a row at the end), <kbd>Shift-Enter</kbd> then <kbd>Enter</kbd> leaves it
+with a blank line, <kbd>Mod</kbd>+<kbd>Alt</kbd>+<kbd>T</kbd> formats it.
+
+In the preview, click a cell to edit it, use the `+` on the right and
+bottom edge to add a column or row, drag the grips to reorder, and right
+click for insert, delete, move and align. Each preview edit is one undo
+step in the editor; with the preview alone on screen, switch to the
+editor to undo. On a phone, tap a cell for the action bar. On iPhone the
+long-press menu may not open on the first press; the tap action bar has
+every action. A literal pipe inside a cell, including inside code or a
+`[[link|alias]]`, must be written `\|`, as GFM requires.
+
+![Right-click menu on a table in the preview](docs/img/table-editing.png)
+
+### Views: table, cards, list, kanban
+
+A fenced `base` block turns any note into a live view over your notes,
+in the YAML format Obsidian Bases uses. Filter by folder, tag or any
+property, pick columns, sort, group, add formulas and summaries. The
+same block can hold several views; the toolbar switches between them and
+writes your changes to sort, filters and columns back into the block.
+
+````markdown
+```base
+filters:
+  and:
+    - file.inFolder("Projects")
+views:
+  - type: kanban
+    name: Board
+    groupBy:
+      property: status
+    groupOrder: [Todo, Doing, Done]
+  - type: table
+    name: Table
+    order: [file.name, status, owner, priority, due, estimate]
+```
+````
+
+![Kanban view of the Projects folder, grouped by status](docs/img/views-kanban.png)
+
+Views edit the notes they show. Click a table cell to change that
+property, drag a kanban card to another column to set its status, or use
+`+` in a column to create a note with the property already filled in.
+Every change is an ordinary frontmatter edit, so it shows in History and
+in the Changes view.
+
+![Table view with a sum under the estimate column](docs/img/views-table.png)
+
+Agents run the same engine through `query_notes`: a filter and columns,
+a whole `base` YAML, or the path of a note with a view in it. Queries are
+sandboxed and capped (2 seconds, memory, 200 KB per page for agents), so
+a heavy view cannot stall the server. Full reference:
+[docs/views.md](docs/views.md).
 
 ### Markdown that actually does things
 
@@ -652,7 +722,7 @@ per tool call. Claude Desktop and LM Studio both do this.
 
 ![MCP Server page in brain.md](docs/img/mcp-server-page.png)
 
-Tools (19):
+Tools (20):
 
 | Tool                  | Folder perm | What it does                                                       |
 |-----------------------|-------------|--------------------------------------------------------------------|
@@ -660,6 +730,7 @@ Tools (19):
 | `similar_notes`       | `read`      | Semantic RAG (top-k chunks)                                        |
 | `read_note`           | `read`      | Note body, mtime, parsed `properties`                              |
 | `list_notes`          | `read`      | Filtered vault tree, paged                                         |
+| `query_notes`         | `read`      | Notes as a table: filter, columns, sort, or a Base view            |
 | `get_backlinks`       | `read`      | Inbound wikilinks                                                  |
 | `graph_view`          | `read`      | Graph of notes and links (whole vault, a folder, or around a note) |
 | `list_tags`           | `read`      | Tags with counts, most used first, paged                           |
@@ -1182,6 +1253,7 @@ for the MCP reference.
 - Docker image (multi-arch, < 200 MB compressed)
 - Notarised macOS `.app` wrapping the binary
 - Hosted read-only demo
+- Tables rendered in place in the editor, edited cell by cell
 
 Want to nudge one of these up the list? Open an issue or PR.
 

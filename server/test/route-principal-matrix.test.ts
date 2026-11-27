@@ -203,6 +203,7 @@ const ROUTES: RouteRow[] = [
   { name: "GET /api/tasks", class: "filtered", exec: (f) => call(f.handle, "GET", "/api/tasks", undefined, f.bearer) },
   { name: "GET /api/search?q=secret", class: "filtered", exec: (f) => call(f.handle, "GET", "/api/search?q=secret", undefined, f.bearer) },
   { name: "GET /api/folder-meta", class: "filtered", exec: (f) => call(f.handle, "GET", "/api/folder-meta", undefined, f.bearer) },
+  { name: "POST /api/bases/query", class: "filtered", exec: (f) => call(f.handle, "POST", "/api/bases/query", { source: "views:\n  - type: table\n    name: T\n    order: [file.name]\n" }, f.bearer) },
 
   // ---- public (no folder scoping) ----
   { name: "GET /api/rag/status", class: "public", exec: (f) => call(f.handle, "GET", "/api/rag/status", undefined, f.bearer) },
@@ -410,4 +411,43 @@ describe("route x principal matrix (MCP transport): search_notes is filtered, no
       }
     });
   }
+});
+
+describe("route x principal matrix (MCP transport): query_notes is filtered, not forbidden", () => {
+  for (const kind of PRINCIPALS) {
+    test(kind, async () => {
+      const f = await makeFixture(kind);
+      const client = await mcpClient(f.handle, f.bearer);
+      const result = (await callTool(client, "query_notes", { columns: ["file.name"] })) as { isError?: boolean };
+      await client.close();
+      expect(result.isError).toBeFalsy();
+      const text = JSON.stringify(result);
+      if (kind === "owner" || kind === "open") expect(text.includes("secret/a.md")).toBe(true);
+      else expect(text.includes("secret/a.md")).toBe(false);
+    });
+  }
+});
+
+describe("query_notes: unreadable path and hidden notes", () => {
+  test("a path the caller cannot read fails exactly like read_note", async () => {
+    const f = await makeFixture("apikey-denied");
+    const client = await mcpClient(f.handle, f.bearer);
+    const q = (await client.callTool({ name: "query_notes", arguments: { path: "secret/a.md" } })) as { isError?: boolean; content: Array<{ text: string }> };
+    const r = (await client.callTool({ name: "read_note", arguments: { path: "secret/a.md" } })) as { isError?: boolean; content: Array<{ text: string }> };
+    await client.close();
+    expect(q.isError).toBe(true);
+    expect(q.content[0]!.text).toBe(r.content[0]!.text);
+  });
+
+  test("a hidden note is absent from results", async () => {
+    const f = await makeFixture("apikey-denied");
+    await f.handle.vault.writeNote("public/h.md", "---\nhidden: true\n---\nhidden body\n");
+    await f.handle.index.updatePath("public/h.md");
+    const client = await mcpClient(f.handle, f.bearer);
+    const q = (await client.callTool({ name: "query_notes", arguments: { columns: ["file.name"] } })) as { content: Array<{ text: string }> };
+    await client.close();
+    const text = q.content[0]!.text;
+    expect(text.includes("public/b.md")).toBe(true);
+    expect(text.includes("public/h.md")).toBe(false);
+  });
 });

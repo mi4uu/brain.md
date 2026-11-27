@@ -15,6 +15,7 @@ import { remarkWikilinks } from "./plugins/wikilinks";
 import { remarkTags } from "./plugins/tags";
 import { remarkCallouts } from "./plugins/callouts";
 import { remarkMermaid } from "./plugins/mermaid";
+import { remarkBaseBlock } from "./plugins/base";
 import { remarkSourcepos } from "./plugins/sourcepos";
 import { remarkHighlight } from "./plugins/highlight";
 import { remarkComments } from "./plugins/comments";
@@ -82,6 +83,9 @@ export interface RenderOptions {
   currentPath?: string;
   isMediaTarget: (target: string) => boolean;
   buildMediaUrl: (target: string) => string;
+  // Off for embeds and the MCP note view: their HTML lands in another page,
+  // where a base block's line range would point into the wrong note.
+  baseViews?: boolean;
 }
 
 function slug(s: string): string {
@@ -295,6 +299,7 @@ export function renderMarkdown(
     .use(remarkHighlight)
     .use(remarkCallouts)
     .use(remarkMermaid)
+    .use(remarkBaseBlock, { lineOffset, enabled: opts.baseViews !== false })
     .use(remarkWikilinks)
     .use(remarkTags)
     .use(remarkSourcepos, { lineOffset })

@@ -1,0 +1,742 @@
+/* Views from ```base blocks. Tokens only; no new colours. */
+
+/* Popovers and menus render in a portal, outside .preview .doc. */
+.btn.base-btn {
+  min-height: 28px;
+  padding: 4px 8px;
+  gap: 6px;
+  font-size: var(--text-sm);
+}
+.btn.base-btn.icon {
+  min-width: 28px;
+  padding: 4px;
+}
+.btn.base-btn-on {
+  color: var(--text-1);
+}
+.base-count {
+  color: var(--text-3);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.base-pop {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 320px;
+  max-width: calc(100vw - 32px);
+}
+.base-pop-wide {
+  width: 420px;
+}
+.base-pop > .btn.base-btn {
+  align-self: flex-start;
+}
+.base-pop-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.base-pop-wrap {
+  flex-wrap: wrap;
+}
+.base-pop-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+}
+.base-hint {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--text-xs);
+}
+.base-input,
+.base-select {
+  flex: 1;
+  min-width: 0;
+  min-height: 28px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--bg-surface);
+  color: var(--text-1);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+/* WebKit sizes a native select by its font and ignores min-height. */
+.base-select {
+  height: 28px;
+}
+/* In the column-flex popover, flex: 1 gives the select a zero height basis, which WebKit keeps. */
+.base-pop > .base-select {
+  flex: none;
+}
+.base-input:focus-visible,
+.base-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+}
+.base-cell-input {
+  width: 100%;
+}
+@media (pointer: coarse) {
+  .btn.base-btn {
+    min-height: 40px;
+    min-width: 40px;
+  }
+  .btn.base-btn.icon {
+    min-width: 40px;
+  }
+  /* 16px stops iOS from zooming into a focused field. */
+  .base-input,
+  .base-select {
+    min-height: 40px;
+    font-size: 16px;
+  }
+  .base-select {
+    height: 40px;
+  }
+  .base-menu [role="menuitem"],
+  .base-menu [role="menuitemradio"],
+  .base-menu [role="menuitemcheckbox"] {
+    min-height: 40px;
+  }
+}
+
+/* Inside the note. The longer selector beats the preview table, list and link rules. */
+.preview .doc .base-block {
+  margin: var(--space-4) 0;
+}
+/* Prose keeps the reading column; a view grows to the width it asks for
+   (--base-natural, set by BaseView), capped by the pane, and stays centred on
+   the column. In a narrow pane a board or table bleeds to the pane edges. */
+.preview .doc .base-view {
+  --base-w: clamp(100%, var(--base-natural, 100%), min(100cqi, 1600px));
+  width: var(--base-w);
+  margin-inline: calc((100% - var(--base-w)) / 2);
+  container: base-view / inline-size;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--bg-surface);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: var(--line-tight);
+  color: var(--text-1);
+  overflow-wrap: normal;
+  word-break: normal;
+}
+.preview .doc .base-view button {
+  font: inherit;
+}
+.preview .doc .base-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+.preview .doc .base-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+.preview .doc .base-switch {
+  min-width: 0;
+  max-width: 100%;
+}
+.preview .doc .base-switch-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--text-1);
+}
+@container base-view (max-width: 440px) {
+  .preview .doc .base-btn-text {
+    display: none;
+  }
+}
+.preview .doc .base-empty {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-3);
+  font-size: var(--text-sm);
+}
+.preview .doc .base-view[aria-busy="true"] {
+  min-height: 120px;
+}
+.preview .doc .base-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-2);
+}
+.preview .doc .base-view > .base-warn:last-child {
+  border-bottom: 0;
+}
+.preview .doc .base-warn-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  color: var(--callout-warn);
+}
+.preview .doc .base-warn-error .base-warn-icon {
+  color: var(--callout-danger);
+}
+.preview .doc .base-warn-body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.preview .doc .base-warn-more summary {
+  width: fit-content;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.preview .doc .base-warn-more summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: var(--radius-1);
+}
+.preview .doc .base-warn-more ul {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-4);
+}
+.preview .doc .base-warn-more li {
+  margin: 0;
+}
+.preview .doc .base-link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  text-align: left;
+  cursor: pointer;
+  text-decoration: none;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+.preview .doc .base-link:hover {
+  text-decoration: underline;
+}
+.preview .doc .base-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: var(--radius-1);
+}
+.preview .doc .base-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.preview .doc .base-chip {
+  padding: 0 6px;
+  border-radius: var(--radius-1);
+  background: var(--tag-bg);
+  color: var(--tag-fg);
+}
+.preview .doc .base-partial {
+  color: var(--text-3);
+  text-decoration: underline dotted var(--border-strong);
+  text-underline-offset: 3px;
+  cursor: help;
+}
+
+/* Edge shadows say there is more to scroll to: the bg-surface covers scroll
+   with the content and hide the fixed shadows at either end. */
+.preview .doc .base-table-wrap {
+  overflow: auto;
+  max-height: min(70vh, 640px);
+  background:
+    linear-gradient(to right, var(--bg-surface) 30%, transparent) left / 24px 100% no-repeat local,
+    linear-gradient(to left, var(--bg-surface) 30%, transparent) right / 24px 100% no-repeat local,
+    linear-gradient(to right, var(--border-strong), transparent) left / 8px 100% no-repeat scroll,
+    linear-gradient(to left, var(--border-strong), transparent) right / 8px 100% no-repeat scroll;
+}
+/* With table-layout: fixed a table is as wide as the larger of its width and
+   the sum of its <col> widths, so width 0 gives exactly that sum. Firefox
+   resolves min-width: max-content on a fixed table to millions of pixels. */
+.preview .doc .base-table {
+  width: 0;
+  min-width: 0;
+  margin: 0;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+}
+.preview .doc .base-table th,
+.preview .doc .base-table td {
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+  font-variant-numeric: tabular-nums;
+}
+.preview .doc .base-table tbody:last-of-type tr:last-child td {
+  border-bottom: 0;
+}
+.preview .doc .base-table .base-num {
+  text-align: right;
+}
+.preview .doc .base-table .base-num .base-th-btn {
+  padding: 6px 8px 6px 12px;
+  text-align: right;
+}
+.preview .doc .base-sort-icon {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-left: 4px;
+  vertical-align: -1px;
+  color: var(--text-3);
+}
+.preview .doc .base-table tbody tr:not(.base-group) td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg-surface);
+}
+.preview .doc .base-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0;
+  background: var(--bg-surface-2);
+  color: var(--text-2);
+  font-weight: 500;
+}
+.preview .doc .base-table th:first-child {
+  left: 0;
+  z-index: 2;
+}
+/* An inset line, not a border: it stays on the sticky footer while the rows
+   scroll under it and never doubles the last row's hairline. */
+.preview .doc .base-table tfoot td {
+  position: sticky;
+  bottom: 0;
+  background: var(--bg-surface-2);
+  color: var(--text-1);
+  border-bottom: 0;
+  box-shadow: inset 0 1px 0 var(--border);
+}
+.preview .doc .base-table tfoot td:first-child {
+  left: 0;
+  z-index: 2;
+}
+.preview .doc .base-col-menu {
+  width: 44px;
+}
+.preview .doc .base-td-menu {
+  text-align: right;
+}
+.preview .doc .base-sum-name {
+  color: var(--text-3);
+}
+.preview .doc .base-th-btn {
+  display: block;
+  width: 100%;
+  padding: 6px 12px 6px 8px;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.preview .doc .base-th-btn:hover {
+  background: var(--bg-hover);
+}
+.preview .doc .base-th-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.preview .doc .base-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.preview .doc .base-resize:hover,
+.preview .doc .base-resize:focus-visible {
+  background: var(--accent-soft);
+  outline: none;
+}
+.preview .doc .base-group td {
+  background: var(--bg-surface-2);
+  font-weight: 500;
+}
+.preview .doc .base-cell-edit {
+  min-height: 20px;
+  margin: 0 -4px;
+  padding: 2px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: var(--radius-1);
+  cursor: text;
+}
+.preview .doc .base-cell-edit:hover {
+  background: var(--bg-hover);
+}
+.preview .doc .base-cell-edit:focus-visible,
+.preview .doc .base-check:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.preview .doc .base-check {
+  margin: 0;
+  accent-color: var(--accent);
+}
+.preview .doc .base-check-ro {
+  pointer-events: none;
+}
+@media not all and (pointer: coarse) {
+  .preview .doc .base-check {
+    width: 16px;
+    height: 16px;
+  }
+  .preview .doc .base-cell-input {
+    width: calc(100% + 8px);
+    height: 24px;
+    min-height: 24px;
+    margin: 0 -4px;
+    padding: 0 3px;
+  }
+}
+.preview .doc .base-cell-input:focus-visible {
+  outline: 0;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.preview .doc .base-check-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  min-height: 20px;
+}
+.preview .doc .base-summary-note {
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  color: var(--text-3);
+  font-size: var(--text-xs);
+}
+
+.preview .doc .base-cards-wrap,
+.preview .doc .base-list-wrap {
+  display: block;
+}
+.preview .doc .base-group-title {
+  margin: 0;
+  padding: var(--space-2) var(--space-3) 0;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-2);
+}
+.preview .doc .base-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+.preview .doc .base-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--bg-surface);
+}
+.preview .doc .base-card:has(:focus-visible) {
+  border-color: var(--border-strong);
+}
+@media (hover: hover) and (pointer: fine) {
+  .preview .doc .base-card {
+    transition: border-color var(--dur-fast) var(--ease);
+  }
+  .preview .doc .base-card:hover {
+    border-color: var(--border-strong);
+  }
+}
+/* Lighter than the column in both themes, so a board card reads as a sheet on it. */
+.preview .doc .base-col .base-card {
+  background: var(--bg-elev);
+}
+.preview .doc .base-card .base-more {
+  margin: -4px -8px -4px 0;
+}
+.preview .doc .base-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.preview .doc .base-card-title {
+  min-width: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.preview .doc .base-card-props {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px var(--space-2);
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+.preview .doc .base-card-props div {
+  display: contents;
+}
+.preview .doc .base-card-props dt {
+  color: var(--text-3);
+}
+.preview .doc .base-card-props dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.preview .doc .base-cover {
+  margin: calc(var(--space-2) * -1) calc(var(--space-3) * -1) var(--space-2);
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--bg-surface-2);
+}
+.preview .doc .base-cover > *,
+.preview .doc .base-cover-media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  margin: 0;
+  object-fit: cover;
+  border-radius: 0;
+}
+.preview .doc .base-cover-ph {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  background: var(--bg-surface-2);
+  color: var(--text-4);
+}
+.preview .doc .base-cover-ph svg {
+  width: 16px;
+  height: 16px;
+}
+
+.preview .doc .base-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.preview .doc .base-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 2px var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+.preview .doc .base-list li:last-child {
+  border-bottom: 0;
+}
+.preview .doc .base-list-meta {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  min-width: 0;
+  color: var(--text-3);
+  font-size: var(--text-xs);
+}
+.preview .doc .base-list-prop {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.preview .doc .base-board {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  overflow-x: auto;
+}
+.preview .doc .base-col {
+  flex: 1 1 240px;
+  min-width: 200px;
+  max-width: 320px;
+  border-radius: var(--radius-2);
+  background: var(--bg-surface-2);
+}
+/* Stays narrow while dragging too: a column that widens mid-drag would move
+   the drop targets under the pointer. */
+.preview .doc .base-col[data-empty] {
+  flex: 0 0 160px;
+  min-width: 0;
+  background: transparent;
+  border: 1px dashed var(--border-strong);
+}
+.preview .doc .base-col[data-empty] .base-col-head h4 {
+  color: var(--text-3);
+  font-weight: 400;
+}
+@container preview (max-width: 600px) {
+  .preview .doc .base-view:is([data-layout="table"], [data-layout="kanban"]) {
+    --base-w: calc(100% + 2 * var(--preview-gutter));
+    border-inline: 0;
+    border-radius: 0;
+  }
+  .preview .doc .base-view:is([data-layout="table"], [data-layout="kanban"]) :is(.base-toolbar, .base-board, .base-warn, .base-empty, .base-summary-note) {
+    padding-inline: var(--preview-gutter);
+  }
+  /* The switch icon, not its button edge, lines up with the text. */
+  .preview .doc .base-view:is([data-layout="table"], [data-layout="kanban"]) .base-toolbar {
+    padding-inline: calc(var(--preview-gutter) - 8px);
+  }
+  .preview .doc .base-table :is(th:first-child .base-th-btn, td:first-child) {
+    padding-left: var(--preview-gutter);
+  }
+  .preview .doc .base-col {
+    flex: 0 0 min(240px, 78cqi);
+  }
+  .preview .doc .base-col[data-empty] {
+    flex: 0 0 140px;
+  }
+}
+.preview .doc .base-col.over {
+  outline: 2px solid var(--accent);
+}
+.preview .doc .base-col-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+}
+.preview .doc .base-col-head h4 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.preview .doc .base-col-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 40px;
+  padding: 0 var(--space-2) var(--space-2);
+}
+.preview .doc .base-card.lifted {
+  opacity: 0.4;
+}
+.preview .doc .base-board.dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+.preview .doc .base-ghost {
+  position: fixed;
+  z-index: var(--z-modal);
+  max-width: 240px;
+  padding: 4px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-2);
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-2);
+  pointer-events: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .preview .doc .base-board .base-card {
+    cursor: grab;
+  }
+}
+@media (pointer: coarse) {
+  .preview .doc .base-th-btn,
+  .preview .doc .base-cell-edit,
+  .preview .doc .base-link {
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .preview .doc .base-th-btn,
+  .preview .doc .base-cell-edit {
+    display: flex;
+  }
+  /* No hover on touch, so links keep the underline rather than relying on colour alone. */
+  .preview .doc .base-link {
+    text-decoration: underline;
+  }
+  .preview .doc .base-col-menu {
+    width: 56px;
+  }
+  .preview .doc .base-table td.base-td-menu {
+    padding: 0 8px;
+    overflow: visible;
+  }
+  .preview .doc .base-num :is(.base-th-btn, .base-cell-edit) {
+    justify-content: flex-end;
+  }
+  /* A 40px handle centred on the column border. A sticky cell is its own
+     stacking context, so each header would paint over the handle of the one
+     before it; the head row sticks instead and the cells stay plain. */
+  .preview .doc .base-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+  .preview .doc .base-table th {
+    position: relative;
+    z-index: auto;
+    overflow: visible;
+  }
+  /* Frozen like the body cells, and above the later handles that slide under it. */
+  .preview .doc .base-table th:first-child {
+    position: sticky;
+    z-index: 3;
+  }
+  .preview .doc .base-resize {
+    right: -20px;
+    width: 40px;
+    z-index: 2;
+  }
+  .preview .doc .base-check-wrap {
+    min-width: 40px;
+    min-height: 40px;
+  }
+  .preview .doc .base-check {
+    width: 22px;
+    height: 22px;
+  }
+  .preview .doc .base-list li {
+    min-height: 40px;
+  }
+  .preview .doc .base-card-title {
+    min-height: 40px;
+  }
+}
