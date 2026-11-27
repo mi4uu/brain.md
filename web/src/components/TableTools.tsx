@@ -296,7 +296,10 @@ export function TableTools({ scrollerRef, docRef, content, html, onEditTable, no
     };
     const onClick = (e: MouseEvent) => {
       const addr = editableCell(e.target as Element);
-      if (!addr) return;
+      if (!addr) {
+        if (!(e.target as Element).closest("table[data-source-end]")) setSel(null);
+        return;
+      }
       const selection = window.getSelection();
       if (selection && !selection.isCollapsed) return;
       const model = liveTable(addr.line)?.model;
