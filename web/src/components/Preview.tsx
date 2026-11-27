@@ -392,7 +392,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
   return (
     <div className="preview scroll" ref={ref}>
       {onEditTable ? (
-        <TableTools scrollerRef={ref} docRef={docRef} content={content} html={html} onEditTable={onEditTable}>
+        <TableTools scrollerRef={ref} docRef={docRef} content={content} html={html} onEditTable={onEditTable} noteKey={notePath}>
           {docEl}
         </TableTools>
       ) : (

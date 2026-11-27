@@ -22,6 +22,8 @@ export interface TableAction {
   group: ActionGroup;
   enabled: (t: MdTable, at: CellRef) => boolean;
   run: (t: MdTable, at: CellRef) => MdTable;
+  /** Where the acted-on cell ends up, relative to `at`; set only when it moves. */
+  follow?: CellRef;
 }
 
 export const ACTION_GROUPS: ActionGroup[] = ["insert", "move", "align", "delete"];
@@ -60,21 +62,25 @@ export const TABLE_ACTIONS: TableAction[] = [
     id: "row-up", label: "Move row up", shortLabel: "Row up", group: "move",
     enabled: (_t, at) => at.row >= 1,
     run: (t, at) => moveRow(t, at.row, at.row - 1),
+    follow: { row: -1, col: 0 },
   },
   {
     id: "row-down", label: "Move row down", shortLabel: "Row down", group: "move",
     enabled: (t, at) => at.row >= 0 && at.row < t.rows.length - 1,
     run: (t, at) => moveRow(t, at.row, at.row + 1),
+    follow: { row: 1, col: 0 },
   },
   {
     id: "col-move-left", label: "Move column left", shortLabel: "Move left", group: "move",
     enabled: (_t, at) => at.col >= 1,
     run: (t, at) => moveColumn(t, at.col, at.col - 1),
+    follow: { row: 0, col: -1 },
   },
   {
     id: "col-move-right", label: "Move column right", shortLabel: "Move right", group: "move",
     enabled: (t, at) => at.col < t.header.length - 1,
     run: (t, at) => moveColumn(t, at.col, at.col + 1),
+    follow: { row: 0, col: 1 },
   },
   align("align-left", "Align left", "Left", "left"),
   align("align-center", "Align centre", "Centre", "center"),

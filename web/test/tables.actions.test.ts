@@ -40,6 +40,18 @@ describe("table actions", () => {
     expect(act("delete-column").run(t, { row: 0, col: 0 }).header).toEqual(["b"]);
   });
 
+  test("follow points at where the selected cell lands", () => {
+    const big = parseTable(["| a | b | c |", "|---|---|---|", "| 1 | 2 | 3 |", "| 4 | 5 | 6 |", "| 7 | 8 | 9 |"])!;
+    const at = { row: 1, col: 1 };
+    const cell = (m: typeof big, r: number, c: number) => (r < 0 ? m.header[c] : m.rows[r]?.[c]);
+    const following = TABLE_ACTIONS.filter((a) => a.follow).map((a) => a.id);
+    expect(following).toEqual(["row-up", "row-down", "col-move-left", "col-move-right"]);
+    for (const a of TABLE_ACTIONS.filter((x) => x.follow)) {
+      const next = a.run(big, at);
+      expect(cell(next, at.row + a.follow!.row, at.col + a.follow!.col)).toBe("5");
+    }
+  });
+
   test("align and delete row", () => {
     expect(act("align-center").run(t, { row: 0, col: 1 }).align).toEqual([null, "center"]);
     expect(act("delete-row").run(t, { row: 0, col: 0 }).rows).toEqual([["3", "4"]]);

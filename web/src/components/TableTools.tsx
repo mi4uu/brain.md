@@ -75,6 +75,7 @@ interface TableToolsProps {
   content: string;
   html: string;
   onEditTable: (range: LineRange, fn: (t: MdTable) => MdTable) => boolean;
+  noteKey: string | null;
   children: ReactNode;
 }
 
@@ -126,15 +127,17 @@ const sameCell = (a: CellSel, b: CellSel): boolean => a.line === b.line && a.row
 
 const editableCell = (t: Element): CellSel | null => (t.closest("a, input, button, summary") ? null : addressOf(t));
 
-// Without this a second "Row down" on the same selection would move the row back.
-const FOLLOW: Record<string, { row: number; col: number }> = {
-  "row-up": { row: -1, col: 0 },
-  "row-down": { row: 1, col: 0 },
-  "col-move-left": { row: 0, col: -1 },
-  "col-move-right": { row: 0, col: 1 },
-};
+interface LiveTable {
+  range: LineRange;
+  model: MdTable;
+}
 
-export function TableTools({ scrollerRef, docRef, content, html, onEditTable, children }: TableToolsProps) {
+interface CtxTarget {
+  cell: CellSel;
+  model: MdTable;
+}
+
+export function TableTools({ scrollerRef, docRef, content, html, onEditTable, noteKey, children }: TableToolsProps) {
   const [editing, setEditing] = useState<Editing | null>(null);
   const [geo, setGeo] = useState<Geo | null>(null);
   const [tick, setTick] = useState(0);
@@ -145,29 +148,32 @@ export function TableTools({ scrollerRef, docRef, content, html, onEditTable, ch
   const [drag, setDrag] = useState<DragState | null>(null);
   const toolsKey: TableKey | null = noHoverUi ? null : (drag ?? hover);
   const [sel, setSel] = useState<CellSel | null>(null);
-  const [ctx, setCtx] = useState<CellSel | null>(null);
+  // Read after the DOM commit (in the layout effect), never during render:
+  // in the render that follows an edit the DOM is still one commit behind.
+  const [selModel, setSelModel] = useState<MdTable | null>(null);
+  const [ctx, setCtx] = useState<CtxTarget | null>(null);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: noteKey is the trigger, not an input
+  useLayoutEffect(() => {
+    setSel(null);
+    setCtx(null);
+  }, [noteKey]);
 
   // The end line is read from the rendered table at call time: a stored one
   // goes stale as soon as an edit changes the table's line count.
-  const liveRange = (line: number): LineRange | null => {
+  const liveTable = (line: number): LiveTable | null => {
     const table = tableByLine(docRef.current, line);
     const end = Number(table?.dataset.sourceEnd);
     if (!table || !Number.isInteger(end)) return null;
     const range = { from: line, to: end };
     const model = readTable(content, range);
-    return model && matchesModel(table, model) ? range : null;
+    return model && matchesModel(table, model) ? { range, model } : null;
   };
 
-  const edit = (line: number, fn: (t: MdTable) => MdTable): boolean => {
-    const range = liveRange(line);
-    if (range && onEditTable(range, fn)) return true;
+  const edit = (line: number, fn: (t: MdTable) => MdTable, live = liveTable(line)): boolean => {
+    if (live && onEditTable(live.range, fn)) return true;
     toast({ description: "Table changed, edit not applied" });
     return false;
-  };
-
-  const liveModel = (line: number): MdTable | null => {
-    const range = liveRange(line);
-    return range ? readTable(content, range) : null;
   };
 
   // flushSync mounts and focuses the input inside the tap handler: iOS Safari
@@ -240,11 +246,22 @@ export function TableTools({ scrollerRef, docRef, content, html, onEditTable, ch
     const table = key && doc ? tableByLine(doc, key.line) : null;
     if (!scroller || !table) {
       setGeo(null);
+      setSelModel(null);
       if (editing && !table) setEditing(null);
       if (drag && !table) setDrag(null);
       if (key === selKey && selKey && !table) setSel(null);
       return;
     }
+    const model = selKey ? (liveTable(selKey.line)?.model ?? null) : null;
+    if (selKey && model) {
+      const row = Math.max(-1, Math.min(selKey.row, model.rows.length - 1));
+      const col = Math.max(0, Math.min(selKey.col, model.header.length - 1));
+      if (row !== selKey.row || col !== selKey.col) {
+        setSel({ ...selKey, row, col });
+        return;
+      }
+    }
+    setSelModel(model);
     const cellBox = (c: CellSel | null): Box | null => {
       if (!c || c.line !== key?.line) return null;
       const tr = c.row < 0 ? table.rows[0] : table.rows[c.row + 1];
@@ -276,7 +293,7 @@ export function TableTools({ scrollerRef, docRef, content, html, onEditTable, ch
       if (!addr) return;
       const selection = window.getSelection();
       if (selection && !selection.isCollapsed) return;
-      const model = liveModel(addr.line);
+      const model = liveTable(addr.line)?.model;
       if (!model) return;
       e.preventDefault();
       if (editing && sameCell(editing, addr)) return;
@@ -334,40 +351,41 @@ export function TableTools({ scrollerRef, docRef, content, html, onEditTable, ch
   };
 
   const run = (target: CellSel, a: TableAction) => {
-    const applied = edit(target.line, (t) => (a.enabled(t, target) ? a.run(t, target) : t));
-    const step = FOLLOW[a.id];
-    if (applied && step && sel && sameCell(sel, target)) {
-      setSel({ ...target, row: target.row + step.row, col: target.col + step.col });
+    const live = liveTable(target.line);
+    const enabled = !!live && a.enabled(live.model, target);
+    const applied = edit(target.line, (t) => (a.enabled(t, target) ? a.run(t, target) : t), live);
+    const f = a.follow;
+    if (applied && enabled && f && sel && sameCell(sel, target)) {
+      setSel({ ...target, row: target.row + f.row, col: target.col + f.col });
     }
   };
 
-  const ctxModel = ctx ? liveModel(ctx.line) : null;
-  const selModel = noHoverUi && sel ? liveModel(sel.line) : null;
-
-  useLayoutEffect(() => {
-    if (!sel || !selModel) return;
-    const row = Math.min(sel.row, selModel.rows.length - 1);
-    const col = Math.min(sel.col, selModel.header.length - 1);
-    if (row !== sel.row || col !== sel.col) setSel({ ...sel, row, col });
-  }, [sel, selModel]);
+  const openSelected = () => {
+    const model = sel ? liveTable(sel.line)?.model : null;
+    if (sel && model) openEditor(sel, model);
+  };
 
   const onPointerDownCapture = (e: ReactPointerEvent<HTMLElement>) => {
-    const addr = editableCell(e.target as Element);
-    setCtx(addr && liveRange(addr.line) ? addr : null);
+    const cell = editableCell(e.target as Element);
+    const model = cell ? liveTable(cell.line)?.model : null;
+    setCtx(cell && model ? { cell, model } : null);
   };
 
   return (
     <>
       <ContextMenu>
+        {/* iOS has no native contextmenu: Radix's long-press timer is chosen at render
+            time, so a press that sets ctx in its own pointerdown still sees `disabled`.
+            Touch relies on the action bar instead. */}
         <ContextMenuTrigger
           asChild
-          disabled={!ctx || !ctxModel}
+          disabled={!ctx}
           onPointerDownCapture={onPointerDownCapture}
           style={{ WebkitTouchCallout: "default" }}
         >
           {children}
         </ContextMenuTrigger>
-        {ctx && ctxModel ? (
+        {ctx ? (
           <ContextMenuContent>
             {ACTION_GROUPS.map((g, gi) => (
               <Fragment key={g}>
@@ -376,8 +394,8 @@ export function TableTools({ scrollerRef, docRef, content, html, onEditTable, ch
                   <ContextMenuItem
                     key={a.id}
                     className="tt-menu-item"
-                    disabled={!a.enabled(ctxModel, ctx)}
-                    onSelect={() => run(ctx, a)}
+                    disabled={!a.enabled(ctx.model, ctx.cell)}
+                    onSelect={() => run(ctx.cell, a)}
                   >
                     {a.label}
                   </ContextMenuItem>
@@ -430,13 +448,18 @@ export function TableTools({ scrollerRef, docRef, content, html, onEditTable, ch
           />
         ) : null}
       </div>
-      {sel && selModel ? (
+      {noHoverUi && sel ? (
         <div className="table-actionbar" role="toolbar" aria-label="Table actions">
-          <button type="button" onClick={() => openEditor(sel, selModel)}>
+          <button type="button" disabled={!selModel} onClick={openSelected}>
             Edit cell
           </button>
           {TABLE_ACTIONS.map((a) => (
-            <button key={a.id} type="button" disabled={!a.enabled(selModel, sel)} onClick={() => run(sel, a)}>
+            <button
+              key={a.id}
+              type="button"
+              disabled={!selModel || !a.enabled(selModel, sel)}
+              onClick={() => run(sel, a)}
+            >
               {a.shortLabel}
             </button>
           ))}
