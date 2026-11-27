@@ -7,19 +7,24 @@ import { insertRow, setCell } from "../src/tables/md-table";
 
 function stub(doc: string, anchor: number, head = anchor) {
   let state = EditorState.create({ doc, selection: { anchor, head }, extensions: [history()] });
+  let last: Transaction | null = null;
   const view = {
     get state() {
       return state;
     },
     dispatch(...specs: Array<TransactionSpec | Transaction>) {
       const first = specs[0];
-      state = first instanceof Transaction ? first.state : state.update(...(specs as TransactionSpec[])).state;
+      last = first instanceof Transaction ? first : state.update(...(specs as TransactionSpec[]));
+      state = last.state;
     },
   };
   return {
     view: view as unknown as EditorView,
     get state() {
       return state;
+    },
+    get last() {
+      return last;
     },
   };
 }
@@ -155,6 +160,16 @@ describe("dispatchTableEdit", () => {
     expect(s.state.doc.toString()).toBe(afterFirst);
     expect(undo(s.view as never)).toBe(true);
     expect(s.state.doc.toString()).toBe(note);
+  });
+
+  test("changes only the bytes that differ, so a cursor in the table stays put", () => {
+    const padded = "| a   | b   |\n| --- | --- |\n| 1   | 2   |\n";
+    const s = stub(padded, 2);
+    expect(dispatchTableEdit(s.view, { from: 1, to: 3 }, (t) => insertRow(t, 1))).toBe(true);
+    expect(s.state.doc.toString()).toBe(`${padded}|     |     |\n`);
+    expect(s.state.selection.main.head).toBe(2);
+    expect(s.last?.changes.desc.length).toBe(padded.length);
+    expect(s.last?.isUserEvent("input.table.preview")).toBe(true);
   });
 
   test("returns false for a range that is not a table", () => {

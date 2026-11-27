@@ -157,7 +157,11 @@ export function Editor({
         const line = u.state.doc.lineAt(head).number;
         if (line !== lastCursorLine) {
           lastCursorLine = line;
-          onCursorLineRef.current?.(line);
+          // A preview table edit only shifts the cursor's line; following it
+          // would scroll the preview away from the table being edited.
+          if (!u.transactions.some((tr) => tr.isUserEvent("input.table.preview"))) {
+            onCursorLineRef.current?.(line);
+          }
         }
       }
     });

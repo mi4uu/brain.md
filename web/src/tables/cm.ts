@@ -2,6 +2,7 @@ import { completionStatus } from "@codemirror/autocomplete";
 import { isolateHistory } from "@codemirror/commands";
 import type { Extension } from "@codemirror/state";
 import { keymap, type EditorView } from "@codemirror/view";
+import { minimalChange } from "../properties/model";
 import { tableEdit } from "./apply";
 import type { LineRange, MdTable } from "./md-table";
 import { enterEdit, formatEdit, tabEdit, type CursorEdit } from "./navigate";
@@ -51,12 +52,14 @@ export function dispatchTableEdit(
   range: LineRange,
   fn: (t: MdTable) => MdTable,
 ): boolean {
-  const edit = tableEdit(view.state.doc.toString(), range, fn);
+  const { doc } = view.state;
+  const edit = tableEdit(doc.toString(), range, fn);
   if (!edit) return false;
-  if (edit.from === edit.to && edit.insert === "") return true;
+  const change = minimalChange(doc.sliceString(edit.from, edit.to), edit.insert);
+  if (!change) return true;
   view.dispatch({
-    changes: { from: edit.from, to: edit.to, insert: edit.insert },
-    userEvent: "input.table",
+    changes: { from: edit.from + change.from, to: edit.from + change.to, insert: change.insert },
+    userEvent: "input.table.preview",
     annotations: isolateHistory.of("full"),
   });
   return true;
