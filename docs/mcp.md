@@ -68,6 +68,16 @@ the simple form `filter`, `columns` and `sort`. Combining forms is an
 engine cannot run comes back in `warnings`, not as an error. Rows respect the
 caller's per-folder read permissions and skip hidden notes.
 
+Each row is `{ path, title, revision, values, partial? }`, plus `group` (the
+label) and `group_key` (the raw key, `null` for "No value") when the view is
+grouped. `revision` is what `update_properties` takes as `base_revision`.
+`partial` lists the keys whose value is not the whole stored value: a cell cut
+at 500 characters by `query_notes`, or cut or shortened by the engine. Never
+write such a value back. Pages are 50 rows by default and stop early at about
+200 KB; the engine also ends a page early when a very wide view would make the
+response too large. In both cases `next_offset` continues where the page
+stopped, and `total` counts every matching row.
+
 `path` also runs fences indented inside a list item. The note preview renders
 only top-level fences, so such a fence shows as plain code there but still runs
 through `query_notes`.

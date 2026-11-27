@@ -412,7 +412,8 @@ function registerHandlers(
         "A filter is an expression: note properties by name, `file.*` values (name, path, folder, tags, links, backlinks, size, ctime, mtime), " +
         "`==  !=  <  >  &&  ||  !`, and functions such as contains, startsWith, isEmpty, file.hasTag(\"x\"), file.inFolder(\"x\"), today(), now(). " +
         'Example: status == "open" && file.hasTag("work"). Columns are `file.name`, `file.mtime` or a property name. ' +
-        "Syntax it cannot run comes back as `warnings`, not an error. 50 rows per page (`limit`, `offset`); cells are cut at 500 characters and a page stops at about 200 KB. Hidden notes are skipped.",
+        "Syntax it cannot run comes back as `warnings`, not an error. 50 rows per page (`limit`, `offset`); cells are cut at 500 characters and a page stops at about 200 KB. Hidden notes are skipped. " +
+        "Each row has `revision` (pass it as base_revision to update_properties) and, when a cell was cut or shortened, `partial` with those keys: never write a partial value back.",
       inputSchema: {
         base: z.string().min(1).max(100_000).optional(),
         path: z.string().min(1).optional(),
@@ -450,41 +451,49 @@ function registerHandlers(
         }
         const allowed = await readFilter();
         const types = new Map((await listProperties(vault, index, allowed)).map((p) => [p.name, p.type] as const));
+        const start = offset ?? 0;
         const res = runBaseQuery(
-          { source, view: simple ? undefined : view, thisPath, offset: 0, limit: 2000 },
+          { source, view: simple ? undefined : view, thisPath, offset: start, limit: limit ?? 50 },
           { index: queryIndexFor(index, visibility), allowed, types },
         );
         const grouped = res.groups.some((g) => g.label !== "");
-        const rows = res.groups.flatMap((g) =>
-          g.rows.map((r) => ({ path: r.path, title: r.title, ...(grouped ? { group: g.label } : {}), values: r.values })),
-        );
-        const start = Math.min(offset ?? 0, rows.length);
-        const cap = limit ?? 50;
         let cut = 0;
-        const clip = (v: unknown): unknown => {
-          if (typeof v === "string" && v.length > QUERY_CELL_CHARS) {
-            cut++;
-            return v.slice(0, QUERY_CELL_CHARS) + "…";
-          }
-          return Array.isArray(v) ? v.map(clip) : v;
-        };
-        const items: typeof rows = [];
+        const items: Array<Record<string, unknown>> = [];
         let bytes = 0;
         let budgetHit = false;
-        for (const r of rows.slice(start, start + cap)) {
-          const row = { ...r, values: Object.fromEntries(Object.entries(r.values).map(([k, v]) => [k, clip(v)])) } as typeof r;
-          const size = JSON.stringify(row).length;
-          if (items.length > 0 && bytes + size > QUERY_REPLY_BYTES) {
-            budgetHit = true;
-            break;
+        for (const g of res.groups) {
+          for (const r of g.rows) {
+            const clipped = new Set(r.partial);
+            const clip = (v: unknown, key: string): unknown => {
+              if (typeof v === "string" && v.length > QUERY_CELL_CHARS) {
+                cut++;
+                clipped.add(key);
+                return v.slice(0, QUERY_CELL_CHARS) + "…";
+              }
+              return Array.isArray(v) ? v.map((x) => clip(x, key)) : v;
+            };
+            const values = Object.fromEntries(Object.entries(r.values).map(([k, v]) => [k, clip(v, k)]));
+            const row = {
+              path: r.path,
+              title: r.title,
+              revision: r.revision,
+              ...(grouped ? { group: g.label, group_key: g.key } : {}),
+              values,
+              ...(clipped.size > 0 ? { partial: [...clipped] } : {}),
+            };
+            const size = JSON.stringify(row).length;
+            if (items.length > 0 && bytes + size > QUERY_REPLY_BYTES) {
+              budgetHit = true;
+              break;
+            }
+            bytes += size;
+            items.push(row);
           }
-          bytes += size;
-          items.push(row);
+          if (budgetHit) break;
         }
         const end = start + items.length;
-        const p = { items, total: rows.length, offset: start, nextOffset: end < rows.length ? end : null };
+        const p = { items, total: res.total, offset: start, nextOffset: end < res.total ? end : null };
         const warnings = [...res.warnings];
-        if (res.total > rows.length) warnings.push(`Only the first ${rows.length} of ${res.total} rows can be paged; narrow the query.`);
         if (cut > 0) warnings.push(`${cut} cell(s) longer than ${QUERY_CELL_CHARS} characters were cut.`);
         if (budgetHit) warnings.push(`The page was shortened to ${items.length} rows to keep the reply small; continue at offset=${end}.`);
         logCall("query_notes", args, true);

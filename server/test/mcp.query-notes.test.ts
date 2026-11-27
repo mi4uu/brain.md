@@ -126,4 +126,41 @@ describe("query_notes", () => {
     const next = await call({ filter: 'file.inFolder("big")', columns: cols, limit: 200, offset: r.body.rows.length });
     expect(next.body.rows[0].path).toBe(`big/b${String(r.body.rows.length).padStart(3, "0")}.md`);
   });
+
+  test("rows carry revision and partial; a cell cut here is listed in partial", async () => {
+    await h.vault.writeNote("work/long.md", `---\ndesc: ${"x".repeat(5000)}\nrefs: ["${"t".repeat(600)}", b]\nn: 1\n---\n# Long\n`);
+    const r = await call({ filter: 'file.name == "long.md"', columns: ["desc", "refs", "n"] });
+    const row = r.body.rows[0];
+    expect(row.revision).toBe((await h.vault.readNote("work/long.md")).revision);
+    expect(row.partial).toEqual(["desc", "refs"]);
+    const plain = await call({ filter: 'file.name == "n01.md"', columns: ["n"] });
+    expect(plain.body.rows[0].partial).toBeUndefined();
+    expect(plain.body.rows[0].revision).toBe((await h.vault.readNote("work/n01.md")).revision);
+  });
+
+  test("an engine cut and a cut here are listed once", async () => {
+    await h.vault.writeNote("work/huge.md", `---\ndesc: ${"x".repeat(12_000)}\n---\n# Huge\n`);
+    const r = await call({ filter: 'file.name == "huge.md"', columns: ["desc"] });
+    expect(r.body.rows[0].partial).toEqual(["desc"]);
+  });
+
+  test("grouped rows carry the group key next to its label", async () => {
+    await h.vault.writeNote("work/odd.md", "---\nstatus: No value\n---\n# Odd\n");
+    await h.vault.writeNote("work/none.md", "# None\n");
+    const base = 'filters: file.name == "odd.md" || file.name == "none.md"\nviews:\n  - type: table\n    name: G\n    groupBy:\n      property: status\n    order: [file.name]\n';
+    const r = await call({ base });
+    expect(r.body.rows.map((x: { path: string; group: string; group_key: string | null }) => [x.path, x.group, x.group_key])).toEqual([
+      ["work/odd.md", "No value", "No value"],
+      ["work/none.md", "No value", null],
+    ]);
+  });
+
+  test("rows past the engine's response budget can still be paged", async () => {
+    const cols = Array.from({ length: 50 }, (_, k) => `p${k}`);
+    const body = cols.map((c) => `${c}: ${"z".repeat(5000)}`).join("\n");
+    for (let i = 0; i < 30; i++) await h.vault.writeNote(`wide/w${String(i).padStart(2, "0")}.md`, `---\n${body}\n---\n# W\n`);
+    const r = await call({ filter: 'file.inFolder("wide")', columns: cols, offset: 25, limit: 1 });
+    expect(r.body.total).toBe(30);
+    expect(r.body.rows.map((x: { path: string }) => x.path)).toEqual(["wide/w25.md"]);
+  });
 });
