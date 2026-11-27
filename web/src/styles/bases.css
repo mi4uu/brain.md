@@ -221,9 +221,12 @@
   color: var(--link);
   text-align: left;
   cursor: pointer;
-  text-decoration: underline;
+  text-decoration: none;
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
+}
+.preview .doc .base-link:hover {
+  text-decoration: underline;
 }
 .preview .doc .base-link:focus-visible {
   outline: 2px solid var(--accent);
