@@ -11,6 +11,7 @@ import { parseExpression, type Node } from "./expr";
 import { DEFAULT_BUDGET, evaluate, type Scope } from "./eval";
 import {
   FileObject,
+  LinkValue,
   compareValues,
   toProp,
   toStr,
@@ -47,9 +48,10 @@ export interface QueryDeps {
   // Effective property types (registry first, then inferred), from listProperties.
   types: ReadonlyMap<string, PropertyType>;
   now?: Date;
-  // Cost units (about one per character) of formula values and sort and group keys held between phases.
-  retainCap?: number;
-  stats?: { retainedPeak: number };
+  // Cost units (about one per character) held between phases: formula values kept so they are not
+  // computed again, and sort and group keys. Each has its own cap.
+  retainCap?: { values?: number; keys?: number };
+  stats?: { valuesPeak: number; keysPeak: number };
 }
 
 type Row = { e: QueryEntry; scope: Scope; memo: Map<string, Value>; held: number };
@@ -70,19 +72,27 @@ const WIKI = /^\[\[([^\]|#^]*)/;
 const MAX_CELL = 10_000;
 const MAX_RESPONSE_CHARS = 5_000_000;
 const MAX_KEPT_STRING = 1_000;
-const MAX_RETAINED = 8_000_000;
+const MAX_KEPT_VALUES = 16_000_000;
+const MAX_KEPT_KEYS = 16_000_000;
 const ENTRY_COST = 32;
+const SMALL = ENTRY_COST + MAX_KEPT_STRING;
 const DROP = Symbol("drop");
 const cap = (s: string): string => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
 // JSC keeps a slice's whole parent alive; resolving a fresh rope copies just the kept characters.
 const own = (s: string): string => (s.length < 2 ? s : (s + "\0").slice(0, -1));
-const clip = (v: Value, n: number): Value => (typeof v === "string" ? own(v.length > n ? v.slice(0, n) : v) : v);
+const ownCut = (s: string): string => own(s.length > MAX_KEPT_STRING ? s.slice(0, MAX_KEPT_STRING) : s);
+const clip = (v: Value): Value => {
+  if (typeof v === "string") return ownCut(v);
+  if (v instanceof LinkValue) return new LinkValue(ownCut(v.path), v.display === undefined ? undefined : ownCut(v.display));
+  return v;
+};
 
 function weigh(v: Value, depth = 0): number {
   if (typeof v === "string") return ENTRY_COST + v.length;
+  if (v instanceof LinkValue) return ENTRY_COST + v.path.length + (v.display?.length ?? 0);
   if (Array.isArray(v)) {
     let n = ENTRY_COST + 8 * v.length;
-    if (depth < 4) for (const x of v) n += typeof x === "string" || Array.isArray(x) ? weigh(x, depth + 1) : 0;
+    if (depth < 4) for (const x of v) n += weigh(x, depth + 1);
     return n;
   }
   return ENTRY_COST;
@@ -212,47 +222,49 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
   // A formula is evaluated and charged once per note per query. Between phases a row keeps only
   // the values a later phase reads, only up to MAX_KEPT_STRING each, and only while the whole
   // query stays under the cap; anything else is computed (and charged) again if it is read.
-  const retainCap = deps.retainCap ?? MAX_RETAINED;
-  let retained = 0;
-  const hold = (n: number): void => {
-    retained += n;
-    if (deps.stats && retained > deps.stats.retainedPeak) deps.stats.retainedPeak = retained;
-  };
+  const valuesCap = deps.retainCap?.values ?? MAX_KEPT_VALUES;
+  const keysCap = deps.retainCap?.keys ?? MAX_KEPT_KEYS;
+  let values = 0;
+  let keys = 0;
   const busy = new Set<string>();
   const release = (r: Row): void => {
-    retained -= r.held;
+    values -= r.held;
     r.held = 0;
     r.memo = new Map();
   };
   const park = (r: Row): void => {
-    retained -= r.held;
+    values -= r.held;
     r.held = 0;
     const kept = new Map<string, Value>();
     let cost = 0;
     for (const [k, v] of r.memo) {
       if (!laterAll && !later.has(k)) continue;
-      if (typeof v === "string" && v.length > MAX_KEPT_STRING) continue;
+      const w = weigh(v);
+      if (w > SMALL) continue;
       kept.set(k, v);
-      cost += weigh(v);
+      cost += w;
     }
-    if (retained + cost > retainCap) {
+    if (values + cost > valuesCap) {
       if (kept.size > 0) warn("formula values were too large to keep for every note; some were computed again");
       r.memo = new Map();
       return;
     }
     r.memo = kept;
     r.held = cost;
-    hold(cost);
+    values += cost;
+    if (deps.stats && values > deps.stats.valuesPeak) deps.stats.valuesPeak = values;
   };
   // Sort and group keys live to the end of the query, so they are counted and never released.
-  const keepKey = (v: Value): Value => {
-    const k = clip(v, MAX_KEPT_STRING);
+  // undefined: the key did not fit.
+  const keepKey = (v: Value): Value | undefined => {
+    const k = clip(v);
     const cost = weigh(k);
-    if (retained + cost > retainCap) {
+    if (keys + cost > keysCap) {
       warn("sort and group values were too large to keep for every note; some were left empty");
-      return null;
+      return undefined;
     }
-    hold(cost);
+    keys += cost;
+    if (deps.stats && keys > deps.stats.keysPeak) deps.stats.keysPeak = keys;
     return k;
   };
   const rowFor = (e: QueryEntry): Row => {
@@ -279,7 +291,7 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
         const node = formulaNode(name);
         const v = node ? evaluate(node, scope) : null;
         busy.delete(name);
-        row.memo.set(name, typeof v === "string" && v.length <= MAX_KEPT_STRING ? own(v) : v);
+        row.memo.set(name, weigh(v) <= SMALL ? clip(v) : v);
         return v;
       },
     };
@@ -338,15 +350,20 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
 
   const sortVals = new Map(
     rows.map((r) => {
-      const vals = view.sort.map((s) => keepKey(keyValue(s.property, r.scope)));
+      const vals: Value[] = [];
+      for (const s of view.sort) {
+        const k = keepKey(keyValue(s.property, r.scope));
+        if (k === undefined) break;
+        vals.push(k);
+      }
       if (view.sort.length > 0) park(r);
       return [r, vals];
     }),
   );
   rows.sort((x, y) => {
     for (let i = 0; i < view.sort.length; i++) {
-      const a = sortVals.get(x)![i]!;
-      const b = sortVals.get(y)![i]!;
+      const a = sortVals.get(x)![i] ?? null;
+      const b = sortVals.get(y)![i] ?? null;
       const ea = isEmpty(a);
       const eb = isEmpty(b);
       if (ea || eb) {
@@ -397,8 +414,8 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
     if (gb) {
       const raw = keyValue(gb.property, r.scope);
       const key = groupKeyOf(raw, r.e.path);
-      group = key === null ? null : (keepKey(key) as string | null);
-      if (!present.has(group)) present.set(group, keepKey(raw));
+      group = key === null ? null : ((keepKey(key) as string | undefined) ?? null);
+      if (!present.has(group)) present.set(group, keepKey(raw) ?? null);
       park(r);
     }
     return { row: r, e: r.e, scope: r.scope, group };

@@ -457,17 +457,17 @@ describe("robustness, round 4", () => {
   };
 
   test("only small values a later phase reads are kept between phases", () => {
-    const stats = { retainedPeak: 0 };
+    const stats = { valuesPeak: 0, keysPeak: 0 };
     const r = q(wide("file.name"), { idx: index({ entries: () => manyNotes(300) }), req: { limit: 1 }, deps: { stats } });
     expect(r.total).toBe(300);
-    expect(stats.retainedPeak).toBe(0);
-    const big = { retainedPeak: 0 };
+    expect(stats.valuesPeak).toBe(0);
+    const big = { valuesPeak: 0, keysPeak: 0 };
     const r2 = q(wide("file.name, formula.f6, formula.f9"), { idx: index({ entries: () => manyNotes(300) }), req: { limit: 1 }, deps: { stats: big } });
     expect(r2.total).toBe(300);
     expect(r2.groups[0]!.rows[0]!.values["formula.f9"]).toHaveLength(5120);
     // f0..f6 (1270 chars) stay because f9 reads them; f7..f9 are over 1000 and are computed again for the page row.
-    expect(big.retainedPeak).toBeGreaterThan(300 * 1270);
-    expect(big.retainedPeak).toBeLessThan(300 * 2000);
+    expect(big.valuesPeak).toBeGreaterThan(300 * 1270);
+    expect(big.valuesPeak).toBeLessThan(300 * 2000);
     expect(r2.warnings).toEqual([]);
   });
 
@@ -483,21 +483,44 @@ describe("robustness, round 4", () => {
   });
 
   test("kept formula values stay under a query-wide cap; capped rows still get their values", () => {
-    const stats = { retainedPeak: 0 };
-    const r = q(wide("file.name, formula.f6"), { idx: index({ entries: () => manyNotes(300) }), req: { limit: 300 }, deps: { stats, retainCap: 50_000 } });
+    const stats = { valuesPeak: 0, keysPeak: 0 };
+    const r = q(wide("file.name, formula.f6"), { idx: index({ entries: () => manyNotes(300) }), req: { limit: 300 }, deps: { stats, retainCap: { values: 50_000 } } });
     expect(r.total).toBe(300);
-    expect(stats.retainedPeak).toBeGreaterThan(0);
-    expect(stats.retainedPeak).toBeLessThanOrEqual(50_000);
+    expect(stats.valuesPeak).toBeGreaterThan(0);
+    expect(stats.valuesPeak).toBeLessThanOrEqual(50_000);
     expect(r.groups[0]!.rows.every((row) => (row.values["formula.f6"] as string).length === 640)).toBe(true);
     expect(r.warnings.some((w) => w.includes("computed again"))).toBe(true);
   });
 
   test("sort and group keys count against the cap and are left empty past it", () => {
-    const stats = { retainedPeak: 0 };
+    const stats = { valuesPeak: 0, keysPeak: 0 };
     const src = `formulas:\n${chain9().join("\n")}\nviews:\n  - type: table\n    name: T\n    sort:\n      - property: formula.f6\n    groupBy:\n      property: formula.f5\n`;
-    const r = q(src, { idx: index({ entries: () => manyNotes(300) }), req: { limit: 1 }, deps: { stats, retainCap: 50_000 } });
+    const r = q(src, { idx: index({ entries: () => manyNotes(300) }), req: { limit: 1 }, deps: { stats, retainCap: { keys: 50_000 } } });
     expect(r.total).toBe(300);
-    expect(stats.retainedPeak).toBeLessThanOrEqual(50_000);
+    expect(stats.keysPeak).toBeGreaterThan(0);
+    expect(stats.keysPeak).toBeLessThanOrEqual(50_000);
     expect(r.warnings.some((w) => w.includes("left empty"))).toBe(true);
+  });
+
+  test("sort keys keep their order when kept formula values fill their own cap", () => {
+    const src = wide("file.name, formula.f6").replace("    order:", "    sort:\n      - property: n\n        direction: DESC\n    order:");
+    const stats = { valuesPeak: 0, keysPeak: 0 };
+    const r = q(src, { idx: index({ entries: () => manyNotes(300) }), req: { limit: 5 }, deps: { stats, retainCap: { values: 50_000 } } });
+    expect(paths(r)[0]).toBe("bulk/n299.md");
+    expect(r.warnings.some((w) => w.includes("computed again"))).toBe(true);
+    expect(r.warnings.some((w) => w.includes("left empty"))).toBe(false);
+  });
+
+  test("a link built from a long string counts its text and is not kept", () => {
+    const defs = ['  f0: \'"xxxxxxxxxx"\''];
+    for (let i = 1; i <= 13; i++) defs.push(`  f${i}: formula.f${i - 1} + formula.f${i - 1}`);
+    const src = `formulas:\n${defs.join("\n")}\n  L: link(formula.f13.lower())\nfilters: formula.L != null\nviews:\n  - type: table\n    name: T\n    order: [file.name, formula.L]\n    sort:\n      - property: formula.L\n`;
+    const stats = { valuesPeak: 0, keysPeak: 0 };
+    const r = q(src, { idx: index({ entries: () => manyNotes(300) }), req: { limit: 1 }, deps: { stats } });
+    expect(r.total).toBe(300);
+    // f0..f6 stay because L reads them; L itself (81920 chars) is not kept.
+    expect(stats.valuesPeak).toBeLessThan(300 * 2000);
+    expect(stats.keysPeak).toBeGreaterThanOrEqual(300 * 1000);
+    expect(stats.keysPeak).toBeLessThan(300 * 1100);
   });
 });
