@@ -34,13 +34,14 @@ interface CardProps {
   row: Row;
   lifted: boolean;
   menuColumns: ColumnInfo[];
+  why: string | null;
   cols: Column[];
   host: BaseHost;
   onPointerDown(e: ReactPointerEvent<HTMLElement>, row: Row): void;
   onMove(row: Row, toKey: string | null): void;
 }
 
-const Card = memo(function Card({ row, lifted, menuColumns, cols, host, onPointerDown, onMove }: CardProps) {
+const Card = memo(function Card({ row, lifted, menuColumns, why, cols, host, onPointerDown, onMove }: CardProps) {
   return (
     <article className={lifted ? "base-card lifted" : "base-card"} data-card-path={row.path} onPointerDown={(e) => onPointerDown(e, row)}>
       <div className="base-card-head">
@@ -48,7 +49,9 @@ const Card = memo(function Card({ row, lifted, menuColumns, cols, host, onPointe
           {row.title || row.path}
         </button>
         <RowMenu row={row} host={host}>
-          {menuColumns.length > 0
+          {why ? (
+            <DropdownMenuItem disabled>{why}</DropdownMenuItem>
+          ) : menuColumns.length > 0
             ? menuColumns.map((c) => (
                 <DropdownMenuItem key={c.key ?? NO_KEY} onSelect={() => onMove(row, c.key)}>
                   Move to {c.label}
@@ -142,7 +145,7 @@ export function KanbanView(props: LayoutProps) {
     const gk = cur.view.groupBy?.property;
     if (!gk) return;
     const gp = propNameOf(gk);
-    if (moveRefusal(gk, gp ? cur.vaultTypes.get(gp) : undefined, row) !== null) return;
+    const why = moveRefusal(gk, gp ? cur.vaultTypes.get(gp) : undefined, row);
     cleanupRef.current();
     const card = e.currentTarget;
     const id = e.pointerId;
@@ -198,6 +201,12 @@ export function KanbanView(props: LayoutProps) {
       ly = ev.clientY;
       if (!dragging) {
         if (!dragStarted(lx - x0, ly - y0)) return;
+        if (why) {
+          cleanup();
+          swallowClick();
+          latest.current.host.toast(why);
+          return;
+        }
         dragging = true;
         setDrag({ path: row.path, title: row.title || row.path, x: lx, y: ly, over: hit(lx, ly) });
         return;
@@ -293,6 +302,7 @@ export function KanbanView(props: LayoutProps) {
                   row={r}
                   lifted={drag?.path === r.path}
                   menuColumns={refusal(r) === null ? (menuFor.get(g.key) ?? EMPTY) : EMPTY}
+                  why={refusal(r)}
                   cols={cols}
                   host={host}
                   onPointerDown={onCardPointerDown}
