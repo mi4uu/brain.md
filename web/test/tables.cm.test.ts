@@ -142,7 +142,7 @@ describe("table keys", () => {
 });
 
 describe("dispatchTableEdit", () => {
-  const note = "intro\n\n" + TABLE;
+  const note = `intro\n\n${TABLE}`;
   const range = { from: 3, to: 5 };
 
   test("replaces only the table range", () => {

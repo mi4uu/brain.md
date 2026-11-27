@@ -49,7 +49,7 @@ describe("tabEdit", () => {
   test("is null outside a table and inside fenced code", () => {
     const [text, pos] = at(`plain${MARK} text\n`);
     expect(tabEdit(text, pos, 1)).toBeNull();
-    const [fenced, fp] = at("```\n| a |\n|---|\n| x" + MARK + " |\n```\n");
+    const [fenced, fp] = at(`\`\`\`\n| a |\n|---|\n| x${MARK} |\n\`\`\`\n`);
     expect(tabEdit(fenced, fp, 1)).toBeNull();
   });
 

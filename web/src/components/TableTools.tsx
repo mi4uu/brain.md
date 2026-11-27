@@ -244,6 +244,7 @@ export function TableTools({ scrollerRef, docRef, content, html, onEditTable, no
     };
   }, [scrollerRef]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: html and tick are re-measure triggers; liveTable is a fresh closure each render
   useLayoutEffect(() => {
     const scroller = scrollerRef.current;
     const doc = docRef.current;
