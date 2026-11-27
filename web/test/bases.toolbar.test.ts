@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   addSort, buildFilter, isNameTaken, wasApplied, literal, freshName, hideColumn, hiddenOptions, labelOf, nextView, optionKeyFor,
-  propertyRef, quoteString, replaceFilter, setSortProperty, shiftColumn, showColumn, sortChoices,
+  propertyRef, quoteString, refocusIndex, replaceFilter, setSortProperty, shiftColumn, showColumn, sortChoices,
 } from "../src/bases/toolbar";
 
 const opts = [{ key: "file.name", label: "Name" }, { key: "note.status", label: "status" }, { key: "note.due", label: "due" }];
@@ -103,5 +103,24 @@ describe("literals and refusal helpers", () => {
     expect(wasApplied(false)).toBe(false);
     expect(wasApplied(true)).toBe(true);
     expect(wasApplied(undefined)).toBe(true);
+  });
+});
+
+describe("refocusIndex", () => {
+  test("a control disabled by the edit hands focus to the nearest enabled one in its row", () => {
+    // [up, down, hide] of the last row: down is now disabled
+    expect(refocusIndex([true, true, true, true, false, true], 4, [3, 4, 5])).toBe(3);
+    expect(refocusIndex([true, false, true], 1, [1, 2])).toBe(2);
+  });
+
+  test("a removed control hands focus to whatever now sits at its place", () => {
+    expect(refocusIndex([true, true, true, true], 1)).toBe(1);
+    expect(refocusIndex([true, false, false, true], 1)).toBe(3);
+  });
+
+  test("past the end it falls back to the last enabled control", () => {
+    expect(refocusIndex([true, true, false], 5)).toBe(1);
+    expect(refocusIndex([false, false], 0)).toBeNull();
+    expect(refocusIndex([], 0)).toBeNull();
   });
 });

@@ -175,3 +175,15 @@ export function replaceFilter(list: string[], index: number, text: string): stri
   if (next === list[index]) return null;
   return list.map((x, j) => (j === index ? next : x));
 }
+
+// Where focus goes when an edit removed or disabled the focused popover control.
+// `enabled`: the popover's controls now, in DOM order. `at`: the control's own
+// index when it is still there, else the index it had. `row`: the indexes of
+// the controls that share its row, when it is still there.
+export function refocusIndex(enabled: boolean[], at: number, row: number[] = []): number | null {
+  const near = row.filter((i) => enabled[i]).sort((a, b) => Math.abs(a - at) - Math.abs(b - at))[0];
+  if (near !== undefined) return near;
+  for (let i = Math.max(at, 0); i < enabled.length; i++) if (enabled[i]) return i;
+  for (let i = Math.min(at, enabled.length) - 1; i >= 0; i--) if (enabled[i]) return i;
+  return null;
+}

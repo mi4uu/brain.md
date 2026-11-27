@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { ArrowDownIcon, ArrowUpIcon, CaretSortIcon, Cross2Icon, MixerHorizontalIcon, PlusIcon } from "@radix-ui/react-icons";
 import type { ViewConfig } from "@brainmd/shared/base-parse";
 import type { SortSpec } from "@brainmd/shared/base-types";
@@ -17,6 +17,7 @@ import {
   hideColumn,
   labelOf,
   optionKeyFor,
+  refocusIndex,
   removeSort,
   replaceFilter,
   setSortProperty,
@@ -30,6 +31,37 @@ export type { KeyOption };
 
 type EditView = (fn: (source: string, viewIndex: number) => string) => boolean | void;
 
+const CONTROLS = "button, input, select";
+const isOff = (el: Element): boolean => (el as HTMLButtonElement).disabled === true;
+
+// An edit can remove or disable the focused control (a removed filter row, a
+// column moved to the end), and focus then drops to the page. Put it on the
+// nearest control so the keyboard stays where the user was.
+function useKeepFocus(view: ViewConfig) {
+  const ref = useRef<HTMLDivElement>(null);
+  const last = useRef<{ el: HTMLElement; index: number } | null>(null);
+  const onFocus = (e: React.FocusEvent<HTMLDivElement>) => {
+    const el = e.target as HTMLElement;
+    const index = [...(ref.current?.querySelectorAll(CONTROLS) ?? [])].indexOf(el);
+    last.current = index >= 0 ? { el, index } : null;
+  };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new view is the edit that may have taken the focused control
+  useLayoutEffect(() => {
+    const box = ref.current;
+    const lost = last.current;
+    if (!box || !lost || (lost.el.isConnected && !isOff(lost.el))) return;
+    const active = document.activeElement;
+    if (active && active !== lost.el && active !== document.body) return;
+    const list = [...box.querySelectorAll<HTMLElement>(CONTROLS)];
+    const own = list.indexOf(lost.el);
+    const rowEl = own >= 0 ? lost.el.closest(".base-pop-row") : null;
+    const row = rowEl ? list.flatMap((el, i) => (rowEl.contains(el) ? [i] : [])) : [];
+    const i = refocusIndex(list.map((el) => !isOff(el)), own >= 0 ? own : lost.index, row);
+    (i === null ? box : list[i]!).focus({ preventScroll: true });
+  }, [view]);
+  return { ref, onFocus };
+}
+
 interface OpenProps {
   open: boolean;
   onOpenChange(open: boolean): void;
@@ -38,6 +70,7 @@ interface OpenProps {
 export function SortPopover({ view, options, editView, open, onOpenChange }: { view: ViewConfig; options: KeyOption[]; editView: EditView } & OpenProps) {
   const set = (next: SortSpec[] | null) => { if (next) editView((src, i) => setViewSort(src, i, next)); };
   const canAdd = addSort(view.sort, options) !== null;
+  const keep = useKeepFocus(view);
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
@@ -47,7 +80,7 @@ export function SortPopover({ view, options, editView, open, onOpenChange }: { v
           {view.sort.length > 0 ? <span className="base-count">{view.sort.length}</span> : null}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="base-pop">
+      <PopoverContent align="start" className="base-pop" ref={keep.ref} onFocus={keep.onFocus}>
         {view.sort.length === 0 ? <p className="base-hint">No sort. Rows follow file name.</p> : null}
         {view.sort.map((s, i) => {
           const value = optionKeyFor(options, s.property);
@@ -115,6 +148,7 @@ export function FilterPopover({ view, options, editView, open, onOpenChange }: {
   const chosen = props.find((o) => o.key === (key || props[0]?.key));
   const meta = FILTER_OPS.find((o) => o.id === op)!;
   const built = buildFilter(chosen?.key ?? "", op, value, chosen?.type);
+  const keep = useKeepFocus(view);
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
@@ -124,7 +158,7 @@ export function FilterPopover({ view, options, editView, open, onOpenChange }: {
           {flat === null || flat.length > 0 ? <span className="base-count">{flat === null ? "…" : flat.length}</span> : null}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="base-pop base-pop-wide">
+      <PopoverContent align="start" className="base-pop base-pop-wide" ref={keep.ref} onFocus={keep.onFocus}>
         {flat === null ? (
           <p className="base-hint">This filter uses nested and / or / not groups. Edit it in the block source.</p>
         ) : (
@@ -217,6 +251,7 @@ export function PropertiesPopover({ view, options, editView, open, onOpenChange 
   const shown = view.order.length > 0 ? view.order : ["file.name"];
   const set = (next: string[] | null) => { if (next) editView((src, i) => setViewOrder(src, i, next)); };
   const rest = hiddenOptions(view.order, options);
+  const keep = useKeepFocus(view);
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
@@ -225,7 +260,7 @@ export function PropertiesPopover({ view, options, editView, open, onOpenChange 
           <span className="base-btn-text">Properties</span>
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="base-pop">
+      <PopoverContent align="start" className="base-pop" ref={keep.ref} onFocus={keep.onFocus}>
         {shown.map((key, i) => {
           const label = labelOf(options, key);
           return (
