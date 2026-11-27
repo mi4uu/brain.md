@@ -2,6 +2,8 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, type React
 import { renderMarkdown, isMediaName } from "../renderer/render";
 import { api } from "../api/client";
 import { getToken } from "../auth/token";
+import { TableTools } from "./TableTools";
+import type { LineRange, MdTable } from "../tables/md-table";
 
 const PROTECTED_MEDIA_SELECTOR =
   'img[src^="/api/media-raw/"]:not([data-blob-protected]), video[src^="/api/media-raw/"]:not([data-blob-protected]), audio[src^="/api/media-raw/"]:not([data-blob-protected]), source[src^="/api/media-raw/"]:not([data-blob-protected])';
@@ -51,6 +53,7 @@ interface PreviewProps {
   onOpenTag: (tag: string) => void;
   onScrollLine?: (line: number) => void;
   onSelectLine?: (line: number) => void;
+  onEditTable?: (range: LineRange, fn: (t: MdTable) => MdTable) => boolean;
 }
 
 export interface PreviewHandle {
@@ -59,7 +62,7 @@ export interface PreviewHandle {
 }
 
 export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
-  { content, notePath, header, resolveByBasename, onOpenNote, onMissingNote, onOpenTag, onScrollLine, onSelectLine },
+  { content, notePath, header, resolveByBasename, onOpenNote, onMissingNote, onOpenTag, onScrollLine, onSelectLine, onEditTable },
   forwardedRef,
 ) {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -269,6 +272,8 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
         if (inEmbed.classList?.contains("embed-body")) return;
         inEmbed = inEmbed.parentElement;
       }
+      // TableTools claims the clicks it turns into a cell edit.
+      if (e.defaultPrevented) return;
       // climb again — no link/tag/checkbox hit → find nearest [data-source-line]
       if (!onSelectLine) return;
       let block = e.target as HTMLElement | null;
@@ -372,17 +377,27 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
     };
   }, [html]);
 
+  const docEl = (
+    <div className="doc" ref={docRef}>
+      {header}
+      {content.trim() === "" ? (
+        notePath ? <p className="muted">Empty note</p> : null
+      ) : (
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: renderMarkdown runs hast-util-sanitize with previewSchema
+        <div dangerouslySetInnerHTML={{ __html: html }} />
+      )}
+    </div>
+  );
+
   return (
     <div className="preview scroll" ref={ref}>
-      <div className="doc" ref={docRef}>
-        {header}
-        {content.trim() === "" ? (
-          notePath ? <p className="muted">Empty note</p> : null
-        ) : (
-          // biome-ignore lint/security/noDangerouslySetInnerHtml: renderMarkdown runs hast-util-sanitize with previewSchema
-          <div dangerouslySetInnerHTML={{ __html: html }} />
-        )}
-      </div>
+      {onEditTable ? (
+        <TableTools scrollerRef={ref} docRef={docRef} content={content} html={html} onEditTable={onEditTable} noteKey={notePath}>
+          {docEl}
+        </TableTools>
+      ) : (
+        docEl
+      )}
     </div>
   );
 });

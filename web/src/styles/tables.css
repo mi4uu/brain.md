@@ -1,0 +1,153 @@
+.table-tools {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  z-index: 2;
+}
+.table-tools > * {
+  position: absolute;
+}
+
+.tt-input {
+  box-sizing: border-box;
+  padding: 6px 10px;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--text-1);
+  background: var(--bg-surface);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-1);
+  outline: none;
+}
+@media (pointer: coarse) {
+  .tt-input {
+    font-size: 16px;
+    min-height: 40px;
+  }
+}
+
+/* An empty cell has no line box, so an empty row would shrink to its padding. */
+.preview .doc table[data-source-end] :is(td, th):empty::after {
+  content: "\200b";
+}
+@media (pointer: coarse) {
+  .preview .doc table[data-source-end] tr {
+    height: 40px;
+  }
+}
+
+@media (hover: hover) {
+  .preview .doc table[data-source-end] td,
+  .preview .doc table[data-source-end] th {
+    cursor: text;
+  }
+}
+
+.tt-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  width: 18px;
+  color: var(--text-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+.tt-add-row {
+  height: 18px;
+}
+.tt-add:hover,
+.tt-add:focus-visible {
+  color: var(--text-1);
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.tt-grip {
+  width: 24px;
+  height: 8px;
+  background: var(--border-strong);
+  border-radius: var(--radius-1);
+  opacity: 0.6;
+  cursor: grab;
+  touch-action: none;
+}
+.tt-grip-row {
+  width: 8px;
+  height: 24px;
+}
+.tt-grip:hover,
+.tt-grip:active {
+  background: var(--accent);
+  opacity: 1;
+}
+.tt-grip:active {
+  cursor: grabbing;
+}
+
+.tt-drop {
+  background: var(--accent);
+  pointer-events: none;
+}
+
+/* Under 40px, too small for a coarse pointer. */
+@media (hover: none), (pointer: coarse) {
+  .tt-add,
+  .tt-grip,
+  .tt-drop {
+    display: none;
+  }
+}
+
+.tt-cell-sel {
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-1);
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.table-actionbar {
+  position: sticky;
+  bottom: var(--space-3);
+  display: flex;
+  gap: 4px;
+  width: max-content;
+  max-width: 100%;
+  margin: var(--space-3) auto 0;
+  padding: 6px;
+  overflow-x: auto;
+  color: var(--text-1);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  z-index: 3;
+}
+.table-actionbar button {
+  flex: none;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0 10px;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-2);
+}
+.table-actionbar button:active:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-1);
+}
+.table-actionbar button:disabled {
+  color: var(--text-4);
+}
+
+@media (pointer: coarse) {
+  .tt-menu-item {
+    min-height: 40px;
+  }
+}

@@ -17,6 +17,7 @@ import {
   QuoteIcon,
   StrikethroughIcon,
   TableIcon,
+  ViewHorizontalIcon,
 } from "@radix-ui/react-icons";
 import {
   bold,
@@ -38,8 +39,10 @@ import {
   mathBlock,
   callout,
   horizontalRule,
+  formatTableAction,
 } from "../editor/actions";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
+import { toast } from "./ui/use-toast";
 
 // --- custom mini-icons for cases Radix doesn't cover well ---
 
@@ -231,6 +234,13 @@ export function EditorToolbar({ getView, onUploadClick }: Props) {
         {btn(<CodeIcon />, "Inline code (`x`)", apply(inlineCode))}
         {btn(<CodeIcon />, "Code block (```)", apply((v) => codeBlock(v)))}
         {btn(<TableIcon />, "Table", apply(table))}
+        {btn(
+          <ViewHorizontalIcon />,
+          "Format table (⌥⌘T)",
+          apply((v) => {
+            if (!formatTableAction(v)) toast({ description: "Put the cursor in a table to format it" });
+          }),
+        )}
         {btn(<DividerHorizontalIcon />, "Horizontal rule", apply(horizontalRule))}
       </div>
       <ToolbarPrimitive.Separator className="tb-sep" />

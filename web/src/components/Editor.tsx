@@ -14,6 +14,7 @@ import {
 } from "@codemirror/autocomplete";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { isMediaName } from "../renderer/render";
+import { tableKeymap } from "../tables/cm";
 
 function wikilinkFor(name: string): string {
   return isMediaName(name) ? `![[${name}]]` : `[[${name}]]`;
@@ -156,7 +157,11 @@ export function Editor({
         const line = u.state.doc.lineAt(head).number;
         if (line !== lastCursorLine) {
           lastCursorLine = line;
-          onCursorLineRef.current?.(line);
+          // A preview table edit only shifts the cursor's line; following it
+          // would scroll the preview away from the table being edited.
+          if (!u.transactions.some((tr) => tr.isUserEvent("input.table.preview"))) {
+            onCursorLineRef.current?.(line);
+          }
         }
       }
     });
@@ -289,6 +294,7 @@ export function Editor({
         closeOnBlur: false,
         activateOnTyping: true,
       }),
+      tableKeymap,
       keymap.of([
         ...defaultKeymap,
         ...historyKeymap,

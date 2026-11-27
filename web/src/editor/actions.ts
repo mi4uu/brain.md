@@ -1,5 +1,6 @@
 import type { EditorView } from "@codemirror/view";
 import { EditorSelection, type ChangeSpec } from "@codemirror/state";
+import { formatTable } from "../tables/cm";
 
 function eachRange(view: EditorView, fn: (from: number, to: number) => { changes?: ChangeSpec; range?: { anchor: number; head?: number } } | null) {
   view.dispatch(
@@ -194,4 +195,8 @@ export function horizontalRule(view: EditorView) {
 
 export function indent(view: EditorView) {
   toggleLinePrefix(view, "  ", /^(\s{0,2})/, false);
+}
+
+export function formatTableAction(view: EditorView): boolean {
+  return formatTable(view);
 }

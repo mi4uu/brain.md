@@ -22,12 +22,12 @@ const TARGET = new Set<RootContent["type"] | string>([
 export const remarkSourcepos: Plugin<[SourceposOptions], Root> = (opts) => (tree) => {
     for (const child of tree.children) {
       if (!TARGET.has(child.type)) continue;
-      const pos = (child as { position?: { start: { line: number } } }).position;
+      const pos = (child as { position?: { start: { line: number }; end: { line: number } } }).position;
       const start = pos?.start.line;
       if (start === undefined) continue;
-      const line = start + opts.lineOffset;
       const data = ((child as { data?: Record<string, unknown> }).data ??= {}) as Record<string, unknown>;
       const props = (data.hProperties ??= {}) as Record<string, unknown>;
-      props["data-source-line"] = String(line);
+      props["data-source-line"] = String(start + opts.lineOffset);
+      if (child.type === "table" && pos) props["data-source-end"] = String(pos.end.line + opts.lineOffset);
     }
   };
