@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildNoteContent, planNewNote, safeFileName, uniqueNotePath } from "../src/bases/new-note";
+import { buildNoteContent, caseInsensitiveExists, planNewNote, safeFileName, uniqueNotePath } from "../src/bases/new-note";
 
 describe("+ New note rule", () => {
   test("folder from inFolder, properties from equality, tags from hasTag", () => {
@@ -39,8 +39,11 @@ describe("+ New note rule", () => {
     expect(uniqueNotePath("", none, ".hidden. ")).toBe("hidden.md");
     expect(uniqueNotePath("", none, "x".repeat(300))).toBe(`${"x".repeat(100)}.md`);
     expect(safeFileName('a:b*c?"d')).toBe("a b c d");
-    const taken = new Set(["untitled.md"]);
-    expect(uniqueNotePath("", (p) => taken.has(p))).toBe("Untitled 1.md");
+    expect(uniqueNotePath("", caseInsensitiveExists(["UNTITLED.md"]))).toBe("Untitled 1.md");
+    expect(uniqueNotePath("", caseInsensitiveExists(["untitled.md", "Untitled 1.md"]))).toBe("Untitled 2.md");
+    expect(uniqueNotePath("a:b/con/x*y", none)).toBe("a b/con_/x y/Untitled.md");
+    const emoji = "\u{1F600}".repeat(101);
+    expect(uniqueNotePath("", none, emoji)).toBe(`${"\u{1F600}".repeat(100)}.md`);
   });
 
   test("the fallback name is checked too", () => {

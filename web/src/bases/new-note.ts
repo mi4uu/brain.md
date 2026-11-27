@@ -78,14 +78,12 @@ export function planNewNote(filters: Array<FilterNode | undefined>, preset: Reco
 const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
 
 export function safeFileName(title: string): string {
-  let n = title
+  const cleaned = title
     .replace(/[\u0000-\u001f\u007f/\\:*?"<>|]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
-    .replace(/^\.+/, "")
-    .slice(0, 100)
-    .replace(/[. ]+$/, "")
-    .trim();
+    .replace(/^\.+/, "");
+  let n = Array.from(cleaned).slice(0, 100).join("").replace(/[. ]+$/, "").trim();
   if (n === "") return "Untitled";
   if (RESERVED.test(n.split(".")[0]!)) n = `${n}_`;
   return n;
@@ -94,26 +92,31 @@ export function safeFileName(title: string): string {
 function safeFolder(folder: string): string {
   return folder
     .split(/[/\\]+/)
-    .filter((s) => s !== "" && s !== "." && s !== "..")
+    .filter((s) => s.trim() !== "" && s !== "." && s !== "..")
+    .map(safeFileName)
     .join("/");
 }
 
-// `exists` must be backed by the vault index, which is case-insensitive about
-// paths on some filesystems, so a candidate also collides when its lower-cased
-// form exists.
+export function caseInsensitiveExists(paths: Iterable<string>): (path: string) => boolean {
+  const set = new Set<string>();
+  for (const p of paths) set.add(p.toLowerCase());
+  return (p) => set.has(p.toLowerCase());
+}
+
+// `exists` must compare paths case-insensitively (see caseInsensitiveExists),
+// since the vault may live on a case-insensitive filesystem.
 export function uniqueNotePath(folder: string, exists: (path: string) => boolean, base = "Untitled"): string {
   const f = safeFolder(folder);
   const dir = f ? `${f}/` : "";
   const name = safeFileName(base);
-  const taken = (p: string): boolean => exists(p) || exists(p.toLowerCase());
   for (let i = 0; i < 1000; i++) {
     const p = `${dir}${name}${i === 0 ? "" : ` ${i}`}.md`;
-    if (!taken(p)) return p;
+    if (!exists(p)) return p;
   }
   const stamp = Date.now();
   for (let i = 0; i < 1000; i++) {
     const p = `${dir}${name} ${stamp}${i === 0 ? "" : `-${i}`}.md`;
-    if (!taken(p)) return p;
+    if (!exists(p)) return p;
   }
   throw new Error("no free note name");
 }
