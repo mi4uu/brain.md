@@ -203,6 +203,7 @@ const ROUTES: RouteRow[] = [
   { name: "GET /api/tasks", class: "filtered", exec: (f) => call(f.handle, "GET", "/api/tasks", undefined, f.bearer) },
   { name: "GET /api/search?q=secret", class: "filtered", exec: (f) => call(f.handle, "GET", "/api/search?q=secret", undefined, f.bearer) },
   { name: "GET /api/folder-meta", class: "filtered", exec: (f) => call(f.handle, "GET", "/api/folder-meta", undefined, f.bearer) },
+  { name: "POST /api/bases/query", class: "filtered", exec: (f) => call(f.handle, "POST", "/api/bases/query", { source: "views:\n  - type: table\n    name: T\n    order: [file.name]\n" }, f.bearer) },
 
   // ---- public (no folder scoping) ----
   { name: "GET /api/rag/status", class: "public", exec: (f) => call(f.handle, "GET", "/api/rag/status", undefined, f.bearer) },
