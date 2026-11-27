@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { BaseQueryResponse } from "@brainmd/shared/base-types";
+import type { PropValue } from "@brainmd/shared/frontmatter";
 import {
   byColumn,
   matchKey,
@@ -18,7 +19,9 @@ import {
   flatFilters,
   isEditable,
   linkParts,
+  MOVE_REFUSED,
   moveChange,
+  moveRefusal,
   moveColumn,
   moveRowInResult,
   presetValue,
@@ -336,5 +339,24 @@ describe("cellInputType and byColumn", () => {
     expect(byColumn({ "file.name": 3 }, "x")).toBeUndefined();
     expect(matchKey({ status: 1 }, "status")).toBe("status");
     expect(matchKey({}, "status")).toBeUndefined();
+  });
+});
+
+describe("moveRefusal", () => {
+  const row = (values: Record<string, PropValue>, partial?: string[]) => ({ values, ...(partial ? { partial } : {}) });
+  test("a plain text value moves", () => {
+    expect(moveRefusal("status", "text", row({ status: "Todo" }))).toBeNull();
+    expect(moveRefusal("note.status", "text", row({ status: null }))).toBeNull();
+  });
+  test("refuses computed, unknown, partial, list, map and long keys", () => {
+    expect(moveRefusal("file.folder", undefined, row({}))).toBe(MOVE_REFUSED.computed);
+    expect(moveRefusal("formula.f", undefined, row({}))).toBe(MOVE_REFUSED.computed);
+    expect(moveRefusal("status", "text", row({}))).toBe(MOVE_REFUSED.unknown);
+    expect(moveRefusal("status", "text", row({ status: "x" }, ["note.status"]))).toBe(MOVE_REFUSED.partial);
+    expect(moveRefusal("tags", "tags", row({ tags: "a" }))).toBe(MOVE_REFUSED.list);
+    expect(moveRefusal("status", "text", row({ status: ["a"] }))).toBe(MOVE_REFUSED.list);
+    expect(moveRefusal("status", "text", row({ status: { a: 1 } }))).toBe(MOVE_REFUSED.list);
+    expect(moveRefusal("status", "text", row({ status: "x" }), "x".repeat(1000))).toBe(MOVE_REFUSED.long);
+    expect(moveRefusal("status", "text", row({ status: "x" }), "x".repeat(999))).toBeNull();
   });
 });

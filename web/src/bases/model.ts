@@ -321,3 +321,30 @@ export function byColumn<T>(map: Record<string, T>, key: string): T | undefined 
   const k = matchKey(map, key);
   return k === undefined ? undefined : map[k];
 }
+
+export const MOVE_REFUSED = {
+  computed: "This board is grouped by a computed property, so cards cannot move.",
+  list: "This board is grouped by a list property, so cards cannot move.",
+  unknown: "This note's group value was not loaded, so the card cannot move.",
+  partial: "This note's group value was shortened by the server, so the card cannot move.",
+  long: "That column name is too long to write back, so the card cannot move.",
+} as const;
+
+export const MAX_MOVE_KEY = 1000;
+
+// The toast that explains why a card cannot move, or null when it can.
+// An unknown group value (not in `values`) is refused: writing over it could flatten or overwrite what the note really holds.
+export function moveRefusal(
+  groupKey: string,
+  type: PropertyType | undefined,
+  row: { values: Record<string, PropValue>; partial?: string[] },
+  toKey?: string | null,
+): string | null {
+  if (propNameOf(groupKey) === null) return MOVE_REFUSED.computed;
+  const k = matchKey(row.values, groupKey);
+  if (k === undefined) return MOVE_REFUSED.unknown;
+  if (row.partial?.some((p) => columnId(p) === columnId(groupKey))) return MOVE_REFUSED.partial;
+  if (!canMove(type, row.values[k] ?? null)) return MOVE_REFUSED.list;
+  if (toKey && toKey.length >= MAX_MOVE_KEY) return MOVE_REFUSED.long;
+  return null;
+}

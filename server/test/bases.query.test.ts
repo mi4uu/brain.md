@@ -306,6 +306,20 @@ describe("cards cover property", () => {
   });
 });
 
+describe("group property values", () => {
+  test("rides along in values and partial without being a column", () => {
+    const r = q('filters: file.name == "A.md"\nviews:\n  - type: table\n    name: T\n    order: [file.name]\n    groupBy:\n      property: owner\n      direction: ASC\n');
+    expect(r.columns.map((c) => c.key)).toEqual(["file.name"]);
+    expect(r.groups[0]!.rows[0]!.values.owner).toBe("[[people/Ann]]");
+  });
+  test("a cut value is flagged partial", () => {
+    const r = q('filters: file.name == "D.md"\nviews:\n  - type: table\n    name: T\n    order: [file.name]\n    groupBy:\n      property: owner\n      direction: ASC\n', { allowed: NO_SECRET });
+    const row = r.groups[0]!.rows[0]!;
+    expect(row.values.owner).toEqual(["[[people/Ann]]"]);
+    expect(row.partial).toEqual(["owner"]);
+  });
+});
+
 describe("permissions", () => {
   test("rows the caller cannot read never appear, and do not count", () => {
     const r = q('filters: status == "Todo"\n', { allowed: NO_SECRET });

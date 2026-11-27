@@ -199,8 +199,10 @@ function run(req: BaseQueryRequest, deps: QueryDeps, warned: string[]): BaseQuer
 
   const gb = view.groupBy;
   const colKeys = view.order.length > 0 ? view.order : ["file.name"];
-  // The cover property of a cards view rides along in `values` without being a column.
-  const valueKeys = view.image && !colKeys.includes(view.image) ? [...colKeys, view.image] : colKeys;
+  // The cover property of a cards view and the group property of a board ride along
+  // in `values` without being columns, so a client can read the real value before it rewrites it.
+  const valueKeys = [...colKeys];
+  for (const k of [view.image, gb?.property]) if (k && !valueKeys.includes(k)) valueKeys.push(k);
 
   // Formulas a later phase reads: sort, group and cell keys plus everything they refer to.
   // A reference that cannot be read statically (formula[expr]) keeps every formula.
