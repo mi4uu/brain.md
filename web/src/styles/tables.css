@@ -28,6 +28,16 @@
   }
 }
 
+/* An empty cell has no line box, so an empty row would shrink to its padding. */
+.preview .doc table[data-source-end] :is(td, th):empty::after {
+  content: "\200b";
+}
+@media (pointer: coarse) {
+  .preview .doc table[data-source-end] tr {
+    height: 40px;
+  }
+}
+
 @media (hover: hover) {
   .preview .doc table[data-source-end] td,
   .preview .doc table[data-source-end] th {
