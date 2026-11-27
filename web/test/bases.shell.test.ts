@@ -69,3 +69,30 @@ describe("toolbar edits on an empty views list", () => {
     expect(addView("views: []\n", { type: "table", name: "Table" })).toBe("views:\n  - type: table\n    name: Table\n");
   });
 });
+
+describe("every fence the renderer turns into a view passes the hydration gate", () => {
+  const opts = { resolveWikilink: () => null, isMediaTarget: () => false, buildMediaUrl: (t: string) => t };
+  const unescapeAttr = (s: string) =>
+    s.replace(/&#x([0-9a-f]+);/gi, (_, h: string) => String.fromCodePoint(Number.parseInt(h, 16))).replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  const shapes: Record<string, string> = {
+    plain: "# T\n\n```base\nviews: []\n```\n",
+    "upper-case lang": "# T\n\n```Base\nviews: []\n```\n",
+    tildes: "# T\n\n~~~base\nviews: []\n~~~\n",
+    "four backticks": "# T\n\n````base\nviews: []\n````\n",
+    "one space indent": "# T\n\n ```base\n views: []\n ```\n",
+    "three space indent": "# T\n\n   ```base\n   views: []\n   ```\n",
+    "info text": "# T\n\n```base title\nviews: []\n```\n",
+    "unclosed, no final newline": "# T\n\n```base\nviews: []",
+    "empty body": "# T\n\n```base\n```\n",
+    "body ends in a blank line": "# T\n\n```base\nviews: []\n\n```\n",
+    crlf: "# T\r\n\r\n```base\r\nviews: []\r\n```\r\n",
+    frontmatter: "---\na: 1\n---\n\n```base\nviews: []\n```\n",
+  };
+  for (const [name, md] of Object.entries(shapes)) {
+    test(name, () => {
+      const m = /<div class="base-block" data-base="([^"]*)" data-source-line="(\d+)"/.exec(renderMarkdown(md, opts).html);
+      expect(m).not.toBeNull();
+      expect(isLiveFence(md, Number(m![2]), unescapeAttr(m![1]!))).toBe(true);
+    });
+  }
+});
